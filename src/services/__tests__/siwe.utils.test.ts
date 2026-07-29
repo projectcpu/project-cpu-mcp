@@ -10,7 +10,7 @@ describe('buildSiweMessage', () => {
     const baseInput = {
         address: ADDRESS,
         chainId: 1,
-        apiUrl: 'https://api.project-cpu.com',
+        apiUrl: 'https://api.projectcpu.cc',
         nonce: 'abc123nonce',
         issuedAt: '2026-05-29T10:00:00.000Z',
         expirationTime: '2026-05-29T10:10:00.000Z',
@@ -22,8 +22,8 @@ describe('buildSiweMessage', () => {
         expect(parsed.address).toBe(ADDRESS);
         expect(parsed.nonce).toBe('abc123nonce');
         expect(parsed.chainId).toBe(1);
-        expect(parsed.domain).toBe('api.project-cpu.com');
-        expect(parsed.uri).toBe('https://api.project-cpu.com');
+        expect(parsed.domain).toBe('api.projectcpu.cc');
+        expect(parsed.uri).toBe('https://api.projectcpu.cc');
     });
 
     it('derives domain (host) and uri (origin) from the API URL with a port', () => {

@@ -22,7 +22,7 @@ export const envSchema = z
             .nullable(),
         API_URL: z.string().url().nullable(),
         RPC_URL: z.string().url().nullable(),
-        NETWORK: z.nativeEnum(Network).default(Network.ETHEREUM),
+        NETWORK: z.nativeEnum(Network).default(Network.ROBINHOOD),
     })
     .refine((data) => data.WALLET_MODE !== WalletMode.EVM || data.PRIVATE_KEY !== null, {
         message: 'PRIVATE_KEY is required when WALLET_MODE=evm',
