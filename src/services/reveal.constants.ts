@@ -1,0 +1,9 @@
+export const REVEAL_FEE_BUFFER_BPS = 2_500n;
+
+export const REVEAL_POLL_TIMEOUT_MS = 45_000;
+
+export const REVEAL_POLL_INTERVAL_MS = 3_000;
+
+export const REVEAL_PRIME_ATTEMPTS = 3;
+
+export const REVEAL_PRIME_INTERVAL_MS = REVEAL_POLL_INTERVAL_MS;

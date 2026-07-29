@@ -1,0 +1,63 @@
+import { GET_GAME_CONFIG_DESCRIPTION, SALE_FEE_STRUCTURAL_BOUND_PERCENT } from './constants.js';
+import { describeRandomnessMode } from './get-game-config.utils.js';
+import type { AppContext } from '../../../types.js';
+import type { ToolRegistrar } from '../../types.js';
+
+export function registerGetGameConfigTool(server: ToolRegistrar, context: AppContext): void {
+    server.registerTool(
+        'cpu_get_game_config',
+        { description: GET_GAME_CONFIG_DESCRIPTION, inputSchema: {} },
+        async () => {
+            const config = await context.appConfig.load();
+
+            const resourceList =
+                Object.entries(config.resources)
+                    .map(([id, name]) => `${id}:${name}`)
+                    .join(', ') || 'none';
+            const buildings =
+                config.buildings
+                    .map((b) => {
+                        const opex =
+                            b.recipeOpexCpu !== null
+                                ? `, opex ${Object.entries(b.recipeOpexCpu)
+                                      .map(([recipeId, costCpu]) => `${recipeId}:${costCpu}`)
+                                      .join('/')} $CPU/batch`
+                                : '';
+                        return `${b.name} (${b.kind}, build ${b.buildCost} $CPU, demolish ${b.demolishCost.cpu} $CPU${opex})`;
+                    })
+                    .join(', ') || 'none';
+            const reveal = config.reveal.firstFree
+                ? `first reveal free, re-reveal ${config.reveal.reRevealCost} $CPU`
+                : `reveal ${config.reveal.reRevealCost} $CPU`;
+            const trade =
+                `${config.trade.saleBurnPercent}% sale burn, sale fee up to ${SALE_FEE_STRUCTURAL_BOUND_PERCENT}% ` +
+                `(the structural bound — a hub owner can set any rate up to this maximum)`;
+            const transitFeeFloors =
+                Object.entries(config.transport.moveFeeFloors)
+                    .map(([id, fee]) => `${id}:${fee}`)
+                    .join(', ') || 'none';
+            const transit =
+                `every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override wins over it) — ` +
+                `${transitFeeFloors}`;
+            const storage = `an active hub multiplies a cell's storage cap by ${config.storage.hubStorageMultiplier}x`;
+            const randomness = describeRandomnessMode(config.randomness);
+            const header =
+                `Network ${config.network} (chainId ${config.chainId}). ${config.recipes.length} recipe(s) ` +
+                `(see list_recipes). Buildings: ${buildings}. Reveal: ${reveal}. Randomness: ${randomness}. ` +
+                `Trade: ${trade}. ` +
+                `Transit: ${transit}. ` +
+                `Storage: ${storage}. ` +
+                `Resources: ${resourceList}. ` +
+                `Contracts — land ${config.contracts.land}, $CPU ${config.contracts.cpuToken}, ` +
+                `cpuHook ${config.contracts.cpuHook}, cell ${config.contracts.cell}, ` +
+                `transport ${config.contracts.transport}.`;
+
+            return {
+                content: [
+                    { type: 'text', text: header },
+                    { type: 'text', text: JSON.stringify(config) },
+                ],
+            };
+        },
+    );
+}

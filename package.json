@@ -1,0 +1,73 @@
+{
+    "name": "project-cpu-mcp",
+    "version": "0.7.0",
+    "description": "MCP server for Project CPU — AI agents interact with the game on behalf of players",
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "game",
+        "blockchain",
+        "web3",
+        "evm"
+    ],
+    "homepage": "https://github.com/projectcpu/project-cpu-mcp#readme",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/projectcpu/project-cpu-mcp.git"
+    },
+    "bugs": {
+        "url": "https://github.com/projectcpu/project-cpu-mcp/issues"
+    },
+    "license": "MIT",
+    "author": "projectcpu",
+    "type": "module",
+    "bin": {
+        "project-cpu-mcp": "dist/index.js"
+    },
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "tsc && chmod +x dist/index.js",
+        "prepublishOnly": "pnpm run build",
+        "typecheck": "tsc --noEmit -p tsconfig.eslint.json",
+        "test": "vitest run",
+        "test:unit": "vitest run --exclude '**/*.integration.test.ts'",
+        "test:watch": "vitest",
+        "lint": "eslint 'src/**/*.ts'",
+        "lint:fix": "eslint 'src/**/*.ts' --fix",
+        "format": "prettier --write 'src/**/*.ts'"
+    },
+    "dependencies": {
+        "@abstract-foundation/agw-client": "^1.12.3",
+        "@modelcontextprotocol/sdk": "^1.0.0",
+        "@uniswap/sdk-core": "^7.17.0",
+        "@uniswap/universal-router-sdk": "^5.7.0",
+        "@uniswap/v4-sdk": "^2.2.2",
+        "date-fns": "^4.4.0",
+        "jose": "^6.2.2",
+        "socket.io-client": "^4.8.3",
+        "viem": "^2.55.0",
+        "zod": "^3.23.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "@typescript-eslint/eslint-plugin": "^8.0.0",
+        "@typescript-eslint/parser": "^8.0.0",
+        "eslint": "^8.57.0",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-plugin-import": "^2.31.0",
+        "eslint-plugin-prettier": "^5.2.0",
+        "prettier": "^3.3.0",
+        "typescript": "^5.6.0",
+        "vitest": "^2.1.0"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "packageManager": "pnpm@11.3.0"
+}

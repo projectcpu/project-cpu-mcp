@@ -1,0 +1,1 @@
+export const TRANSPORT_MAX_FEE_BUFFER_PERCENT = 10;
