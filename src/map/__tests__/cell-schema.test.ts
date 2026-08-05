@@ -43,6 +43,26 @@ describe('rawCellSchema fee fields', () => {
     });
 });
 
+describe('rawCellSchema demolish fields', () => {
+    it('reads a payload that predates the demolish metadata as "unknown" rather than dropping the cell', () => {
+        const cell = parseCell(rawCell({ demolishFinishAt: 900 }));
+        expect(cell?.demolishFinishAt).toBe(900);
+        expect(cell?.demolishStartAt).toBeNull();
+        expect(cell?.demolishingType).toBeNull();
+    });
+
+    it('carries both demolish metadata fields through when the server sends them', () => {
+        const cell = parseCell(rawCell({ demolishFinishAt: 900, demolishStartAt: 300, demolishingType: 'mine' }));
+        expect(cell?.demolishStartAt).toBe(300);
+        expect(cell?.demolishingType).toBe('mine');
+    });
+
+    it('keeps a demolished building type the client does not enumerate, so the cell is not silently dropped', () => {
+        const cell = parseCell(rawCell({ demolishFinishAt: 900, demolishingType: 'oil_power_plant_l3' }));
+        expect(cell?.demolishingType).toBe('oil_power_plant_l3');
+    });
+});
+
 describe('rawCellSchema building mode fields', () => {
     it('keeps every cell that has a building when the payload predates the mode fields, reading the mode as null', () => {
         const raw = {

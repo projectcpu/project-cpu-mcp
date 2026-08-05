@@ -17,7 +17,7 @@ import { BuildingKind } from '../api/types.js';
 import type { BuildingView } from '../api/types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
-import { demolishCooldownEnd } from '../map/map.utils.js';
+import { demolishState } from '../map/map.utils.js';
 import type { Cell, RevealCellReader } from '../map/types.js';
 import { formatUnixSeconds } from '../utils/format.utils.js';
 import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
@@ -138,10 +138,10 @@ export class BuildService {
         if (state === null) {
             return;
         }
-        const cooldownEnd = demolishCooldownEnd(state, this.mapReader.getServerTime());
-        if (cooldownEnd !== null) {
+        const demolish = demolishState(state, this.mapReader.getServerTime());
+        if (demolish !== null) {
             throw new Error(
-                `Cell ${input.tokenId} is in demolition cooldown until ${formatUnixSeconds(cooldownEnd)}; ` +
+                `Cell ${input.tokenId} is in demolition cooldown until ${formatUnixSeconds(demolish.finishAt)}; ` +
                     `it cannot be rebuilt yet.`,
             );
         }

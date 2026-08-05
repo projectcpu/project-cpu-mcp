@@ -67,6 +67,8 @@ function rawCell(overrides: Partial<RawCell> = {}): RawCell {
         resources: [],
         building: null,
         demolishFinishAt: null,
+        demolishStartAt: null,
+        demolishingType: null,
         transitFeeOverrides: null,
         saleFeeOverrides: null,
         process: null,
@@ -260,6 +262,8 @@ describe('toCell raw facts', () => {
             transitFeeOverrides: { 5: '0.5' },
             saleFeeOverrides: { 5: 2.5 },
             demolishFinishAt: 42,
+            demolishStartAt: 12,
+            demolishingType: 'mine',
             updated: 7,
         });
         const derived = toCell(cell, FINISH_AT, config());
@@ -269,6 +273,8 @@ describe('toCell raw facts', () => {
             transitFeeOverrides: { 5: '0.5' },
             saleFeeOverrides: { 5: 2.5 },
             demolishFinishAt: 42,
+            demolishStartAt: 12,
+            demolishingType: 'mine',
             updated: 7,
         });
     });

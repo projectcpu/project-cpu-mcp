@@ -1,8 +1,8 @@
 import { GET_CELL_DESCRIPTION } from './constants.js';
+import { demolishNote } from './demolish.utils.js';
 import { getCellInputSchema } from './types.js';
-import { demolishCooldownEnd } from '../../../map/map.utils.js';
+import { demolishState } from '../../../map/map.utils.js';
 import type { AppContext } from '../../../types.js';
-import { formatUnixSeconds } from '../../../utils/format.utils.js';
 import type { ToolRegistrar } from '../../types.js';
 import { labelCell, priceOutputs } from '../label.utils.js';
 import { getWalletAddress } from '../wallet.utils.js';
@@ -19,12 +19,8 @@ export function registerGetCellTool(server: ToolRegistrar, context: AppContext):
 
             const { cell, neighbors } = inspection;
             const { resources, buildings } = await context.appConfig.load();
-            const cooldownEnd = demolishCooldownEnd(cell, context.mapReader.getServerTime());
-            const cooldownNote =
-                cooldownEnd !== null
-                    ? ` · demolition cooldown until ${formatUnixSeconds(cooldownEnd)} (no rebuild yet)`
-                    : '';
-            const header = `Cell ${cell.tokenId} · ${neighbors.length} neighbours${cooldownNote}`;
+            const demolish = demolishState(cell, context.mapReader.getServerTime());
+            const header = `Cell ${cell.tokenId} · ${neighbors.length} neighbours${demolishNote(demolish)}`;
 
             const labeled = {
                 ...inspection,
