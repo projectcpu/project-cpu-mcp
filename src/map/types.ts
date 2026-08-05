@@ -71,9 +71,8 @@ export const rawCellSchema = z.object({
     // Set after a demolish and cleared on rebuild. `demolishFinishAt > serverTime` ⇒ the plot is still in its
     // rebuild cooldown; `building` is null meanwhile, so this is the only signal the cell was just demolished.
     demolishFinishAt: z.number().nullable().default(null),
-    // Only `demolishFinishAt` above is authoritative. These two are best-effort observations of the demolish
-    // that started the cooldown: they are legitimately absent on a perfectly valid active cooldown, so a caller
-    // must read their absence as "unknown", never as "no demolition".
+    // Observed, not authoritative: both are legitimately absent on a valid active cooldown, so absence reads as
+    // "unknown", never as "no demolition" (see Demolition in CONTEXT.md).
     demolishStartAt: z.number().nullable().default(null),
     // A string, not an enum over the building catalog: an unknown type must not drop the whole cell.
     demolishingType: z.string().nullable().default(null),
@@ -127,9 +126,7 @@ export interface Cell extends Omit<RawCell, 'resources' | 'process'> {
 // eslint-disable-next-line no-restricted-syntax
 export type UnderivedCell = RawCell & { ready?: never; activeHub?: never };
 
-// A demolition still running on a cell. `finishAt` is authoritative; the other two are best-effort and are
-// `null` whenever the metadata was never recorded — never a sign that the cooldown itself is in doubt.
-export interface DemolishState {
+export interface ActiveDemolition {
     finishAt: number;
     startAt: number | null;
     buildingType: string | null;

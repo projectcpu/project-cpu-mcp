@@ -4,7 +4,7 @@ import {
     REVEAL_STUCK_AFTER_MISSED_SWEEPS,
     REVEAL_STUCK_AFTER_SECONDS,
 } from './constants.js';
-import { demolishState, isDepleted } from './map.utils.js';
+import { activeDemolition, isDepleted } from './map.utils.js';
 import { processOutputs } from './process.utils.js';
 import { cellProcessProgress, type SettleConfig } from './settle.utils.js';
 import { blockedResourceIds, needByResource } from './storage.utils.js';
@@ -150,7 +150,7 @@ function cellItems(cell: Cell, input: BuildAttentionInput): Array<AttentionItem>
     if (cell.revealCount > 0 && cell.building === null && !cell.revealPending) {
         // A just-demolished cell is empty but can't be rebuilt until its cooldown ends — flag the wait, not a
         // missing building, so the caller isn't told to build somewhere it can't yet.
-        const demolish = demolishState(cell, input.serverTime);
+        const demolish = activeDemolition(cell, input.serverTime);
         if (demolish !== null) {
             items.push(
                 attentionItem(cell, AttentionReason.DemolishCooldown, {

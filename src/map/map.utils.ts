@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
 import {
+    type ActiveDemolition,
     type Cell,
     CellProcessKind,
-    type DemolishState,
     type MapCellStatusCounts,
     type MapQuery,
     MapReadiness,
@@ -135,12 +135,10 @@ export function isDepleted(cell: RawCell): boolean {
     return cell.revealCount > 0 && cell.resources.length > 0 && cell.resources.every((r) => r.deposit === '0');
 }
 
-// A just-demolished cell is empty (building === null) but locked from rebuilding until demolishFinishAt. Returns
-// the running demolition while the cooldown is active, else null — the single place the "still locked" rule lives.
-// What was demolished and when it began are reported only as they arrive: the start is never reconstructed from
-// the end minus a configured duration, because that duration can be changed mid-demolition and the number would
-// then be a lie.
-export function demolishState(cell: RawCell, serverTime: number): DemolishState | null {
+// A just-demolished cell is empty (building === null) but locked from rebuilding until demolishFinishAt — the
+// single place that "still locked" rule lives. `startAt` is never reconstructed as finish-minus-configured-length:
+// that length can be changed mid-demolition, so the arithmetic would produce a confident lie.
+export function activeDemolition(cell: RawCell, serverTime: number): ActiveDemolition | null {
     if (cell.demolishFinishAt === null || cell.demolishFinishAt <= serverTime) {
         return null;
     }

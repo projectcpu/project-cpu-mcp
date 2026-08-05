@@ -4,7 +4,7 @@ import { makeCell, makeMiningProcess, makeCraftProcess, makeResource, makeStorag
 import {
     buildResourceIndex,
     classifyNeighbors,
-    demolishState,
+    activeDemolition,
     filterCells,
     isNewer,
     parseCell,
@@ -218,25 +218,25 @@ describe('summarizeMap', () => {
     });
 });
 
-describe('demolishState', () => {
+describe('activeDemolition', () => {
     const NOW = 100;
 
     it('reports the running demolition with everything the server recorded about it', () => {
         const cell = makeCell({ demolishFinishAt: 500, demolishStartAt: 50, demolishingType: 'mine' });
-        expect(demolishState(cell, NOW)).toEqual({ finishAt: 500, startAt: 50, buildingType: 'mine' });
+        expect(activeDemolition(cell, NOW)).toEqual({ finishAt: 500, startAt: 50, buildingType: 'mine' });
     });
 
     it('still reports the cooldown when the metadata is missing, since only its end is authoritative', () => {
         const cell = makeCell({ demolishFinishAt: 500 });
-        expect(demolishState(cell, NOW)).toEqual({ finishAt: 500, startAt: null, buildingType: null });
+        expect(activeDemolition(cell, NOW)).toEqual({ finishAt: 500, startAt: null, buildingType: null });
     });
 
     it('reports nothing once the cooldown has elapsed, even with the metadata still attached', () => {
         const cell = makeCell({ demolishFinishAt: 50, demolishStartAt: 10, demolishingType: 'mine' });
-        expect(demolishState(cell, NOW)).toBeNull();
+        expect(activeDemolition(cell, NOW)).toBeNull();
     });
 
     it('reports nothing on a cell that was never demolished', () => {
-        expect(demolishState(makeCell(), NOW)).toBeNull();
+        expect(activeDemolition(makeCell(), NOW)).toBeNull();
     });
 });

@@ -1,9 +1,9 @@
-import type { DemolishState } from '../../../map/types.js';
+import type { ActiveDemolition } from '../../../map/types.js';
 import { formatUnixSeconds } from '../../../utils/format.utils.js';
 
-// The end of the cooldown is always known; what was demolished and when it began are not, so they are appended
-// only when they actually arrived — an unchanged header is how "unknown" reads, rather than a run of empty labels.
-export function demolishNote(demolish: DemolishState | null): string {
+// Details are appended only once they arrive: an unchanged header is how "unknown" reads, rather than a run of
+// empty labels on every locked cell.
+export function demolishNote(demolish: ActiveDemolition | null): string {
     if (demolish === null) {
         return '';
     }
