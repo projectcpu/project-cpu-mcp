@@ -95,6 +95,20 @@ report what **actually** burned in `modeSwitch.burnedCpu`. When the chain could 
 marked `exact: false` and the start still goes: a price this client cannot verify never blocks an action.
 The reported burn is the authority whenever it disagrees with the estimate.
 
+## Demolition
+
+- **Demolish cooldown** — the window between tearing a building down and being allowed to build on that
+  plot again. The plot reads as empty for the whole window, so the cooldown is the only thing that
+  distinguishes a plot you just cleared from one that was never built on, and it is what makes a build
+  there fail until it ends. Its end is authoritative: it is read back from the cell's own state on the
+  chain, and it is the fact to plan around.
+- What is coming down and when the demolition began are **observed** alongside it, not derived from it.
+  They are legitimately absent — the world records them as the demolition happens, and a cooldown that
+  began before it started recording them, or whose cell state was rebuilt from the chain mid-cooldown,
+  carries neither. Absence means *unknown*, never *no demolition*, and never casts doubt on the end time.
+  Neither is ever reconstructed by subtracting a demolition's configured length from its end: that length
+  can be changed while a demolition is already running, so the arithmetic would produce a confident lie.
+
 ## Fees
 
 All fee rates on the MCP surface are expressed in **percent**. The contracts and the game API express

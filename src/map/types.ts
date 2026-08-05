@@ -71,6 +71,11 @@ export const rawCellSchema = z.object({
     // Set after a demolish and cleared on rebuild. `demolishFinishAt > serverTime` ⇒ the plot is still in its
     // rebuild cooldown; `building` is null meanwhile, so this is the only signal the cell was just demolished.
     demolishFinishAt: z.number().nullable().default(null),
+    // Observed, not authoritative: both are legitimately absent on a valid active cooldown, so absence reads as
+    // "unknown", never as "no demolition" (see Demolition in CONTEXT.md).
+    demolishStartAt: z.number().nullable().default(null),
+    // A string, not an enum over the building catalog: an unknown type must not drop the whole cell.
+    demolishingType: z.string().nullable().default(null),
     transitFeeOverrides: z.record(z.coerce.number(), z.string()).nullable().default(null),
     saleFeeOverrides: z
         .record(z.coerce.number(), z.number().int())
@@ -120,6 +125,12 @@ export interface Cell extends Omit<RawCell, 'resources' | 'process'> {
 
 // eslint-disable-next-line no-restricted-syntax
 export type UnderivedCell = RawCell & { ready?: never; activeHub?: never };
+
+export interface ActiveDemolition {
+    finishAt: number;
+    startAt: number | null;
+    buildingType: string | null;
+}
 
 export interface ProcessOutput {
     resourceId: number;
@@ -332,6 +343,7 @@ export interface AttentionItem {
     depositRemaining: string | null;
     deliveryId: string | null;
     arrivalAt: number | null;
+    demolishingType: string | null;
     lotId: string | null;
     requestId: string | null;
     requestedAt: number | null;

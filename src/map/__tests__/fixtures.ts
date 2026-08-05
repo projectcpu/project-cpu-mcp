@@ -68,6 +68,8 @@ export function makeCell(overrides: Partial<RawCell> = {}): RawCell {
         resources: [],
         building: null,
         demolishFinishAt: null,
+        demolishStartAt: null,
+        demolishingType: null,
         transitFeeOverrides: null,
         saleFeeOverrides: null,
         process: null,

@@ -282,6 +282,32 @@ describe('buildAttentionReport', () => {
         expect(elapsed.items[0]?.reason).toBe(AttentionReason.Unbuilt);
     });
 
+    it('names what is coming down on a demolition cooldown item, so a replacement can be planned from the list', () => {
+        const cooling = report([
+            {
+                tokenId: '10',
+                revealCount: 1,
+                building: null,
+                demolishFinishAt: 100,
+                demolishStartAt: 4,
+                demolishingType: 'mine',
+            },
+        ]);
+        expect(cooling.items[0]?.demolishingType).toBe('mine');
+        expect(cooling.items[0]?.arrivalAt).toBe(100);
+    });
+
+    it('keeps the demolition cooldown item when the type was never recorded, leaving it unknown', () => {
+        const cooling = report([{ tokenId: '10', revealCount: 1, building: null, demolishFinishAt: 100 }]);
+        expect(cooling.items[0]?.reason).toBe(AttentionReason.DemolishCooldown);
+        expect(cooling.items[0]?.demolishingType).toBeNull();
+    });
+
+    it('leaves the demolishing type null on every other reason', () => {
+        const unbuilt = report([{ tokenId: '7', revealCount: 1, building: null }]);
+        expect(unbuilt.items[0]?.demolishingType).toBeNull();
+    });
+
     it('does not flag hubs for storage', () => {
         const r = report([
             {
@@ -498,6 +524,7 @@ describe('withExtraItems', () => {
             depositRemaining: null,
             deliveryId: '77',
             arrivalAt: 1,
+            demolishingType: null,
             lotId: null,
             requestId: null,
             requestedAt: null,

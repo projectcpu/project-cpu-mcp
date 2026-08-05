@@ -6,6 +6,7 @@ import { type CellInspection, CellProcessKind, NeighborRelation } from '../../..
 import { makeConfig } from '../../../services/__tests__/service-fakes.js';
 import type { AppConfig, CellOutputView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
+import { formatUnixSeconds } from '../../../utils/format.utils.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerGetCellTool } from '../get-cell/get-cell.js';
 
@@ -53,6 +54,8 @@ const inspection: CellInspection = {
         resources: [{ resourceId: 3, deposit: '100', balance: '0', strength: 3, storage: null }],
         building: { type: BuildingType.Mine, buildFinishAt: null, modeResource: null, modeRecipeId: null },
         demolishFinishAt: null,
+        demolishStartAt: null,
+        demolishingType: null,
         transitFeeOverrides: { 3: '0.5' },
         saleFeeOverrides: { 3: 2.5 },
         process: {
@@ -206,5 +209,51 @@ describe('get_cell tool', () => {
         };
         const header = (await harness(cooling, 100)({ tokenId: '7' })).content[0]?.text ?? '';
         expect(header).toMatch(/demolition cooldown until/i);
+    });
+
+    it('names what is coming down and when it began once the server records them', async () => {
+        const cooling: CellInspection = {
+            ...inspection,
+            cell: {
+                ...inspection.cell,
+                building: null,
+                demolishFinishAt: 500,
+                demolishStartAt: 20,
+                demolishingType: 'mine',
+            },
+        };
+        const header = (await harness(cooling, 100)({ tokenId: '7' })).content[0]?.text ?? '';
+        expect(header).toMatch(/demolishing mine/);
+        expect(header).toMatch(/started /);
+    });
+
+    it('leaves the header exactly as it was when the demolition metadata is unknown', async () => {
+        const withMeta: CellInspection = {
+            ...inspection,
+            cell: { ...inspection.cell, building: null, demolishFinishAt: 500 },
+        };
+        const header = (await harness(withMeta, 100)({ tokenId: '7' })).content[0]?.text ?? '';
+        expect(header).toBe(
+            `Cell 7 · 0 neighbours · demolition cooldown until ${formatUnixSeconds(500)} (no rebuild yet)`,
+        );
+    });
+
+    it('carries both demolition metadata fields into the cell dump', async () => {
+        const cooling: CellInspection = {
+            ...inspection,
+            cell: {
+                ...inspection.cell,
+                building: null,
+                demolishFinishAt: 500,
+                demolishStartAt: 20,
+                demolishingType: 'mine',
+            },
+        };
+        const result = await harness(cooling, 100)({ tokenId: '7' });
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as {
+            cell: { demolishStartAt: number | null; demolishingType: string | null };
+        };
+        expect(parsed.cell.demolishStartAt).toBe(20);
+        expect(parsed.cell.demolishingType).toBe('mine');
     });
 });
