@@ -4,7 +4,7 @@ MCP server for a blockchain game on EVM (Abstract). Distributed via npm, runs lo
 
 Two wallet modes via `WALLET_MODE` (defaults to `evm`): `evm` (private key in env, SIWE auth — requires `PRIVATE_KEY`) or `agw` (Device Authorization flow). Session state persists to `~/.project-cpu/session.json`.
 
-The target chain is chosen by `NETWORK` (optional, default `ethereum`; one of `ethereum | ethereum_sepolia | base | base_sepolia | robinhood`) — its chainId is routed locally (`src/config/network.utils.ts`) and contract addresses are loaded from the game API `GET /api/v1/config?network=`. Set `RPC_URL` when sending transactions (e.g. `reveal`); it falls back to the chain's public RPC otherwise.
+The target chain is chosen by `NETWORK` (optional, default `robinhood`; one of `ethereum | ethereum_sepolia | base | base_sepolia | robinhood`) — its chainId is routed locally (`src/config/network.utils.ts`) and contract addresses are loaded from the game API `GET /api/v1/config?network=`. Set `RPC_URL` when sending transactions (e.g. `reveal`); it falls back to the chain's public RPC otherwise.
 
 ## Worktrees
 
