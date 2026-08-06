@@ -8,6 +8,7 @@ import {
     enrichFrozenBuyError,
     enrichSaleFeeToleranceError,
     toLotView,
+    toMarketIndex,
     toMarketResourceSummary,
 } from './trade.helpers.js';
 import { TRANSPORT_MAX_FEE_BUFFER_PERCENT } from './transport.constants.js';
@@ -42,6 +43,8 @@ import {
     apiFillViewSchema,
     type ApiLotView,
     apiLotViewSchema,
+    type ApiMarketIndex,
+    apiMarketIndexSchema,
     type ApiMarketResourceSummary,
     apiMarketResourceSummarySchema,
     type FillView,
@@ -49,6 +52,7 @@ import {
     LotAvailability,
     type LotState,
     type LotView,
+    type MarketIndex,
     type MarketResourceSummary,
 } from '../api/types.js';
 import { TRADE_ABI } from '../contracts/trade.abi.js';
@@ -439,6 +443,17 @@ export class TradeService {
         }
         z.array(apiFillViewSchema).parse(response.data);
         return response.data.map(toFillView);
+    }
+
+    async getMarketIndex(): Promise<MarketIndex> {
+        const response = await this.api.request<ApiMarketIndex>('/api/v1/trade/index');
+        if (response.status !== HttpStatus.Ok) {
+            throw new Error(
+                `Failed to load the market index (HTTP ${response.status}): ${describeApiError(response.data)}`,
+            );
+        }
+        apiMarketIndexSchema.parse(response.data);
+        return toMarketIndex(response.data);
     }
 
     /** Public single-lot read. */

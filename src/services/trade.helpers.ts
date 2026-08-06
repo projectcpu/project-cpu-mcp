@@ -1,6 +1,13 @@
 import { type Abi } from 'viem';
 
-import type { ApiLotView, ApiMarketResourceSummary, LotView, MarketResourceSummary } from '../api/types.js';
+import type {
+    ApiLotView,
+    ApiMarketIndex,
+    ApiMarketResourceSummary,
+    LotView,
+    MarketIndex,
+    MarketResourceSummary,
+} from '../api/types.js';
 import { TRADE_ABI } from '../contracts/trade.abi.js';
 import { TRANSPORT_ABI } from '../contracts/transport.abi.js';
 import { bpToPercent } from '../utils/format.utils.js';
@@ -32,6 +39,13 @@ export function toLotView(lot: ApiLotView): LotView {
         distanceFromAnchor: lot.distanceFromAnchor,
         createdAt: lot.createdAt,
         updated: lot.updated,
+    };
+}
+
+export function toMarketIndex(index: ApiMarketIndex): MarketIndex {
+    return {
+        computedAt: index.computedAt,
+        resources: index.resources.map((row) => ({ ...row })),
     };
 }
 

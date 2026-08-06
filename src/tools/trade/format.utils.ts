@@ -1,5 +1,5 @@
 import type { EnrichedMarketSummary } from './types.js';
-import type { FillView, LotView } from '../../api/types.js';
+import type { FillView, LotView, MarketIndex, MarketIndexRow } from '../../api/types.js';
 import type {
     BuyLotResult,
     CancelLotResult,
@@ -101,6 +101,29 @@ export function summarizeFills(fills: Array<FillView>, resources: ResourceNames)
             );
         })
         .join('\n');
+}
+
+export function summarizeMarketIndex(index: MarketIndex, resources: ResourceNames): string {
+    const asOf = formatUnixSeconds(index.computedAt);
+    const header =
+        `World price index as of ${asOf} — a server-cached aggregate that can run up to an hour behind. A ` +
+        'resource with no trades in the 24h window prints as "no trades", never as a price of 0. Volume is ' +
+        'resource UNITS traded, not $CPU.';
+    if (index.resources.length === 0) {
+        return `${header}\nNo resources in the index.`;
+    }
+    const rows = index.resources.map((row) => summarizeMarketIndexRow(row, resources)).join('\n');
+    return `${header}\n${rows}`;
+}
+
+function summarizeMarketIndexRow(row: MarketIndexRow, resources: ResourceNames): string {
+    const label = resourceLabel(resources, row.resourceId);
+    if (row.priceCpu === null) {
+        return `${label}: no trades in the last 24h`;
+    }
+    const change = row.changePct === null ? 'change n/a' : `${row.changePct > 0 ? '+' : ''}${row.changePct}% 24h`;
+    const volume = row.volume === null ? 'volume n/a' : `${row.volume} units traded 24h`;
+    return `${label}: ${row.priceCpu} $CPU/u, ${change}, ${volume}`;
 }
 
 export function summarizeLots(lots: Array<LotView>, resources: ResourceNames): string {

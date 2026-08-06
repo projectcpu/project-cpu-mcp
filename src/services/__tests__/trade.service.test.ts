@@ -14,6 +14,7 @@ import type { ApiClient } from '../../api/client.js';
 import {
     type ApiFillView,
     type ApiLotView,
+    type ApiMarketIndexRow,
     type ApiMarketResourceSummary,
     LotAvailability,
     LotState,
@@ -148,6 +149,17 @@ function fillRow(over: Partial<ApiFillView> = {}): ApiFillView {
 }
 
 const FILLS_QUERY = { resourceId: null, hubTokenId: null, before: null, limit: null };
+
+function marketIndexRow(over: Partial<ApiMarketIndexRow> = {}): ApiMarketIndexRow {
+    return {
+        resourceId: 3,
+        priceCpu: '0.5',
+        changePct: 3.2,
+        volume: '120',
+        spark: ['0.4', '0.5'],
+        ...over,
+    };
+}
 
 function tradeLog(topics: unknown, data: unknown): Log {
     return {
@@ -1257,5 +1269,182 @@ describe('TradeService.listFills', () => {
         const h = makeTrade({ response: { status: 200, data: [noSale] } });
 
         await expect(h.service.listFills({ ...FILLS_QUERY })).rejects.toThrow();
+    });
+});
+
+describe('TradeService.getMarketIndex', () => {
+    it('reads the public index endpoint and parses the response', async () => {
+        const h = makeTrade({
+            response: { status: 200, data: { computedAt: 1700000000, resources: [marketIndexRow()] } },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(h.api.calls[0]?.path).toBe('/api/v1/trade/index');
+        expect(h.api.calls[0]?.authenticated).toBe(false);
+        expect(result.computedAt).toBe(1700000000);
+        expect(result.resources).toHaveLength(1);
+        expect(result.resources[0]?.resourceId).toBe(3);
+    });
+
+    it('carries a fractional $CPU VWAP through unchanged', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: { computedAt: 1700000000, resources: [marketIndexRow({ priceCpu: '0.123456789012345678' })] },
+            },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources[0]?.priceCpu).toBe('0.123456789012345678');
+    });
+
+    it('does not shrink a whole-number VWAP by 1e18', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: { computedAt: 1700000000, resources: [marketIndexRow({ priceCpu: '12' })] },
+            },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources[0]?.priceCpu).toBe('12');
+    });
+
+    it('leaves the 24h volume as the exact string the server sent — units are never rescaled by 1e18', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: {
+                    computedAt: 1700000000,
+                    resources: [marketIndexRow({ volume: '400000000000000000000' })],
+                },
+            },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources[0]?.volume).toBe('400000000000000000000');
+    });
+
+    it('carries a fractional 24h volume through unchanged', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: { computedAt: 1700000000, resources: [marketIndexRow({ volume: '0.000000000000000123' })] },
+            },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources[0]?.volume).toBe('0.000000000000000123');
+    });
+
+    it('maps every row field straight off the wire, row for row', async () => {
+        const rows = [
+            marketIndexRow({ resourceId: 11, priceCpu: '0.5', changePct: 3.2, volume: '120', spark: ['0.4', '0.5'] }),
+            marketIndexRow({ resourceId: 42, priceCpu: '7', changePct: -8.5, volume: '900', spark: [null, '1.25'] }),
+            marketIndexRow({ resourceId: 7, priceCpu: null, changePct: null, volume: null, spark: [null] }),
+        ];
+        const h = makeTrade({ response: { status: 200, data: { computedAt: 1700000000, resources: rows } } });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result).toEqual({ computedAt: 1700000000, resources: rows });
+    });
+
+    it('a row with no trades survives mapping with every stat null, not zero', async () => {
+        const noTrades = marketIndexRow({ priceCpu: null, changePct: null, volume: null, spark: [null, null, null] });
+        const h = makeTrade({
+            response: { status: 200, data: { computedAt: 1700000000, resources: [noTrades] } },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources[0]?.priceCpu).toBeNull();
+        expect(result.resources[0]?.changePct).toBeNull();
+        expect(result.resources[0]?.volume).toBeNull();
+        expect(result.resources[0]?.spark).toEqual([null, null, null]);
+    });
+
+    it('carries the spark series through to the structured result, whatever its length', async () => {
+        const spark = ['0.1', null, '0.3', '0.4', '0.5', '0.6', '0.7'];
+        const h = makeTrade({
+            response: { status: 200, data: { computedAt: 1700000000, resources: [marketIndexRow({ spark })] } },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources[0]?.spark).toEqual(spark);
+    });
+
+    it('does not pin the resource count — any number of rows parses', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: {
+                    computedAt: 1700000000,
+                    resources: [marketIndexRow({ resourceId: 3 }), marketIndexRow({ resourceId: 5 })],
+                },
+            },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources).toHaveLength(2);
+    });
+
+    it('accepts more resources than the world holds today — a resource added on the server still arrives', async () => {
+        const rows = Array.from({ length: 40 }, (_, i) => marketIndexRow({ resourceId: i + 1 }));
+        const h = makeTrade({ response: { status: 200, data: { computedAt: 1700000000, resources: rows } } });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources).toHaveLength(rows.length);
+        expect(result.resources.map((row) => row.resourceId)).toEqual(rows.map((row) => row.resourceId));
+    });
+
+    it('accepts a spark series longer than a week of hours — a longer window still arrives whole', async () => {
+        const spark = Array.from({ length: 90 }, (_, i) => `0.${i}`);
+        const h = makeTrade({
+            response: { status: 200, data: { computedAt: 1700000000, resources: [marketIndexRow({ spark })] } },
+        });
+
+        const result = await h.service.getMarketIndex();
+
+        expect(result.resources[0]?.spark).toHaveLength(spark.length);
+        expect(result.resources[0]?.spark).toEqual(spark);
+    });
+
+    it('tolerates unknown fields from a future server version', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: {
+                    computedAt: 1700000000,
+                    resources: [{ ...marketIndexRow(), futureRowField: 'x' }],
+                    futureTopField: 1,
+                },
+            },
+        });
+
+        await expect(h.service.getMarketIndex()).resolves.toBeDefined();
+    });
+
+    it('rejects an index response missing a required field — wire drift is not silently absorbed', async () => {
+        const { priceCpu: _dropped, ...noPriceCpu } = marketIndexRow();
+        const h = makeTrade({
+            response: { status: 200, data: { computedAt: 1700000000, resources: [noPriceCpu] } },
+        });
+
+        await expect(h.service.getMarketIndex()).rejects.toThrow();
+    });
+
+    it('surfaces the server error text on a failed load', async () => {
+        const h = makeTrade({ response: { status: 500, data: { message: 'index rebuild in progress' } } });
+
+        await expect(h.service.getMarketIndex()).rejects.toThrow(/index rebuild in progress/);
     });
 });

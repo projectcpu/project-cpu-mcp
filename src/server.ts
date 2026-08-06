@@ -39,6 +39,7 @@ import { registerGetLotTool } from './tools/trade/get-lot/get-lot.js';
 import { registerListFillsTool } from './tools/trade/list-fills/list-fills.js';
 import { registerListLotsTool } from './tools/trade/list-lots/list-lots.js';
 import { registerListMyLotsTool } from './tools/trade/list-mine/list-my-lots.js';
+import { registerGetMarketIndexTool } from './tools/trade/market-index/market-index.js';
 import { registerGetMarketsTool } from './tools/trade/markets/get-markets.js';
 import { registerQuoteBuyTool } from './tools/trade/quote-buy/quote-buy.js';
 import { registerSetSaleFeeTool } from './tools/trade/set-sale-fee/set-sale-fee.js';
@@ -116,6 +117,9 @@ const SERVER_INSTRUCTIONS = [
     'and `cpu_get_cell`. The hub settles its live rate on every sale; when listing, set the highest rate you accept',
     'with `cpu_create_lot`’s `maxSaleFeePercent` (or omit it to lock in the live rate). If the hub later raises the',
     'rate above your tolerance the lot freezes — buys revert until it drops back — and `cpu_cancel_lot` is fee-free.',
+    'See what buyers actually paid with `cpu_list_fills` (the executed-buy feed, pageable by cursor) and the',
+    'world price picture with `cpu_get_market_index` (24h VWAP, change, and volume per resource, cached up to an',
+    'hour) — neither is `cpu_get_markets`, which is the cheapest ask available right now.',
     'Join a syndicate to earn same-syndicate discounts on trade and transit: browse with `cpu_list_syndicates`,',
     'inspect one with `cpu_get_syndicate`, and check any address’s membership with `cpu_get_syndicate_membership`.',
     '`cpu_join_syndicate` and `cpu_leave_syndicate` manage your own membership (leaving is gated by an exit',
@@ -160,6 +164,7 @@ function registerTools(registrar: ToolRegistrar, context: AppContext): void {
     registerGetLotTool(registrar, context);
     registerListMyLotsTool(registrar, context);
     registerListFillsTool(registrar, context);
+    registerGetMarketIndexTool(registrar, context);
     registerQuoteBuyTool(registrar, context);
     registerCreateLotTool(registrar, context);
     registerBuyLotTool(registrar, context);

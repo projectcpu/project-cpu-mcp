@@ -481,6 +481,49 @@ export const apiFillViewSchema = z
     })
     .passthrough();
 
+export interface ApiMarketIndexRow {
+    resourceId: number;
+    priceCpu: string | null;
+    changePct: number | null;
+    volume: string | null;
+    spark: Array<string | null>;
+}
+
+export interface ApiMarketIndex {
+    computedAt: number;
+    resources: Array<ApiMarketIndexRow>;
+}
+
+export interface MarketIndexRow {
+    resourceId: number;
+    priceCpu: string | null;
+    changePct: number | null;
+    volume: string | null;
+    spark: Array<string | null>;
+}
+
+export interface MarketIndex {
+    computedAt: number;
+    resources: Array<MarketIndexRow>;
+}
+
+export const apiMarketIndexRowSchema = z
+    .object({
+        resourceId: z.number().int(),
+        priceCpu: z.string().nullable(),
+        changePct: z.number().nullable(),
+        volume: z.string().nullable(),
+        spark: z.array(z.string().nullable()),
+    })
+    .passthrough();
+
+export const apiMarketIndexSchema = z
+    .object({
+        computedAt: z.number().int(),
+        resources: z.array(apiMarketIndexRowSchema),
+    })
+    .passthrough();
+
 // ---- Syndicate registry ----
 
 export enum SyndicateSort {
