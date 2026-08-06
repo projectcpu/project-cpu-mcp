@@ -423,6 +423,27 @@ describe('discovery read tools', () => {
         expect(result.content[0]?.text).toMatch(/FROZEN/);
     });
 
+    it('list_lots prints the exact price string the service returned, unrounded', async () => {
+        const oddPricedLot: LotView = { ...lot, id: 'lot-odd', pricePerUnit: '0.123456789012345678' };
+        const handler = capture(registerListLotsTool, { trade: { listLots: async () => [oddPricedLot] } });
+        const result = await handler({} as never);
+        expect(result.content[0]?.text.includes('0.123456789012345678')).toBe(true);
+        const json = JSON.parse(result.content[1]?.text ?? '[]') as Array<LotView>;
+        expect(json[0]?.pricePerUnit).toBe('0.123456789012345678');
+    });
+
+    it('get_markets prints the exact minPrice string the service returned, unrounded', async () => {
+        const oddPricedMarket: MarketResourceSummary = { ...market, minPricePerUnit: '0.123456789012345678' };
+        const handler = capture(registerGetMarketsTool, {
+            trade: { getMarkets: async () => [oddPricedMarket] },
+            mapReader: { readRevealCell: async () => null },
+        });
+        const result = await handler({} as never);
+        expect(result.content[0]?.text.includes('0.123456789012345678')).toBe(true);
+        const json = JSON.parse(result.content[1]?.text ?? '[]') as Array<{ minPricePerUnit: string | null }>;
+        expect(json[0]?.minPricePerUnit).toBe('0.123456789012345678');
+    });
+
     it('get_markets surfaces the frozen aggregate when the server serves it', async () => {
         const frozenMarket: MarketResourceSummary = { ...market, frozenLots: 1, frozenRemaining: '40' };
         const handler = capture(registerGetMarketsTool, {

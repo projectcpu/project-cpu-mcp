@@ -77,7 +77,7 @@ function lotView(over: Partial<ApiLotView> = {}): ApiLotView {
         resourceId: 3,
         listed: '100',
         remaining: '100',
-        pricePerUnit: parseEther('0.5').toString(),
+        pricePerUnit: '0.5',
         saleFeeBp: 250,
         maxSaleFeeBp: 5000,
         state: LotState.Open,
@@ -94,7 +94,7 @@ function marketRow(over: Partial<ApiMarketResourceSummary> = {}): ApiMarketResou
         resourceId: 3,
         openLots: 2,
         openRemaining: '100',
-        minPricePerUnit: parseEther('0.5').toString(),
+        minPricePerUnit: '0.5',
         incomingLots: 0,
         incomingRemaining: '0',
         frozenLots: null,
@@ -574,7 +574,7 @@ describe('TradeService.buyLot', () => {
         const h = makeTrade({
             response: {
                 status: 200,
-                data: lotView({ id: '7', pricePerUnit: parseEther('0.5').toString(), remaining: '100' }),
+                data: lotView({ id: '7', pricePerUnit: '0.5', remaining: '100' }),
             },
             quote: { totalFee: 1_000n, discount: 0n, totalDistance: 4n, arrivalAt: 1704n },
             approve: APPROVE_HASH,
@@ -648,7 +648,7 @@ describe('TradeService.buyLot', () => {
         const h = makeTrade({
             response: {
                 status: 200,
-                data: lotView({ id: '7', pricePerUnit: parseEther('0.5').toString(), remaining: '100' }),
+                data: lotView({ id: '7', pricePerUnit: '0.5', remaining: '100' }),
             },
             quote: { totalFee: 0n, discount: 0n, totalDistance: 2n, arrivalAt: 1704n },
             approve: APPROVE_HASH,
@@ -705,11 +705,21 @@ describe('TradeService.buyLot', () => {
 });
 
 describe('TradeService.cancelLot', () => {
-    it('reads the lot remaining, routes it home, and decodes the cancel', async () => {
+    it('reads the lot remaining, routes it home, and decodes the cancel, scaling the contract-sourced fees', async () => {
         const h = makeTrade({
             response: { status: 200, data: lotView({ id: '7', remaining: '100' }) },
-            quote: { totalFee: 0n, discount: 0n, totalDistance: 2n, arrivalAt: 1704n },
-            confirmLogs: [cancelledLog({ lotId: 7n, returned: 100n }), scheduledLog(123n, 1704n)],
+            quote: { totalFee: parseEther('0.3'), discount: 0n, totalDistance: 2n, arrivalAt: 1704n },
+            confirmLogs: [
+                cancelledLog({ lotId: 7n, returned: 100n }),
+                transitSettledLog({
+                    deliveryId: 123n,
+                    owner: WALLET_ADDRESS,
+                    gross: parseEther('0.3'),
+                    discount: parseEther('0.05'),
+                }),
+                scheduledLog(123n, 1704n),
+            ],
+            approve: APPROVE_HASH,
         });
 
         const result = await h.service.cancelLot({
@@ -717,15 +727,15 @@ describe('TradeService.cancelLot', () => {
             chain: [20, 72],
         });
 
-        expect(h.allowance.calls).toHaveLength(0);
-        expect(h.tradeClient.cancels[0]).toMatchObject({ trade: TRADE, lotId: 7n, maxFee: 0n });
+        expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: TRANSPORT, needed: parseEther('0.33') }]);
+        expect(h.tradeClient.cancels[0]).toMatchObject({ trade: TRADE, lotId: 7n, maxFee: parseEther('0.33') });
         expect(h.transportClient.quotes[0]?.amount).toBe(100n);
         expect(result.returned).toBe('100');
-        expect(result.fee).toBe('0');
-        expect(result.transitPaid).toBe('0');
-        expect(result.transitDiscount).toBe('0');
+        expect(result.fee).toBe('0.3');
+        expect(result.transitPaid).toBe('0.25');
+        expect(result.transitDiscount).toBe('0.05');
         expect(result.deliveryId).toBe('123');
-        expect(result.approveTxHash).toBeNull();
+        expect(result.approveTxHash).toBe(APPROVE_HASH);
         expect(result.txHash).toBe(CANCEL_HASH);
     });
 });
@@ -794,6 +804,17 @@ describe('TradeService.quoteBuy', () => {
         expect(result.arrivalAt).toBeNull();
         expect(result.sale).toBe('5');
         expect(result.total).toBe('5');
+    });
+
+    it('carries the lot fractional $CPU price through into the quote unchanged', async () => {
+        const h = makeTrade({
+            response: { status: 200, data: lotView({ id: '7', pricePerUnit: '0.4', remaining: '100' }) },
+            saleQuote: fakeSaleQuote({ sale: parseEther('5'), buyerTotal: parseEther('5'), feeBp: 250 }),
+        });
+
+        const result = await h.service.quoteBuy({ lotId: '7', value: '10', chain: null });
+
+        expect(result.pricePerUnit).toBe('0.4');
     });
 
     it('surfaces a zero split and the buyer-total intact', async () => {
@@ -961,6 +982,65 @@ describe('TradeService reads', () => {
 
         expect(rows[0]?.frozenLots).toBeNull();
         expect(rows[0]?.frozenRemaining).toBeNull();
+    });
+});
+
+describe('TradeService money passthrough (API already sends $CPU decimal, not wei)', () => {
+    it('listLots carries a fractional $CPU price through unchanged', async () => {
+        const h = makeTrade({ response: { status: 200, data: [lotView({ pricePerUnit: '0.4' })] } });
+
+        const result = await h.service.listLots({ ...LIST_QUERY });
+
+        expect(result[0]?.pricePerUnit).toBe('0.4');
+    });
+
+    it('getLot carries a fractional $CPU price through unchanged', async () => {
+        const h = makeTrade({ response: { status: 200, data: lotView({ pricePerUnit: '0.4' }) } });
+
+        const lot = await h.service.getLot('7');
+
+        expect(lot.pricePerUnit).toBe('0.4');
+    });
+
+    it('listMyLots carries a fractional $CPU price through unchanged', async () => {
+        const h = makeTrade({ response: { status: 200, data: [lotView({ pricePerUnit: '0.4' })] } });
+
+        const result = await h.service.listMyLots(null);
+
+        expect(result[0]?.pricePerUnit).toBe('0.4');
+    });
+
+    it('getMarkets carries a fractional $CPU minPrice through unchanged', async () => {
+        const h = makeTrade({ response: { status: 200, data: [marketRow({ minPricePerUnit: '0.4' })] } });
+
+        const rows = await h.service.getMarkets({ ...MARKETS_QUERY });
+
+        expect(rows[0]?.minPricePerUnit).toBe('0.4');
+    });
+
+    it('does not shrink a whole-number $CPU price by 1e18', async () => {
+        const h = makeTrade({ response: { status: 200, data: [lotView({ pricePerUnit: '12' })] } });
+
+        const result = await h.service.listLots({ ...LIST_QUERY });
+
+        expect(result[0]?.pricePerUnit).toBe('12');
+    });
+
+    it('does not shrink a whole-number $CPU minPrice by 1e18', async () => {
+        const h = makeTrade({ response: { status: 200, data: [marketRow({ minPricePerUnit: '12' })] } });
+
+        const rows = await h.service.getMarkets({ ...MARKETS_QUERY });
+
+        expect(rows[0]?.minPricePerUnit).toBe('12');
+    });
+
+    it('passes minPrice/maxPrice through to the request query exactly as given', async () => {
+        const h = makeTrade({ response: { status: 200, data: [lotView()] } });
+
+        await h.service.listLots({ ...LIST_QUERY, minPrice: '0.05', maxPrice: '12.5' });
+
+        expect(h.api.calls[0]?.path).toContain('minPrice=0.05');
+        expect(h.api.calls[0]?.path).toContain('maxPrice=12.5');
     });
 });
 

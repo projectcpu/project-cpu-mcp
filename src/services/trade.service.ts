@@ -6,8 +6,8 @@ import {
     enrichBuyQuoteRevert,
     enrichFrozenBuyError,
     enrichSaleFeeToleranceError,
-    withDecimalMinPrice,
-    withDecimalPrice,
+    toLotView,
+    toMarketResourceSummary,
 } from './trade.helpers.js';
 import { TRANSPORT_MAX_FEE_BUFFER_PERCENT } from './transport.constants.js';
 import {
@@ -393,7 +393,7 @@ export class TradeService {
             throw new Error(`Failed to load markets (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         z.array(apiMarketResourceSummarySchema).parse(response.data);
-        return response.data.map(withDecimalMinPrice);
+        return response.data.map(toMarketResourceSummary);
     }
 
     /** Paginated lot browse with filter / sort / zone. */
@@ -416,7 +416,7 @@ export class TradeService {
             throw new Error(`Failed to list lots (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         z.array(apiLotViewSchema).parse(response.data);
-        const lots = response.data.map(withDecimalPrice);
+        const lots = response.data.map(toLotView);
         const hidesFrozen = query.availability === null || query.availability === LotAvailability.Open;
         return hidesFrozen ? lots.filter((lot) => !lot.frozen) : lots;
     }
@@ -428,7 +428,7 @@ export class TradeService {
             throw new Error(`Failed to get lot ${lotId} (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         apiLotViewSchema.parse(response.data);
-        return withDecimalPrice(response.data);
+        return toLotView(response.data);
     }
 
     /** The caller's lots across all lifecycle states (optionally filtered). */
@@ -439,7 +439,7 @@ export class TradeService {
             throw new Error(`Failed to list your lots (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         z.array(apiLotViewSchema).parse(response.data);
-        return response.data.map(withDecimalPrice);
+        return response.data.map(toLotView);
     }
 
     // ---- Internal ----

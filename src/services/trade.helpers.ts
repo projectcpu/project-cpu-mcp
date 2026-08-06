@@ -3,7 +3,7 @@ import { type Abi } from 'viem';
 import type { ApiLotView, ApiMarketResourceSummary, LotView, MarketResourceSummary } from '../api/types.js';
 import { TRADE_ABI } from '../contracts/trade.abi.js';
 import { TRANSPORT_ABI } from '../contracts/transport.abi.js';
-import { bpToPercent, cpuFromWei } from '../utils/format.utils.js';
+import { bpToPercent } from '../utils/format.utils.js';
 import { describeRevert } from '../wallet/revert.utils.js';
 
 const QUOTE_ERROR_ABI = [...TRADE_ABI, ...TRANSPORT_ABI] as unknown as Abi;
@@ -16,7 +16,7 @@ export function namedQuoteRevert(error: unknown): unknown {
     return new Error(`Quote reverted: ${revert}`, { cause: error });
 }
 
-export function withDecimalPrice(lot: ApiLotView): LotView {
+export function toLotView(lot: ApiLotView): LotView {
     return {
         id: lot.id,
         hubTokenId: lot.hubTokenId,
@@ -24,7 +24,7 @@ export function withDecimalPrice(lot: ApiLotView): LotView {
         resourceId: lot.resourceId,
         listed: lot.listed,
         remaining: lot.remaining,
-        pricePerUnit: cpuFromWei(lot.pricePerUnit),
+        pricePerUnit: lot.pricePerUnit,
         saleFeePercent: bpToPercent(lot.saleFeeBp),
         maxSaleFeePercent: bpToPercent(lot.maxSaleFeeBp),
         frozen: lot.saleFeeBp > lot.maxSaleFeeBp,
@@ -35,13 +35,13 @@ export function withDecimalPrice(lot: ApiLotView): LotView {
     };
 }
 
-export function withDecimalMinPrice(row: ApiMarketResourceSummary): MarketResourceSummary {
+export function toMarketResourceSummary(row: ApiMarketResourceSummary): MarketResourceSummary {
     return {
         hubTokenId: row.hubTokenId,
         resourceId: row.resourceId,
         openLots: row.openLots,
         openRemaining: row.openRemaining,
-        minPricePerUnit: row.minPricePerUnit === null ? null : cpuFromWei(row.minPricePerUnit),
+        minPricePerUnit: row.minPricePerUnit,
         incomingLots: row.incomingLots,
         incomingRemaining: row.incomingRemaining,
         frozenLots: row.frozenLots ?? null,
