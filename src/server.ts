@@ -36,6 +36,7 @@ import { registerBuyLotTool } from './tools/trade/buy-lot/buy-lot.js';
 import { registerCancelLotTool } from './tools/trade/cancel-lot/cancel-lot.js';
 import { registerCreateLotTool } from './tools/trade/create-lot/create-lot.js';
 import { registerGetLotTool } from './tools/trade/get-lot/get-lot.js';
+import { registerListFillsTool } from './tools/trade/list-fills/list-fills.js';
 import { registerListLotsTool } from './tools/trade/list-lots/list-lots.js';
 import { registerListMyLotsTool } from './tools/trade/list-mine/list-my-lots.js';
 import { registerGetMarketsTool } from './tools/trade/markets/get-markets.js';
@@ -158,6 +159,7 @@ function registerTools(registrar: ToolRegistrar, context: AppContext): void {
     registerListLotsTool(registrar, context);
     registerGetLotTool(registrar, context);
     registerListMyLotsTool(registrar, context);
+    registerListFillsTool(registrar, context);
     registerQuoteBuyTool(registrar, context);
     registerCreateLotTool(registrar, context);
     registerBuyLotTool(registrar, context);

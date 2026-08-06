@@ -1,5 +1,5 @@
 import type { EnrichedMarketSummary } from './types.js';
-import type { LotView } from '../../api/types.js';
+import type { FillView, LotView } from '../../api/types.js';
 import type {
     BuyLotResult,
     CancelLotResult,
@@ -81,6 +81,23 @@ export function summarizeMarkets(markets: Array<EnrichedMarketSummary>, resource
             return (
                 `Hub ${m.hubTokenId} · ${resourceLabel(resources, m.resourceId)}: ` +
                 `${m.openLots} open (${m.openRemaining} units) ${price}${fee}${incoming}${frozen}${where}`
+            );
+        })
+        .join('\n');
+}
+
+export function summarizeFills(fills: Array<FillView>, resources: ResourceNames): string {
+    if (fills.length === 0) {
+        return 'No fills on this page.';
+    }
+    return fills
+        .map((fill) => {
+            const soldOut = fill.soldOut ? ' · SOLD OUT' : '';
+            return (
+                `fill ${fill.blockNumber}:${fill.logIndex} · ${resourceLabel(resources, fill.resourceId)} · ` +
+                `${fill.value} units @ ${fill.pricePerUnit} $CPU/u = ${fill.sale} $CPU (hub fee ${fill.hubFee}, ` +
+                `burned ${fill.burn}) · ${fill.remaining} left on lot ${fill.lotId}${soldOut} · buyer ${fill.buyer} ` +
+                `from seller ${fill.seller} · Hub ${fill.hubTokenId} · ${formatUnixSeconds(fill.settledAt)}`
             );
         })
         .join('\n');

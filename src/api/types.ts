@@ -380,6 +380,28 @@ export interface LotView {
     updated: number;
 }
 
+export interface ApiFillView {
+    lotId: string;
+    blockNumber: number;
+    logIndex: number;
+    transactionHash: string;
+    hubTokenId: string;
+    resourceId: number;
+    seller: string;
+    buyer: string;
+    value: string;
+    remaining: string;
+    sale: string;
+    hubFee: string;
+    burn: string;
+    pricePerUnit: string;
+    settledAt: number;
+}
+
+export interface FillView extends ApiFillView {
+    soldOut: boolean;
+}
+
 export interface ApiMarketResourceSummary {
     hubTokenId: string;
     resourceId: number;
@@ -436,6 +458,26 @@ export const apiMarketResourceSummarySchema = z
         frozenLots: z.number().nullable().optional(),
         frozenRemaining: z.string().nullable().optional(),
         distanceFromAnchor: z.number().nullable(),
+    })
+    .passthrough();
+
+export const apiFillViewSchema = z
+    .object({
+        lotId: z.string(),
+        blockNumber: z.number().int(),
+        logIndex: z.number().int(),
+        transactionHash: z.string(),
+        hubTokenId: z.string(),
+        resourceId: z.number().int(),
+        seller: z.string(),
+        buyer: z.string(),
+        value: z.string(),
+        remaining: z.string(),
+        sale: z.string(),
+        hubFee: z.string(),
+        burn: z.string(),
+        pricePerUnit: z.string(),
+        settledAt: z.number().int(),
     })
     .passthrough();
 

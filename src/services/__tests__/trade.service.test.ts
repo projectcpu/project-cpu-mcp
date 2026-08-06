@@ -11,7 +11,13 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import type { ApiClient } from '../../api/client.js';
-import { type ApiLotView, type ApiMarketResourceSummary, LotAvailability, LotState } from '../../api/types.js';
+import {
+    type ApiFillView,
+    type ApiLotView,
+    type ApiMarketResourceSummary,
+    LotAvailability,
+    LotState,
+} from '../../api/types.js';
 import { TRADE_ABI } from '../../contracts/trade.abi.js';
 import { TRANSPORT_ABI } from '../../contracts/transport.abi.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
@@ -119,6 +125,29 @@ const LIST_QUERY = {
 };
 
 const MARKETS_QUERY = { hub: null, resourceId: null, aroundTokenId: null, radius: null };
+
+function fillRow(over: Partial<ApiFillView> = {}): ApiFillView {
+    return {
+        lotId: '7',
+        blockNumber: 1200,
+        logIndex: 4,
+        transactionHash: '0xfill',
+        hubTokenId: '20',
+        resourceId: 3,
+        seller: '0xseller',
+        buyer: '0xbuyer',
+        value: '10',
+        remaining: '90',
+        sale: '5',
+        hubFee: '0.125',
+        burn: '0.05',
+        pricePerUnit: '0.5',
+        settledAt: 1700,
+        ...over,
+    };
+}
+
+const FILLS_QUERY = { resourceId: null, hubTokenId: null, before: null, limit: null };
 
 function tradeLog(topics: unknown, data: unknown): Log {
     return {
@@ -1078,5 +1107,155 @@ describe('TradeService.listLots availability', () => {
         const result = await h.service.listLots({ ...LIST_QUERY, availability: LotAvailability.All });
 
         expect(result.map((l) => l.id)).toEqual(['o', 'f']);
+    });
+});
+
+describe('TradeService.listFills', () => {
+    it('reads the public fills feed and maps a page', async () => {
+        const h = makeTrade({ response: { status: 200, data: [fillRow()] } });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(h.api.calls[0]?.path.startsWith('/api/v1/trade/fills')).toBe(true);
+        expect(h.api.calls[0]?.authenticated).toBe(false);
+        expect(result).toHaveLength(1);
+        expect(result[0]?.lotId).toBe('7');
+        expect(result[0]?.blockNumber).toBe(1200);
+        expect(result[0]?.logIndex).toBe(4);
+    });
+
+    it('returns the row exactly as it arrived, adding nothing but soldOut', async () => {
+        const row = fillRow();
+        const h = makeTrade({ response: { status: 200, data: [row] } });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(result[0]).toEqual({ ...row, soldOut: false });
+    });
+
+    it('puts the resource, hub and page size filters into the query string', async () => {
+        const h = makeTrade({ response: { status: 200, data: [] } });
+
+        await h.service.listFills({ ...FILLS_QUERY, resourceId: 3, hubTokenId: 20, limit: 25 });
+
+        expect(h.api.calls[0]?.path).toContain('resourceId=3');
+        expect(h.api.calls[0]?.path).toContain('hubTokenId=20');
+        expect(h.api.calls[0]?.path).toContain('limit=25');
+    });
+
+    it('sends an out-of-range page size to the server untouched — no local clamp', async () => {
+        const h = makeTrade({ response: { status: 200, data: [] } });
+
+        await h.service.listFills({ ...FILLS_QUERY, limit: 500 });
+
+        expect(h.api.calls[0]?.path).toContain('limit=500');
+    });
+
+    it('sends the cursor as the block:logIndex pair the server issued', async () => {
+        const h = makeTrade({ response: { status: 200, data: [] } });
+
+        await h.service.listFills({ ...FILLS_QUERY, before: '1200:4' });
+
+        expect(h.api.calls[0]?.path).toContain(`before=${encodeURIComponent('1200:4')}`);
+    });
+
+    it('omits filters that were not asked for', async () => {
+        const h = makeTrade({ response: { status: 200, data: [] } });
+
+        await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(h.api.calls[0]?.path).toBe('/api/v1/trade/fills');
+    });
+
+    it('carries fractional $CPU money through as the exact strings the server sent', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: [fillRow({ sale: '0.4', hubFee: '0.01', burn: '0.002', pricePerUnit: '0.04' })],
+            },
+        });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(result[0]?.sale).toBe('0.4');
+        expect(result[0]?.hubFee).toBe('0.01');
+        expect(result[0]?.burn).toBe('0.002');
+        expect(result[0]?.pricePerUnit).toBe('0.04');
+    });
+
+    it('does not shrink whole-number $CPU money by 1e18', async () => {
+        const h = makeTrade({
+            response: { status: 200, data: [fillRow({ sale: '12', hubFee: '1', burn: '2', pricePerUnit: '3' })] },
+        });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(result[0]?.sale).toBe('12');
+        expect(result[0]?.hubFee).toBe('1');
+        expect(result[0]?.burn).toBe('2');
+        expect(result[0]?.pricePerUnit).toBe('3');
+    });
+
+    it('leaves the unit counts as the server sent them', async () => {
+        const h = makeTrade({ response: { status: 200, data: [fillRow({ value: '25', remaining: '7' })] } });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(result[0]?.value).toBe('25');
+        expect(result[0]?.remaining).toBe('7');
+    });
+
+    it('marks a fill that emptied the lot as sold out', async () => {
+        const h = makeTrade({ response: { status: 200, data: [fillRow({ remaining: '0' })] } });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(result[0]?.soldOut).toBe(true);
+    });
+
+    it('does not mark a partial fill as sold out', async () => {
+        const h = makeTrade({ response: { status: 200, data: [fillRow({ remaining: '90' })] } });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(result[0]?.soldOut).toBe(false);
+    });
+
+    it('keeps the server order — newest first, no re-sorting', async () => {
+        const h = makeTrade({
+            response: {
+                status: 200,
+                data: [
+                    fillRow({ blockNumber: 1200, logIndex: 4 }),
+                    fillRow({ blockNumber: 1199, logIndex: 9 }),
+                    fillRow({ blockNumber: 1100, logIndex: 0 }),
+                ],
+            },
+        });
+
+        const result = await h.service.listFills({ ...FILLS_QUERY });
+
+        expect(result.map((f) => `${f.blockNumber}:${f.logIndex}`)).toEqual(['1200:4', '1199:9', '1100:0']);
+    });
+
+    it('treats an empty page as an empty result, not an error', async () => {
+        const h = makeTrade({ response: { status: 200, data: [] } });
+
+        await expect(h.service.listFills({ ...FILLS_QUERY })).resolves.toEqual([]);
+    });
+
+    it('surfaces the server error text when the page is rejected', async () => {
+        const h = makeTrade({ response: { status: 400, data: { message: 'must be a page size no larger than 200' } } });
+
+        await expect(h.service.listFills({ ...FILLS_QUERY, limit: 500 })).rejects.toThrow(
+            /must be a page size no larger than 200/,
+        );
+    });
+
+    it('rejects a fill response missing a money field — wire drift is not silently absorbed', async () => {
+        const { sale: _dropped, ...noSale } = fillRow();
+        const h = makeTrade({ response: { status: 200, data: [noSale] } });
+
+        await expect(h.service.listFills({ ...FILLS_QUERY })).rejects.toThrow();
     });
 });

@@ -2,6 +2,7 @@ import { isAddress, parseEther, parseEventLogs, type Address, type Hash } from '
 import { z } from 'zod';
 
 import { decodeDeliveryScheduled, settleTransitFees } from './delivery.helpers.js';
+import { toFillView } from './trade-fill.helpers.js';
 import {
     enrichBuyQuoteRevert,
     enrichFrozenBuyError,
@@ -23,6 +24,7 @@ import {
     type IAppConfig,
     type ITradeClient,
     type ITransportClient,
+    type ListFillsQuery,
     type ListLotsQuery,
     type MarketsQuery,
     type QuoteBuyInput,
@@ -36,10 +38,13 @@ import {
 import type { ApiClient } from '../api/client.js';
 import { describeApiError } from '../api/response.utils.js';
 import {
+    type ApiFillView,
+    apiFillViewSchema,
     type ApiLotView,
     apiLotViewSchema,
     type ApiMarketResourceSummary,
     apiMarketResourceSummarySchema,
+    type FillView,
     HttpStatus,
     LotAvailability,
     type LotState,
@@ -419,6 +424,21 @@ export class TradeService {
         const lots = response.data.map(toLotView);
         const hidesFrozen = query.availability === null || query.availability === LotAvailability.Open;
         return hidesFrozen ? lots.filter((lot) => !lot.frozen) : lots;
+    }
+
+    async listFills(query: ListFillsQuery): Promise<Array<FillView>> {
+        const qs = buildQuery({
+            resourceId: query.resourceId,
+            hubTokenId: query.hubTokenId,
+            before: query.before,
+            limit: query.limit,
+        });
+        const response = await this.api.request<Array<ApiFillView>>(`/api/v1/trade/fills${qs}`);
+        if (response.status !== HttpStatus.Ok) {
+            throw new Error(`Failed to list fills (HTTP ${response.status}): ${describeApiError(response.data)}`);
+        }
+        z.array(apiFillViewSchema).parse(response.data);
+        return response.data.map(toFillView);
     }
 
     /** Public single-lot read. */
