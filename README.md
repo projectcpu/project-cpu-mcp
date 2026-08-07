@@ -137,8 +137,10 @@ Once connected, the server exposes tools grouped by area:
   `cpu_get_transport_status`, `cpu_list_my_transports`, `cpu_finalize_delivery`.
 - **Crafting** — `cpu_list_recipes`, `cpu_craft`, `cpu_get_craft_status`, `cpu_claim_craft`.
 - **Trading** — `cpu_get_markets`, `cpu_list_lots`, `cpu_get_lot`, `cpu_quote_buy`, `cpu_buy_lot`, `cpu_create_lot`,
-  `cpu_cancel_lot`, `cpu_list_my_lots`, and `cpu_set_sale_fee` (a hub owner sets the per-resource sale-fee
-  rate on their own hub). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
+  `cpu_cancel_lot`, `cpu_list_my_lots`, `cpu_set_sale_fee` (a hub owner sets the per-resource sale-fee rate on
+  their own hub), `cpu_list_fills` (the executed-buy feed, pageable by cursor), and `cpu_get_market_index`
+  (world 24h VWAP, change, and volume per resource — a different question from `cpu_get_markets`'s cheapest
+  ask right now). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
 - **Syndicates** — `cpu_list_syndicates` (browse the registry by name/size, sort, page), `cpu_get_syndicate`
   (one syndicate's card plus a page of its members), `cpu_get_syndicate_membership` (check an address's
   membership, defaults to your own), `cpu_join_syndicate` (join by id for same-clan discounts; reports your

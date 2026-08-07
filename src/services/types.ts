@@ -818,6 +818,13 @@ export interface ListLotsQuery {
     radius: number | null;
 }
 
+export interface ListFillsQuery {
+    resourceId: number | null;
+    hubTokenId: number | null;
+    before: string | null;
+    limit: number | null;
+}
+
 /** Filters for `GET /api/v1/trade/markets`. */
 export interface MarketsQuery {
     hub: number | null;

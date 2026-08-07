@@ -2,12 +2,14 @@ import { isAddress, parseEther, parseEventLogs, type Address, type Hash } from '
 import { z } from 'zod';
 
 import { decodeDeliveryScheduled, settleTransitFees } from './delivery.helpers.js';
+import { toFillView } from './trade-fill.helpers.js';
 import {
     enrichBuyQuoteRevert,
     enrichFrozenBuyError,
     enrichSaleFeeToleranceError,
-    withDecimalMinPrice,
-    withDecimalPrice,
+    toLotView,
+    toMarketIndex,
+    toMarketResourceSummary,
 } from './trade.helpers.js';
 import { TRANSPORT_MAX_FEE_BUFFER_PERCENT } from './transport.constants.js';
 import {
@@ -23,6 +25,7 @@ import {
     type IAppConfig,
     type ITradeClient,
     type ITransportClient,
+    type ListFillsQuery,
     type ListLotsQuery,
     type MarketsQuery,
     type QuoteBuyInput,
@@ -36,14 +39,20 @@ import {
 import type { ApiClient } from '../api/client.js';
 import { describeApiError } from '../api/response.utils.js';
 import {
+    type ApiFillView,
+    apiFillViewSchema,
     type ApiLotView,
     apiLotViewSchema,
+    type ApiMarketIndex,
+    apiMarketIndexSchema,
     type ApiMarketResourceSummary,
     apiMarketResourceSummarySchema,
+    type FillView,
     HttpStatus,
     LotAvailability,
     type LotState,
     type LotView,
+    type MarketIndex,
     type MarketResourceSummary,
 } from '../api/types.js';
 import { TRADE_ABI } from '../contracts/trade.abi.js';
@@ -393,7 +402,7 @@ export class TradeService {
             throw new Error(`Failed to load markets (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         z.array(apiMarketResourceSummarySchema).parse(response.data);
-        return response.data.map(withDecimalMinPrice);
+        return response.data.map(toMarketResourceSummary);
     }
 
     /** Paginated lot browse with filter / sort / zone. */
@@ -416,9 +425,35 @@ export class TradeService {
             throw new Error(`Failed to list lots (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         z.array(apiLotViewSchema).parse(response.data);
-        const lots = response.data.map(withDecimalPrice);
+        const lots = response.data.map(toLotView);
         const hidesFrozen = query.availability === null || query.availability === LotAvailability.Open;
         return hidesFrozen ? lots.filter((lot) => !lot.frozen) : lots;
+    }
+
+    async listFills(query: ListFillsQuery): Promise<Array<FillView>> {
+        const qs = buildQuery({
+            resourceId: query.resourceId,
+            hubTokenId: query.hubTokenId,
+            before: query.before,
+            limit: query.limit,
+        });
+        const response = await this.api.request<Array<ApiFillView>>(`/api/v1/trade/fills${qs}`);
+        if (response.status !== HttpStatus.Ok) {
+            throw new Error(`Failed to list fills (HTTP ${response.status}): ${describeApiError(response.data)}`);
+        }
+        z.array(apiFillViewSchema).parse(response.data);
+        return response.data.map(toFillView);
+    }
+
+    async getMarketIndex(): Promise<MarketIndex> {
+        const response = await this.api.request<ApiMarketIndex>('/api/v1/trade/index');
+        if (response.status !== HttpStatus.Ok) {
+            throw new Error(
+                `Failed to load the market index (HTTP ${response.status}): ${describeApiError(response.data)}`,
+            );
+        }
+        apiMarketIndexSchema.parse(response.data);
+        return toMarketIndex(response.data);
     }
 
     /** Public single-lot read. */
@@ -428,7 +463,7 @@ export class TradeService {
             throw new Error(`Failed to get lot ${lotId} (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         apiLotViewSchema.parse(response.data);
-        return withDecimalPrice(response.data);
+        return toLotView(response.data);
     }
 
     /** The caller's lots across all lifecycle states (optionally filtered). */
@@ -439,7 +474,7 @@ export class TradeService {
             throw new Error(`Failed to list your lots (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
         z.array(apiLotViewSchema).parse(response.data);
-        return response.data.map(withDecimalPrice);
+        return response.data.map(toLotView);
     }
 
     // ---- Internal ----
