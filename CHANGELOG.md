@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.7.1...v0.8.0) (2026-08-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* read $CPU prices at the API's scale and add the executed-fill feed
+
+### Features
+
+* read $CPU prices at the API's scale and add the executed-fill feed ([2732574](https://github.com/projectcpu/project-cpu-mcp/commit/27325745b63e0962544baa9f7b134267cfb34fda))
+* surface what is being demolished and when the demolition started ([#2](https://github.com/projectcpu/project-cpu-mcp/issues/2)) ([ea40030](https://github.com/projectcpu/project-cpu-mcp/commit/ea40030dca385fa1a9b315330aa6b7c905417b48))
+
 ## [0.7.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.7.0...v0.7.1) (2026-07-29)
 
 
