@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.8.0...v0.8.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* resolve the Universal Router version each chain actually has deployed ([#5](https://github.com/projectcpu/project-cpu-mcp/issues/5)) ([b2fd54f](https://github.com/projectcpu/project-cpu-mcp/commit/b2fd54fe2999ef2b213d1cb4265f3eecf7e963ba))
+
 ## [0.8.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.7.1...v0.8.0) (2026-08-07)
 
 
