@@ -132,6 +132,21 @@ describe('BuildService', () => {
         expect(result.buildCost).toBe('0');
     });
 
+    it('rejects switching an occupied cell to a different building type — only cpu_upgrade replaces an installed building', async () => {
+        const cell = makeCell({
+            tokenId: '42',
+            owner: WALLET_ADDRESS,
+            building: { type: BuildingType.Mine, buildFinishAt: null, modeResource: null, modeRecipeId: null },
+        });
+        const { service, contracts, allowance } = makeService({ cell });
+
+        await expect(service.build({ tokenId: '42', buildingType: BuildingType.SteelMill })).rejects.toThrow(
+            /already has a mine; demolish it before building a steel_mill/i,
+        );
+        expect(contracts.sent).toHaveLength(0);
+        expect(allowance.calls).toHaveLength(0);
+    });
+
     it('reports no approve tx when the allowance already covered the cost', async () => {
         const { service, allowance } = makeService({ approve: null });
         const result = await service.build(EXTRACTOR);

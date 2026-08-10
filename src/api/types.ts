@@ -164,6 +164,10 @@ export interface BuildingView {
     recipeOpexCpu: Record<string, string> | null;
     /** Immediate predecessor's catalog `type`; `null` for a base building placed directly by `cpu_build`. */
     upgradeFrom: string | null;
+    upgradeTo: Array<string>;
+    family: string | null;
+    level: number | null;
+    branch: string | null;
 }
 
 /** Reveal-cost params — the first reveal of a cell is free; re-revealing a depleted cell costs `reRevealCost`. */

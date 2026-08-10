@@ -25,6 +25,10 @@ const catalogEntry: CatalogBuildingView = {
     effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
     recipeOpexCpu: null,
     upgradeFrom: BuildingType.OilPowerPlant,
+    upgradeTo: [],
+    family: 'oil_power_plant',
+    level: 2,
+    branch: 'a',
 };
 
 function upgradedCraftCell() {
