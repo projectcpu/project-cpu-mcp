@@ -121,6 +121,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
                 recipes: [],
                 effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
                 recipeOpexCpu: null,
+                upgradeFrom: null,
             },
             {
                 type: BuildingType.SteelMill,
@@ -138,6 +139,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
                 recipes: [CraftRecipeId.SmeltSteel],
                 effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
                 recipeOpexCpu: null,
+                upgradeFrom: null,
             },
             {
                 type: BuildingType.WaferFab,
@@ -155,6 +157,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
                 recipes: [CraftRecipeId.SmeltSteel, CraftRecipeId.ForgeWcpu],
                 effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
                 recipeOpexCpu: null,
+                upgradeFrom: null,
             },
             {
                 type: BuildingType.Hub,
@@ -172,6 +175,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
                 recipes: [],
                 effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
                 recipeOpexCpu: null,
+                upgradeFrom: null,
             },
             {
                 type: BuildingType.PumpStation,
@@ -189,6 +193,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
                 recipes: [],
                 effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
                 recipeOpexCpu: null,
+                upgradeFrom: null,
             },
         ],
         reveal: { firstFree: true, reRevealCost: '0' },

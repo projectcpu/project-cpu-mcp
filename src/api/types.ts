@@ -162,6 +162,8 @@ export interface BuildingView {
     recipes: Array<CraftRecipeId>;
     effects: BuildingEffectsView;
     recipeOpexCpu: Record<string, string> | null;
+    /** Immediate predecessor's catalog `type`; `null` for a base building placed directly by `cpu_build`. */
+    upgradeFrom: string | null;
 }
 
 /** Reveal-cost params — the first reveal of a cell is free; re-revealing a depleted cell costs `reRevealCost`. */

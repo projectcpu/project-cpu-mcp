@@ -11,6 +11,8 @@ import type {
     IAllowanceService,
     IAppConfig,
     ICellClient,
+    UpgradeInput,
+    UpgradeResult,
 } from './types.js';
 import { assertWarehouseHas } from './warehouse.utils.js';
 import { BuildingKind } from '../api/types.js';
@@ -131,6 +133,82 @@ export class BuildService {
         const events = parseEventLogs({ abi: CELL_ABI, eventName: 'BuildingDemolished', logs });
         const event = events.find((e) => e.address.toLowerCase() === cell.toLowerCase());
         return event === undefined ? null : Number(event.args.demolishFinishAt);
+    }
+
+    // Upgrade reuses `place()` — the contract places a base building on an empty cell or, on an occupied one,
+    // upgrades along the configured line. Deliberately thin: lineage, readiness, active processes, cooldown,
+    // materials, and capacity stay authoritative on-chain, so this only checks what a stale local projection
+    // cannot get wrong — the cell exists, holds a building, and is owned by the caller.
+    async upgrade(input: UpgradeInput): Promise<UpgradeResult> {
+        const config = await this.appConfig.load();
+        const wallet = this.wallet.get();
+        this.assertChain(config, wallet);
+
+        const cell = this.requireCell(config);
+        const cpuToken = this.requireCpuToken(config);
+        const tokenId = BigInt(input.tokenId);
+        const target = this.resolveUpgradeTarget(config, input.targetBuildingType);
+
+        await this.mapReader.refresh();
+        const state = await this.mapReader.readRevealCell(input.tokenId);
+        const fromBuildingType = this.requireCurrentBuilding(input.tokenId, state, wallet.getAddress());
+
+        const approveTxHash = await this.approveCpuSpend(cpuToken, cell, target.buildCost);
+
+        this.logger.info('upgrading building', {
+            tokenId: input.tokenId,
+            fromBuildingType,
+            toBuildingType: target.type,
+            onChainId: target.onChainId,
+            buildCost: target.buildCost,
+            network: config.network,
+        });
+        const txHash = await this.cellClient.place({ cell, tokenId, buildingType: target.onChainId });
+        const confirmed = await this.contracts.confirm(txHash, 'Upgrade transaction');
+
+        return {
+            tokenId: input.tokenId,
+            fromBuildingType,
+            toBuildingType: target.type,
+            buildCost: target.buildCost,
+            buildInputs: target.buildInputs,
+            upgrading: true,
+            finishAt: this.decodePlacementFinish(confirmed.logs, cell),
+            approveTxHash,
+            txHash: confirmed.txHash,
+            status: confirmed.status,
+            blockNumber: confirmed.blockNumber,
+        };
+    }
+
+    private decodePlacementFinish(logs: Array<Log>, cell: Address): number | null {
+        const events = parseEventLogs({ abi: CELL_ABI, eventName: 'BuildingPlaced', logs });
+        const event = events.find((e) => e.address.toLowerCase() === cell.toLowerCase());
+        return event === undefined ? null : Number(event.args.buildFinishAt);
+    }
+
+    private resolveUpgradeTarget(config: AppConfig, targetBuildingType: string): BuildingView {
+        const view = this.buildingView(config, targetBuildingType);
+        if (view.upgradeFrom === null) {
+            throw new Error(
+                `${targetBuildingType} is a base building with no predecessor; place it with cpu_build, not cpu_upgrade.`,
+            );
+        }
+        return view;
+    }
+
+    private requireCurrentBuilding(tokenId: string, state: Cell | null, address: string): string {
+        this.assertOwner(tokenId, state, address, 'upgrade');
+        if (state === null) {
+            throw new Error(
+                `Cell ${tokenId} was not found on the map (it may not be revealed yet, or not synced — retry ` +
+                    `shortly); nothing to upgrade.`,
+            );
+        }
+        if (state.building === null) {
+            throw new Error(`Cell ${tokenId} has no building to upgrade (it is empty).`);
+        }
+        return state.building.type;
     }
 
     private assertBuildable(input: BuildInput, state: Cell | null, address: string): void {

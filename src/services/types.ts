@@ -397,6 +397,30 @@ export interface BuildPlacement {
     buildCost: string;
 }
 
+export interface UpgradeInput {
+    tokenId: string;
+    /** Exact catalog `type` of the upgrade target, resolved dynamically against the current building catalog. */
+    targetBuildingType: string;
+}
+
+export interface UpgradeResult {
+    tokenId: string;
+    fromBuildingType: string;
+    toBuildingType: string;
+    /** Target's configured $CPU build cost (decimal), charged in full — never an incremental difference. */
+    buildCost: string;
+    /** Target's configured build inputs (integer units); the contract is authoritative on availability. */
+    buildInputs: Array<CraftStackView>;
+    /** Always true for a submitted upgrade in this flow — a repeated no-op request is not yet distinguished. */
+    upgrading: boolean;
+    /** Construction finish time from the placement event; `null` when the event could not be decoded. */
+    finishAt: number | null;
+    approveTxHash: Hash | null;
+    txHash: Hash;
+    status: TxStatus;
+    blockNumber: string;
+}
+
 export interface DemolishInput {
     tokenId: string;
 }

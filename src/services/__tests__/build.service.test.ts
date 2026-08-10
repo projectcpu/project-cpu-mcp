@@ -47,6 +47,15 @@ function demolishedLog(finishAt: bigint, buildingTypeId = 4): Log {
     return { address: CELL as Address, topics, data, ...LOG_META } as unknown as Log;
 }
 
+function placedLog(finishAt: bigint, buildingTypeId = 46): Log {
+    const topics = encodeEventTopics({ abi: CELL_ABI, eventName: 'BuildingPlaced', args: { tokenId: 42n } });
+    const data = encodeAbiParameters(
+        [{ type: 'uint16' }, { type: 'uint64' }, { type: 'uint16[]' }, { type: 'uint64[]' }],
+        [buildingTypeId, finishAt, [], []],
+    );
+    return { address: CELL as Address, topics, data, ...LOG_META } as unknown as Log;
+}
+
 function makeService(opts: Parameters<typeof makeCellHarness>[1] = {}) {
     return makeCellHarness((deps) => new BuildService(deps), opts);
 }
@@ -333,5 +342,148 @@ describe('BuildService', () => {
         const { service, contracts } = makeService({ cell });
         await expect(service.build(EXTRACTOR)).rejects.toThrow(/demolition cooldown/i);
         expect(contracts.sent).toHaveLength(0);
+    });
+});
+
+function upgradeConfig(overrides: Partial<CatalogBuildingView> = {}) {
+    const base = makeConfig();
+    const mine = base.buildings.find((b) => b.type === BuildingType.Mine) as CatalogBuildingView;
+    const target: CatalogBuildingView = {
+        ...mine,
+        type: 'mine_l2a' as CatalogBuildingView['type'],
+        onChainId: 46,
+        name: 'Mine L2A',
+        buildCost: '15',
+        buildInputs: [{ resourceId: 101, amount: 3 }],
+        upgradeFrom: BuildingType.Mine,
+        ...overrides,
+    };
+    return { ...base, buildings: [...base.buildings, target] };
+}
+
+function occupiedCell(overrides: Partial<Parameters<typeof makeCell>[0]> = {}) {
+    return makeCell({
+        tokenId: '42',
+        owner: WALLET_ADDRESS,
+        building: { type: BuildingType.Mine, buildFinishAt: null, modeResource: null, modeRecipeId: null },
+        ...overrides,
+    });
+}
+
+describe('BuildService upgrade', () => {
+    it('accepts a dynamic target absent from the static enum, approves its cost, and places its on-chain id', async () => {
+        const config = upgradeConfig();
+        const finishAt = BigInt(DEFAULT_SERVER_TIME + 900);
+        const { service, contracts, allowance } = makeService({
+            cell: occupiedCell(),
+            config,
+            approve: APPROVE_HASH,
+            logs: [[placedLog(finishAt)]],
+        });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: parseEther('15') }]);
+        const place = decodeSent(contracts, 0);
+        expect(place.functionName).toBe('place');
+        expect(place.args).toEqual([42n, 46]);
+
+        expect(result.fromBuildingType).toBe(BuildingType.Mine);
+        expect(result.toBuildingType).toBe('mine_l2a');
+        expect(result.buildCost).toBe('15');
+        expect(result.buildInputs).toEqual([{ resourceId: 101, amount: 3 }]);
+        expect(result.upgrading).toBe(true);
+        expect(result.finishAt).toBe(DEFAULT_SERVER_TIME + 900);
+        expect(result.approveTxHash).toBe(APPROVE_HASH);
+        expect(result.status).toBe(TxStatus.Success);
+    });
+
+    it('degrades to a null finish time when the receipt is missing the placement event, staying successful', async () => {
+        const config = upgradeConfig();
+        const { service, contracts } = makeService({ cell: occupiedCell(), config });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(contracts.sent).toHaveLength(1);
+        expect(result.finishAt).toBeNull();
+        expect(result.status).toBe(TxStatus.Success);
+    });
+
+    it('rejects a target absent from the catalog before approval or placement', async () => {
+        const config = upgradeConfig();
+        const { service, contracts, allowance } = makeService({ cell: occupiedCell(), config });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'nonexistent_building' })).rejects.toThrow(
+            /no catalog entry/i,
+        );
+        expect(contracts.sent).toHaveLength(0);
+        expect(allowance.calls).toHaveLength(0);
+    });
+
+    it('rejects a catalog target with no predecessor as a base building that belongs to cpu_build', async () => {
+        const config = upgradeConfig();
+        const { service, contracts, allowance } = makeService({ cell: occupiedCell(), config });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: BuildingType.SteelMill })).rejects.toThrow(
+            /base building.*cpu_build/i,
+        );
+        expect(contracts.sent).toHaveLength(0);
+        expect(allowance.calls).toHaveLength(0);
+    });
+
+    it('rejects a missing cell', async () => {
+        const config = upgradeConfig();
+        const { service, contracts } = makeService({ config });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /not found on the map/i,
+        );
+        expect(contracts.sent).toHaveLength(0);
+    });
+
+    it('rejects an empty cell', async () => {
+        const config = upgradeConfig();
+        const cell = makeCell({ tokenId: '42', owner: WALLET_ADDRESS });
+        const { service, contracts } = makeService({ cell, config });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /has no building/i,
+        );
+        expect(contracts.sent).toHaveLength(0);
+    });
+
+    it('rejects a cell owned by someone else', async () => {
+        const config = upgradeConfig();
+        const { service, contracts } = makeService({ cell: occupiedCell({ owner: '0xother' }), config });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(/do not own/i);
+        expect(contracts.sent).toHaveLength(0);
+    });
+
+    it('submits without locally enforcing lineage, active-process, cooldown, or capacity — the contract decides', async () => {
+        const config = upgradeConfig();
+        const cell = makeCell({
+            tokenId: '42',
+            owner: WALLET_ADDRESS,
+            // SteelMill is not the Mine-line target's predecessor, an active process is running, and the cell
+            // is mid demolition cooldown — every one of these would block cpu_build; upgrade must submit anyway.
+            building: { type: BuildingType.SteelMill, buildFinishAt: null, modeResource: null, modeRecipeId: null },
+            process: {
+                kind: CellProcessKind.Mining,
+                resource: 5,
+                durationSec: 180,
+                yieldPerCycle: 77,
+                batches: 10,
+                claimedBatches: 0,
+                startAt: 1,
+            },
+            demolishFinishAt: DEFAULT_SERVER_TIME + 1000,
+        });
+        const { service, contracts } = makeService({ cell, config });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(contracts.sent).toHaveLength(1);
+        expect(result.status).toBe(TxStatus.Success);
     });
 });

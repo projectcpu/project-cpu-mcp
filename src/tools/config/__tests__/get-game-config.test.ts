@@ -55,6 +55,7 @@ const CONFIG: AppConfig = {
             recipes: [],
             effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
             recipeOpexCpu: null,
+            upgradeFrom: null,
         },
         {
             type: BuildingType.SteelMill,
@@ -72,6 +73,7 @@ const CONFIG: AppConfig = {
             recipes: [CraftRecipeId.SmeltSteel],
             effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
             recipeOpexCpu: { smelt_steel: '2' },
+            upgradeFrom: null,
         },
     ],
     reveal: { firstFree: true, reRevealCost: '1000' },

@@ -63,6 +63,7 @@ function makeResponse(overrides: Partial<AppConfigResponse> = {}): AppConfigResp
                 recipes: [],
                 effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
                 recipeOpexCpu: null,
+                upgradeFrom: null,
             },
         ],
         reveal: { firstFree: true, reRevealCost: '1000' },

@@ -17,3 +17,17 @@ export const buildInputSchema = {
 export const demolishInputSchema = {
     tokenId: tokenIdSchema.transform(String).describe('The tokenId of a cell you own whose building to remove.'),
 };
+
+export const upgradeInputSchema = {
+    tokenId: tokenIdSchema
+        .transform(String)
+        .describe('The tokenId of a revealed cell you own whose current building to upgrade.'),
+    targetBuildingType: z
+        .string()
+        .min(1)
+        .describe(
+            'The exact catalog `type` of the upgrade target, resolved dynamically against the current building ' +
+                'catalog (see cpu_get_game_config) — not a static list. Must have a predecessor: a base building ' +
+                'with no predecessor belongs to cpu_build instead.',
+        ),
+};
