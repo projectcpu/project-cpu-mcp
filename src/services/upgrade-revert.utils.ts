@@ -1,13 +1,9 @@
+import { decodeKnownRevert } from './revert-decode.utils.js';
 import { UpgradeRevertName } from './types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import { resourceLabel, type ResourceNames } from '../utils/format.utils.js';
-import { decodeRevert } from '../wallet/revert.utils.js';
 
 const UPGRADE_REVERT_NAMES: ReadonlyArray<UpgradeRevertName> = Object.values(UpgradeRevertName);
-
-function toUpgradeRevertName(name: string): UpgradeRevertName | null {
-    return UPGRADE_REVERT_NAMES.find((known) => known === name) ?? null;
-}
 
 export interface UpgradeRevertContext {
     tokenId: string;
@@ -64,13 +60,9 @@ function messageFor(name: UpgradeRevertName, args: ReadonlyArray<unknown>, conte
 }
 
 export function withUpgradeRevertPhrase(error: unknown, context: UpgradeRevertContext): unknown {
-    const decoded = decodeRevert(error, CELL_ABI);
+    const decoded = decodeKnownRevert(error, CELL_ABI, UPGRADE_REVERT_NAMES);
     if (decoded === null) {
         return error;
     }
-    const name = toUpgradeRevertName(decoded.name);
-    if (name === null) {
-        return error;
-    }
-    return new Error(messageFor(name, decoded.args, context), { cause: error });
+    return new Error(messageFor(decoded.name, decoded.args, context), { cause: error });
 }
