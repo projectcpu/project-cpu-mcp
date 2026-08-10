@@ -487,6 +487,32 @@ describe('BuildService upgrade', () => {
         expect(contracts.sent).toHaveLength(0);
     });
 
+    it('refuses to upgrade when the wallet chainId does not match the chain config, before touching the map', async () => {
+        const config = upgradeConfig();
+        const { service, contracts, mapReader } = makeService({
+            cell: occupiedCell(),
+            config,
+            walletChainId: 8453,
+        });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /chain mismatch/i,
+        );
+        expect(contracts.sent).toHaveLength(0);
+        expect(mapReader.refreshed).toBe(0);
+    });
+
+    it('refuses to upgrade when $CPU is not configured for the network', async () => {
+        const config = { ...upgradeConfig(), contracts: { ...upgradeConfig().contracts, cpuToken: '' } };
+        const { service, contracts, allowance } = makeService({ cell: occupiedCell(), config });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /not configured/i,
+        );
+        expect(contracts.sent).toHaveLength(0);
+        expect(allowance.calls).toHaveLength(0);
+    });
+
     it('submits without locally enforcing lineage, active-process, cooldown, or capacity — the contract decides', async () => {
         const config = upgradeConfig();
         const cell = makeCell({
@@ -591,6 +617,28 @@ describe('BuildService upgrade — no-op idempotency', () => {
         expect(result.status).toBeNull();
         expect(result.blockNumber).toBeNull();
     });
+
+    it('treats a buildFinishAt exactly equal to the current server time as ready, not still upgrading', async () => {
+        const config = upgradeConfig();
+        const cell = makeCell({
+            tokenId: '42',
+            owner: WALLET_ADDRESS,
+            building: {
+                type: 'mine_l2a',
+                buildFinishAt: DEFAULT_SERVER_TIME,
+                modeResource: null,
+                modeRecipeId: null,
+            },
+        });
+        const { service, contracts } = makeService({ cell, config });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(contracts.sent).toHaveLength(0);
+        expect(result.noop).toBe(true);
+        expect(result.upgrading).toBe(false);
+        expect(result.finishAt).toBe(DEFAULT_SERVER_TIME);
+    });
 });
 
 class SequenceMapReader implements RevealCellReader {
@@ -638,6 +686,48 @@ function makeFallbackHarness(config: AppConfig, cells: ReadonlyArray<Cell | null
     return { service, mapReader };
 }
 
+class ThrowingRefreshMapReader implements RevealCellReader {
+    public refreshed = 0;
+    constructor(
+        private readonly cell: Cell | null,
+        private readonly serverTime: number,
+        private readonly throwsOnCall: number,
+    ) {}
+    async readRevealCell(): Promise<Cell | null> {
+        return this.cell;
+    }
+    getServerTime(): number {
+        return this.serverTime;
+    }
+    async refresh(): Promise<void> {
+        this.refreshed += 1;
+        if (this.refreshed === this.throwsOnCall) {
+            throw new Error('network blip refreshing the projected state');
+        }
+    }
+}
+
+function makeThrowingRefreshHarness(config: AppConfig, cell: Cell | null, throwsOnCall: number) {
+    const wallet = new FakeWallet(1);
+    const contracts = new ContractClient({
+        wallet: wallet as unknown as WalletProvider,
+        logger: new NoopLogger(),
+        retry: null,
+    });
+    const cellClient = new CellClient({ contracts, logger: new NoopLogger() });
+    const mapReader = new ThrowingRefreshMapReader(cell, DEFAULT_SERVER_TIME, throwsOnCall);
+    const service = new BuildService({
+        wallet: wallet as unknown as WalletProvider,
+        appConfig: new FakeAppConfig(config),
+        allowance: new FakeAllowance(APPROVE_HASH),
+        cellClient,
+        contracts,
+        mapReader,
+        logger: new NoopLogger(),
+    });
+    return { service, mapReader };
+}
+
 describe('BuildService upgrade — receipt without a decodable placement event', () => {
     it('recovers the finish time with a best-effort projected-state refresh', async () => {
         const config = upgradeConfig();
@@ -672,6 +762,19 @@ describe('BuildService upgrade — receipt without a decodable placement event',
 
         expect(result.finishAt).toBeNull();
         expect(result.status).toBe(TxStatus.Success);
+        expect(result.txHash).not.toBeNull();
+    });
+
+    it('stays a successful result even when the best-effort projected-state refresh itself throws', async () => {
+        const config = upgradeConfig();
+        const cell = toProjectedCell(config, occupiedCell());
+        const { service, mapReader } = makeThrowingRefreshHarness(config, cell, 2);
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(mapReader.refreshed).toBe(2);
+        expect(result.status).toBe(TxStatus.Success);
+        expect(result.finishAt).toBeNull();
         expect(result.txHash).not.toBeNull();
     });
 });
@@ -763,6 +866,25 @@ describe('BuildService upgrade — contract error decoding', () => {
         );
     });
 
+    it('decodes a storage-cap revert for a resource id the resource catalog does not know into a numbered fallback label', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.STORAGE_EXCEEDS_CAP, [999]));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /resource #999.*storage cap/i,
+        );
+    });
+
+    it('leaves a decodable revert whose name is not one of the upgrade errors untouched, rather than mangling it', async () => {
+        const config = upgradeConfig();
+        const data = encodeErrorResult({ abi: CELL_ABI as Abi, errorName: 'RevealAlreadyPending', args: [] });
+        const error = new Error('Execution reverted: RevealAlreadyPending()') as Error & { data: Hex };
+        error.data = data;
+        const { service } = revertingHarness(config, error);
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /RevealAlreadyPending/,
+        );
+    });
+
     it('decodes a disabled target type into an understandable error', async () => {
         const config = upgradeConfig();
         const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.BUILDING_NOT_ENABLED));
@@ -805,5 +927,22 @@ describe('BuildService upgrade — contract error decoding', () => {
 
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow();
         expect(allowance.calls).toHaveLength(1);
+    });
+});
+
+describe('BuildService upgrade — revert on the receipt path', () => {
+    it('surfaces a receipt-status revert as the generic confirm failure — only a send-path revert gets decoded', async () => {
+        const config = upgradeConfig();
+        const { service, contracts, allowance } = makeService({
+            cell: occupiedCell(),
+            config,
+            receipts: [TxStatus.Reverted],
+        });
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /Upgrade transaction reverted on-chain/i,
+        );
+        expect(allowance.calls).toHaveLength(1);
+        expect(contracts.sent).toHaveLength(1);
     });
 });

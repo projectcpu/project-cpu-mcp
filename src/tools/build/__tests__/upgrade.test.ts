@@ -102,6 +102,14 @@ describe('upgrade tool', () => {
         expect(header).not.toMatch(/approve/i);
     });
 
+    it('omits the warehouse-inputs mention entirely when the target consumes none', async () => {
+        const { handler } = harness(result({ buildInputs: [] }));
+        const header = (await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' })).content[0]?.text ?? '';
+
+        expect(header).not.toMatch(/plus/i);
+        expect(header).not.toMatch(/warehouse/i);
+    });
+
     it('propagates service errors', async () => {
         const { handler } = harness(new Error('InvalidUpgradeTransition'));
         await expect(handler({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(

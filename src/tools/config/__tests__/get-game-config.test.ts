@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BuildingKind, BuildingType, CraftRecipeId, RandomnessKind } from '../../../api/types.js';
 import { Network } from '../../../config/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import { type AppConfig, ModeSwitchKind } from '../../../services/types.js';
+import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerGetGameConfigTool } from '../get-game-config/get-game-config.js';
@@ -326,5 +326,74 @@ describe('get_game_config tool — upgrade graph', () => {
 
         expect(header).toContain('extractor-compatible Iron (#5),resource #6 (compatible resources only');
         expect(header).toContain('actual mining yield is set at runtime, not a guaranteed amount');
+    });
+});
+
+describe('get_game_config tool — upgrade graph against awkward configurations', () => {
+    function withOrphanParticipant(overrides: Partial<CatalogBuildingView> = {}): AppConfig {
+        return {
+            ...CONFIG,
+            buildings: [
+                ...CONFIG.buildings,
+                {
+                    ...(CONFIG.buildings[0] as CatalogBuildingView),
+                    type: 'mine_branch_c_l2' as BuildingType,
+                    onChainId: 49,
+                    name: 'Mine Branch C L2',
+                    buildCost: '19',
+                    buildTimeSec: 300,
+                    buildInputs: [],
+                    upgradeFrom: 'mine',
+                    upgradeTo: [],
+                    family: null,
+                    level: null,
+                    branch: 'c',
+                    ...overrides,
+                },
+            ],
+        };
+    }
+
+    it('shows a participant with no configured level as unknown rather than crashing or blanking it', async () => {
+        const header = (await capture(withOrphanParticipant())({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain(
+            'mine_branch_c_l2 | level unknown | branch c | predecessor mine | successors none (terminal)',
+        );
+    });
+
+    it('sorts a participant with no configured family after every family-grouped participant, not before', async () => {
+        const header = (await capture(withOrphanParticipant())({} as never)).content[0]?.text ?? '';
+
+        const mineIndex = header.indexOf('mine | level 1');
+        const orphanIndex = header.indexOf('mine_branch_c_l2 |');
+        expect(mineIndex).toBeGreaterThan(-1);
+        expect(orphanIndex).toBeGreaterThan(mineIndex);
+    });
+
+    it('renders a predecessor reference even when that predecessor type no longer exists in the catalog (a stale config)', async () => {
+        const header =
+            (await capture(withOrphanParticipant({ upgradeFrom: 'deleted_predecessor' }))({} as never)).content[0]
+                ?.text ?? '';
+
+        expect(header).toContain('predecessor deleted_predecessor');
+    });
+
+    it('reports no upgrade participants when every building in the catalog predates the upgrade graph', async () => {
+        const legacy: AppConfig = {
+            ...CONFIG,
+            buildings: CONFIG.buildings.map((b) => ({
+                ...b,
+                upgradeFrom: null,
+                upgradeTo: [],
+                family: null,
+                level: null,
+                branch: null,
+            })),
+        };
+
+        const header = (await capture(legacy)({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain('No buildings currently participate in an upgrade line.');
     });
 });
