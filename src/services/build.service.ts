@@ -136,10 +136,6 @@ export class BuildService {
         return event === undefined ? null : Number(event.args.demolishFinishAt);
     }
 
-    // Upgrade reuses `place()` — the contract places a base building on an empty cell or, on an occupied one,
-    // upgrades along the configured line. Deliberately thin: lineage, readiness, active processes, cooldown,
-    // materials, and capacity stay authoritative on-chain, so this only checks what a stale local projection
-    // cannot get wrong — the cell exists, holds a building, and is owned by the caller.
     async upgrade(input: UpgradeInput): Promise<UpgradeResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
@@ -200,9 +196,6 @@ export class BuildService {
         };
     }
 
-    // A repeated request for an already-installed target sends nothing — safe to retry after a lost response.
-    // `upgrading` mirrors the map's own readiness formula (buildFinishAt null or past ⇒ ready) so a no-op reports
-    // the same status a fresh cpu_get_cell would.
     private upgradeNoop(input: UpgradeInput, target: BuildingView, building: CellBuildingView): UpgradeResult {
         const upgrading = building.buildFinishAt !== null && this.mapReader.getServerTime() < building.buildFinishAt;
         this.logger.info('upgrade no-op: target already installed', {
@@ -226,8 +219,6 @@ export class BuildService {
         };
     }
 
-    // Best-effort recovery when a confirmed placement's receipt did not carry a decodable event — never lets a
-    // stale or unreachable projection turn an already-successful on-chain upgrade into a reported failure.
     private async refreshUpgradeFinish(tokenId: string, targetType: string): Promise<number | null> {
         try {
             await this.mapReader.refresh();

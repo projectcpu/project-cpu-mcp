@@ -235,7 +235,6 @@ export enum CellRevertName {
     REVEAL_REQUEST_ID_IN_USE = 'RevealRequestIdInUse',
 }
 
-/** Custom errors the Cell contract's `place()` can revert with — the transition/process/resource/access checks. */
 export enum PlacementRevertName {
     NOT_REVEALED = 'NotRevealed',
     PROCESS_ACTIVE = 'ProcessActive',
@@ -413,7 +412,6 @@ export interface BuildPlacement {
 
 export interface UpgradeInput {
     tokenId: string;
-    /** Exact catalog `type` of the upgrade target, resolved dynamically against the current building catalog. */
     targetBuildingType: string;
 }
 
@@ -421,21 +419,12 @@ export interface UpgradeResult {
     tokenId: string;
     fromBuildingType: string;
     toBuildingType: string;
-    /** Target's configured $CPU build cost (decimal), charged in full — never an incremental difference. "0" for a no-op. */
     buildCost: string;
-    /** Target's configured build inputs (integer units); empty for a no-op, since nothing was consumed. */
     buildInputs: Array<CraftStackView>;
-    /** True when the target type was already installed and no transaction was sent. */
     noop: boolean;
-    /** True while the installed target's construction window has not passed yet. */
     upgrading: boolean;
-    /**
-     * Construction finish time, from the placement event, a best-effort projected-state refresh, or the current
-     * building's known finish time for a no-op; `null` when none of those yielded one.
-     */
     finishAt: number | null;
     approveTxHash: Hash | null;
-    /** `null` for a no-op — no placement transaction was sent. */
     txHash: Hash | null;
     status: TxStatus | null;
     blockNumber: string | null;

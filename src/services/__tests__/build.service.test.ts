@@ -492,8 +492,6 @@ describe('BuildService upgrade', () => {
         const cell = makeCell({
             tokenId: '42',
             owner: WALLET_ADDRESS,
-            // SteelMill is not the Mine-line target's predecessor, an active process is running, and the cell
-            // is mid demolition cooldown — every one of these would block cpu_build; upgrade must submit anyway.
             building: { type: BuildingType.SteelMill, buildFinishAt: null, modeResource: null, modeRecipeId: null },
             process: {
                 kind: CellProcessKind.Mining,
@@ -595,8 +593,6 @@ describe('BuildService upgrade — no-op idempotency', () => {
     });
 });
 
-// A projected-state reader whose `readRevealCell` answers with a different snapshot on each call, so a test
-// can simulate the map catching up to a just-confirmed placement only on the fallback re-read.
 class SequenceMapReader implements RevealCellReader {
     public refreshed = 0;
     private index = 0;
@@ -621,9 +617,6 @@ function toProjectedCell(config: AppConfig, raw: RawCell): Cell {
     return toCell(raw, DEFAULT_SERVER_TIME, toProjectionConfig(config));
 }
 
-// A real `ContractClient` over a `FakeWallet`: `send()` always succeeds and `confirm()` always returns a
-// success receipt with no logs, so `decodePlacementFinish` finds nothing — the scenario the projected-state
-// fallback exists for.
 function makeFallbackHarness(config: AppConfig, cells: ReadonlyArray<Cell | null>) {
     const wallet = new FakeWallet(1);
     const contracts = new ContractClient({
@@ -673,7 +666,6 @@ describe('BuildService upgrade — receipt without a decodable placement event',
     it('stays a successful result when the refreshed projection also carries no finish time', async () => {
         const config = upgradeConfig();
         const before = toProjectedCell(config, occupiedCell());
-        // The refresh lands before the indexer catches up — the projection still shows the pre-upgrade building.
         const { service } = makeFallbackHarness(config, [before, before]);
 
         const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });

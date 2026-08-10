@@ -63,11 +63,6 @@ function messageFor(name: PlacementRevertName, args: ReadonlyArray<unknown>, con
     }
 }
 
-/**
- * Decodes a `place()` revert into a concise domain error for `cpu_upgrade`. Returns the original error
- * unchanged when it carries no decodable Cell revert or names one this function does not recognize — the
- * caller (and ultimately the MCP tool boundary) surfaces that unchanged error as a safe fallback.
- */
 export function withPlacementRevertPhrase(error: unknown, context: PlacementRevertContext): unknown {
     const decoded = decodeRevert(error, CELL_ABI);
     if (decoded === null) {
