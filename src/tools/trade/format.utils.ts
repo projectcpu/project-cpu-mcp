@@ -1,5 +1,5 @@
 import type { EnrichedMarketSummary } from './types.js';
-import type { LotView } from '../../api/types.js';
+import type { FillView, LotView, MarketIndex, MarketIndexRow } from '../../api/types.js';
 import type {
     BuyLotResult,
     CancelLotResult,
@@ -84,6 +84,46 @@ export function summarizeMarkets(markets: Array<EnrichedMarketSummary>, resource
             );
         })
         .join('\n');
+}
+
+export function summarizeFills(fills: Array<FillView>, resources: ResourceNames): string {
+    if (fills.length === 0) {
+        return 'No fills on this page.';
+    }
+    return fills
+        .map((fill) => {
+            const soldOut = fill.soldOut ? ' · SOLD OUT' : '';
+            return (
+                `fill ${fill.blockNumber}:${fill.logIndex} · ${resourceLabel(resources, fill.resourceId)} · ` +
+                `${fill.value} units @ ${fill.pricePerUnit} $CPU/u = ${fill.sale} $CPU (hub fee ${fill.hubFee}, ` +
+                `burned ${fill.burn}) · ${fill.remaining} left on lot ${fill.lotId}${soldOut} · buyer ${fill.buyer} ` +
+                `from seller ${fill.seller} · Hub ${fill.hubTokenId} · ${formatUnixSeconds(fill.settledAt)}`
+            );
+        })
+        .join('\n');
+}
+
+export function summarizeMarketIndex(index: MarketIndex, resources: ResourceNames): string {
+    const asOf = formatUnixSeconds(index.computedAt);
+    const header =
+        `World price index as of ${asOf} — a server-cached aggregate that can run up to an hour behind. A ` +
+        'resource with no trades in the 24h window prints as "no trades", never as a price of 0. Volume is ' +
+        'resource UNITS traded, not $CPU.';
+    if (index.resources.length === 0) {
+        return `${header}\nNo resources in the index.`;
+    }
+    const rows = index.resources.map((row) => summarizeMarketIndexRow(row, resources)).join('\n');
+    return `${header}\n${rows}`;
+}
+
+function summarizeMarketIndexRow(row: MarketIndexRow, resources: ResourceNames): string {
+    const label = resourceLabel(resources, row.resourceId);
+    if (row.priceCpu === null) {
+        return `${label}: no trades in the last 24h`;
+    }
+    const change = row.changePct === null ? 'change n/a' : `${row.changePct > 0 ? '+' : ''}${row.changePct}% 24h`;
+    const volume = row.volume === null ? 'volume n/a' : `${row.volume} units traded 24h`;
+    return `${label}: ${row.priceCpu} $CPU/u, ${change}, ${volume}`;
 }
 
 export function summarizeLots(lots: Array<LotView>, resources: ResourceNames): string {

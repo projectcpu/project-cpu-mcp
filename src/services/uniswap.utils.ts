@@ -18,13 +18,22 @@ export const RouterCommand = urSdk.CommandType;
 const { UNIVERSAL_ROUTER_ADDRESS, UniversalRouterVersion } = urSdk;
 const { CHAIN_TO_ADDRESSES_MAP } = coreSdk;
 
-/** Universal Router address for `chainId`. Throws if the router is not deployed there. */
+// No single router version is deployed on every supported chain: some have nothing below 2.1.1,
+// while 2.2.0 is missing on most. Ordered 2.0 first so chains that have it keep the version this
+// client has always sent, with 2.1.1 as the fallback for the rest — both take the same v4 command
+// encoding, so only the address differs.
+const ROUTER_VERSIONS = [UniversalRouterVersion.V2_0, UniversalRouterVersion.V2_1_1];
+
+/** Universal Router address for `chainId`. Throws if no supported router version is deployed there. */
 export function universalRouterAddress(chainId: number): Address {
-    try {
-        return UNIVERSAL_ROUTER_ADDRESS(UniversalRouterVersion.V2_0, chainId) as Address;
-    } catch {
-        throw new Error(`Uniswap Universal Router is not available for chainId ${chainId}.`);
+    for (const version of ROUTER_VERSIONS) {
+        try {
+            return UNIVERSAL_ROUTER_ADDRESS(version, chainId) as Address;
+        } catch {
+            continue;
+        }
     }
+    throw new Error(`Uniswap Universal Router is not available for chainId ${chainId}.`);
 }
 
 /** Uniswap v4 Quoter address for `chainId`. Throws if v4 is not deployed there. */
