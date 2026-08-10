@@ -235,7 +235,7 @@ export enum CellRevertName {
     REVEAL_REQUEST_ID_IN_USE = 'RevealRequestIdInUse',
 }
 
-export enum PlacementRevertName {
+export enum UpgradeRevertName {
     NOT_REVEALED = 'NotRevealed',
     PROCESS_ACTIVE = 'ProcessActive',
     DEMOLISH_IN_PROGRESS = 'DemolishInProgress',

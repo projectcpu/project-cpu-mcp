@@ -1,6 +1,5 @@
 import { isAddress, parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
 
-import { withPlacementRevertPhrase } from './placement-revert.utils.js';
 import type {
     AppConfig,
     BuildInput,
@@ -15,6 +14,7 @@ import type {
     UpgradeInput,
     UpgradeResult,
 } from './types.js';
+import { withUpgradeRevertPhrase } from './upgrade-revert.utils.js';
 import { assertWarehouseHas } from './warehouse.utils.js';
 import { BuildingKind } from '../api/types.js';
 import type { BuildingView } from '../api/types.js';
@@ -112,7 +112,7 @@ export class BuildService {
         const txHash = await this.cellClient.demolish({ cell, tokenId });
         const confirmed = await this.contracts.confirm(txHash, 'Demolish transaction');
 
-        const rebuildUnlockAt = this.decodeDemolishFinish(confirmed.logs, cell);
+        const rebuildUnlockAt = this.decodeFinishAt(confirmed.logs, cell, 'BuildingDemolished');
         const rebuildCooldownSec =
             rebuildUnlockAt === null ? null : Math.max(0, rebuildUnlockAt - this.mapReader.getServerTime());
 
@@ -128,12 +128,6 @@ export class BuildService {
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
         };
-    }
-
-    private decodeDemolishFinish(logs: Array<Log>, cell: Address): number | null {
-        const events = parseEventLogs({ abi: CELL_ABI, eventName: 'BuildingDemolished', logs });
-        const event = events.find((e) => e.address.toLowerCase() === cell.toLowerCase());
-        return event === undefined ? null : Number(event.args.demolishFinishAt);
     }
 
     async upgrade(input: UpgradeInput): Promise<UpgradeResult> {
@@ -168,7 +162,7 @@ export class BuildService {
         try {
             txHash = await this.cellClient.place({ cell, tokenId, buildingType: target.onChainId });
         } catch (error) {
-            throw withPlacementRevertPhrase(error, {
+            throw withUpgradeRevertPhrase(error, {
                 tokenId: input.tokenId,
                 targetType: target.type,
                 resources: config.resources,
@@ -177,7 +171,7 @@ export class BuildService {
         const confirmed = await this.contracts.confirm(txHash, 'Upgrade transaction');
 
         const finishAt =
-            this.decodePlacementFinish(confirmed.logs, cell) ??
+            this.decodeFinishAt(confirmed.logs, cell, 'BuildingPlaced') ??
             (await this.refreshUpgradeFinish(input.tokenId, target.type));
 
         return {
@@ -230,10 +224,18 @@ export class BuildService {
         }
     }
 
-    private decodePlacementFinish(logs: Array<Log>, cell: Address): number | null {
-        const events = parseEventLogs({ abi: CELL_ABI, eventName: 'BuildingPlaced', logs });
+    private decodeFinishAt(
+        logs: Array<Log>,
+        cell: Address,
+        eventName: 'BuildingPlaced' | 'BuildingDemolished',
+    ): number | null {
+        const events = parseEventLogs({ abi: CELL_ABI, eventName, logs });
         const event = events.find((e) => e.address.toLowerCase() === cell.toLowerCase());
-        return event === undefined ? null : Number(event.args.buildFinishAt);
+        if (event === undefined) {
+            return null;
+        }
+        const finishAt = 'buildFinishAt' in event.args ? event.args.buildFinishAt : event.args.demolishFinishAt;
+        return Number(finishAt);
     }
 
     private resolveUpgradeTarget(config: AppConfig, targetBuildingType: string): BuildingView {

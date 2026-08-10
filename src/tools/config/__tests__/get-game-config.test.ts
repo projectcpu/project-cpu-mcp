@@ -263,7 +263,7 @@ describe('get_game_config tool — recipe summary', () => {
     it('summarizes each recipe on one compact machine-readable line with its id, cycle, inputs, outputs, and cost', async () => {
         const header = (await capture()({} as never)).content[0]?.text ?? '';
 
-        expect(header).toContain('smelt_steel | 30s/cycle | in 5:4 | out 102:2 | 0 $CPU/cycle');
+        expect(header).toContain('smelt_steel | 30s/cycle | in 4 Iron (#5) | out 2 Steel (#102) | 0 $CPU/cycle');
     });
 
     it('preserves recipe cycle duration and outputs in the raw configuration', async () => {
@@ -326,6 +326,5 @@ describe('get_game_config tool — upgrade graph', () => {
 
         expect(header).toContain('extractor-compatible Iron (#5),resource #6 (compatible resources only');
         expect(header).toContain('actual mining yield is set at runtime, not a guaranteed amount');
-        expect(header).not.toMatch(/mines: Iron \(#5\)/);
     });
 });

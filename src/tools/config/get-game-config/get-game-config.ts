@@ -51,11 +51,11 @@ export function registerGetGameConfigTool(server: ToolRegistrar, context: AppCon
                 `Contracts — land ${config.contracts.land}, $CPU ${config.contracts.cpuToken}, ` +
                 `cpuHook ${config.contracts.cpuHook}, cell ${config.contracts.cell}, ` +
                 `transport ${config.contracts.transport}.`;
-            const recipeLines = summarizeRecipeLines(config.recipes);
+            const recipeLines = summarizeRecipeLines(config.recipes, config.resources);
             const upgradeGraph = summarizeUpgradeGraph(config.buildings, config.resources);
             const text =
                 `${header}\n\n` +
-                `Recipes (one line each — id | cycle duration | in resourceId:amount | out resourceId:amount | ` +
+                `Recipes (one line each — id | cycle duration | in resource stacks | out resource stacks | ` +
                 `$CPU/cycle):\n${recipeLines}\n\n` +
                 'Upgrade graph (one line per building with a predecessor or a successor — type | level | branch ' +
                 `| predecessor | successors | cost | inputs | build time | effects):\n${upgradeGraph}`;

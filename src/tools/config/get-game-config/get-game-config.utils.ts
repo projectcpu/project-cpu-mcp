@@ -4,9 +4,11 @@ import {
     EXTRACTOR_COMPATIBILITY_NOTE,
     NO_RECIPES_CONFIGURED_NOTE,
     NO_UPGRADE_PARTICIPANTS_NOTE,
+    NONE_LABEL,
     PUSH_RANDOMNESS_SUMMARY,
     SELF_SERVICE_RANDOMNESS_SUMMARY,
     TERMINAL_UPGRADE_SUCCESSOR_LABEL,
+    UNKNOWN_LABEL,
 } from './constants.js';
 import {
     BuildingKind,
@@ -22,22 +24,22 @@ export function describeRandomnessMode(randomness: RandomnessDescriptor): string
     return randomness.kind === RandomnessKind.DRAND ? SELF_SERVICE_RANDOMNESS_SUMMARY : PUSH_RANDOMNESS_SUMMARY;
 }
 
-export function summarizeRecipeLines(recipes: Array<RecipeView>): string {
+export function summarizeRecipeLines(recipes: Array<RecipeView>, resources: ResourceNames): string {
     if (recipes.length === 0) {
         return NO_RECIPES_CONFIGURED_NOTE;
     }
-    return recipes.map(formatRecipeLine).join('\n');
+    return recipes.map((recipe) => formatRecipeLine(recipe, resources)).join('\n');
 }
 
-function formatRecipeLine(recipe: RecipeView): string {
+function formatRecipeLine(recipe: RecipeView, resources: ResourceNames): string {
     return (
-        `${recipe.id} | ${recipe.durationSec}s/cycle | in ${formatRecipeStacks(recipe.inputs)} | ` +
-        `out ${formatRecipeStacks(recipe.outputs)} | ${recipe.costCpu} $CPU/cycle`
+        `${recipe.id} | ${recipe.durationSec}s/cycle | in ${formatRecipeStacks(recipe.inputs, resources)} | ` +
+        `out ${formatRecipeStacks(recipe.outputs, resources)} | ${recipe.costCpu} $CPU/cycle`
     );
 }
 
-function formatRecipeStacks(stacks: Array<CraftStackView>): string {
-    return stacks.length > 0 ? stacks.map((stack) => `${stack.resourceId}:${stack.amount}`).join('+') : 'none';
+function formatRecipeStacks(stacks: Array<CraftStackView>, resources: ResourceNames): string {
+    return stacks.length > 0 ? formatStacks(resources, stacks, '+') : NONE_LABEL;
 }
 
 export function summarizeUpgradeGraph(buildings: Array<CatalogBuildingView>, resources: ResourceNames): string {
@@ -91,11 +93,11 @@ function compareNullableNumbers(a: number | null, b: number | null): number {
 }
 
 function formatUpgradeParticipantLine(building: CatalogBuildingView, resources: ResourceNames): string {
-    const level = building.level !== null ? String(building.level) : 'unknown';
-    const branch = building.branch ?? 'none';
+    const level = building.level !== null ? String(building.level) : UNKNOWN_LABEL;
+    const branch = building.branch ?? NONE_LABEL;
     const predecessor = building.upgradeFrom ?? BASE_BUILDING_PREDECESSOR_LABEL;
     const successors = building.upgradeTo.length > 0 ? building.upgradeTo.join(',') : TERMINAL_UPGRADE_SUCCESSOR_LABEL;
-    const inputs = building.buildInputs.length > 0 ? formatStacks(resources, building.buildInputs, ',') : 'none';
+    const inputs = building.buildInputs.length > 0 ? formatStacks(resources, building.buildInputs, ',') : NONE_LABEL;
     return (
         `${building.type} | level ${level} | branch ${branch} | predecessor ${predecessor} | ` +
         `successors ${successors} | cost ${building.buildCost} $CPU | inputs ${inputs} | ` +
@@ -109,7 +111,7 @@ function formatUpgradeEffects(building: CatalogBuildingView, resources: Resource
             ? building.effects.inputEfficiency
                   .map((entry) => `${resourceLabel(resources, entry.resourceId)}:${entry.percent}%`)
                   .join(',')
-            : 'none';
+            : NONE_LABEL;
     return (
         `cycleTimeBp ${building.effects.cycleTimeBp} (${CYCLE_TIME_MODIFIER_NOTE}), ` +
         `extractionShareBp ${building.effects.extractionShareBp}, inputEfficiency ${inputEfficiency}` +

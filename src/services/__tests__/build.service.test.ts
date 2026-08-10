@@ -23,7 +23,7 @@ import { ContractClient } from '../../wallet/contract-client.js';
 import { TxStatus, type WalletProvider } from '../../wallet/types.js';
 import { BuildService } from '../build.service.js';
 import { CellClient } from '../cell.client.js';
-import type { AppConfig, BuildInput, CatalogBuildingView } from '../types.js';
+import { UpgradeRevertName, type AppConfig, type BuildInput, type CatalogBuildingView } from '../types.js';
 import {
     APPROVE_HASH,
     CELL,
@@ -676,18 +676,7 @@ describe('BuildService upgrade — receipt without a decodable placement event',
     });
 });
 
-function placementRevert(
-    errorName:
-        | 'InvalidUpgrade'
-        | 'ProcessActive'
-        | 'BuildingNotReady'
-        | 'DemolishInProgress'
-        | 'InsufficientLiquid'
-        | 'BuildingNotEnabled'
-        | 'NotCellOwner'
-        | 'StorageExceedsCap',
-    args: ReadonlyArray<unknown> = [],
-): Error {
+function placementRevert(errorName: UpgradeRevertName, args: ReadonlyArray<unknown> = []): Error {
     const data = encodeErrorResult({ abi: CELL_ABI as Abi, errorName, args });
     const error = new Error(`Execution reverted: ${errorName}()`) as Error & { data: Hex };
     error.data = data;
@@ -728,7 +717,7 @@ function revertingHarness(config: AppConfig, error: unknown): { service: BuildSe
 describe('BuildService upgrade — contract error decoding', () => {
     it('decodes an invalid transition into a clear lineage error', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('InvalidUpgrade'));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.INVALID_UPGRADE));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /not a direct successor/i,
         );
@@ -736,7 +725,7 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('decodes an active process into a clear error without implying an automatic claim or cancel', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('ProcessActive'));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.PROCESS_ACTIVE));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /active mining or crafting process/i,
         );
@@ -744,7 +733,7 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('decodes an unfinished current construction into a distinct readiness error', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('BuildingNotReady'));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.BUILDING_NOT_READY));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /has not finished its own construction/i,
         );
@@ -752,7 +741,7 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('decodes an active demolition cooldown into a distinct cooldown error', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('DemolishInProgress'));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.DEMOLISH_IN_PROGRESS));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /demolition cooldown/i,
         );
@@ -760,7 +749,7 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('decodes insufficient upgrade inputs into an actionable resource error', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('InsufficientLiquid'));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.INSUFFICIENT_LIQUID));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /warehouse does not hold/i,
         );
@@ -768,7 +757,7 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('decodes insufficient effective storage capacity into an actionable capacity error naming the resource', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('StorageExceedsCap', [101]));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.STORAGE_EXCEEDS_CAP, [101]));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /Concrete.*storage cap/i,
         );
@@ -776,7 +765,7 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('decodes a disabled target type into an understandable error', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('BuildingNotEnabled'));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.BUILDING_NOT_ENABLED));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /not an enabled building/i,
         );
@@ -784,8 +773,24 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('decodes an on-chain ownership failure into an understandable error', async () => {
         const config = upgradeConfig();
-        const { service } = revertingHarness(config, placementRevert('NotCellOwner'));
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.NOT_CELL_OWNER));
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(/do not own/i);
+    });
+
+    it('decodes an unrevealed cell into a clear reveal-first error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.NOT_REVEALED));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /has never been revealed/i,
+        );
+    });
+
+    it('decodes a base building that vanished on-chain into a re-check error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert(UpgradeRevertName.NOT_A_BASE_BUILDING));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /no longer has a building to upgrade/i,
+        );
     });
 
     it('falls back to a safe general failure for an undecodable revert, without swallowing it', async () => {
@@ -796,7 +801,7 @@ describe('BuildService upgrade — contract error decoding', () => {
 
     it('never reports success when approval already succeeded but placement then reverted on-chain', async () => {
         const config = upgradeConfig();
-        const { service, allowance } = revertingHarness(config, placementRevert('InvalidUpgrade'));
+        const { service, allowance } = revertingHarness(config, placementRevert(UpgradeRevertName.INVALID_UPGRADE));
 
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow();
         expect(allowance.calls).toHaveLength(1);

@@ -30,6 +30,10 @@ export const BASE_BUILDING_PREDECESSOR_LABEL = 'none (base building)';
 
 export const TERMINAL_UPGRADE_SUCCESSOR_LABEL = 'none (terminal)';
 
+export const NONE_LABEL = 'none';
+
+export const UNKNOWN_LABEL = 'unknown';
+
 export const CYCLE_TIME_MODIFIER_NOTE =
     'a cycle-time modifier applied on top of the base production cycle, not an absolute duration';
 
