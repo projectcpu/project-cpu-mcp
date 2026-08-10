@@ -1,9 +1,12 @@
 import {
     decodeFunctionData,
     encodeAbiParameters,
+    encodeErrorResult,
     encodeEventTopics,
     parseEther,
+    type Abi,
     type Address,
+    type Hash,
     type Hex,
     type Log,
 } from 'viem';
@@ -11,17 +14,26 @@ import { describe, expect, it } from 'vitest';
 
 import { BuildingType } from '../../api/types.js';
 import { CELL_ABI } from '../../contracts/cell.abi.js';
+import { NoopLogger } from '../../logger/noop.logger.js';
 import { makeCell, makeResource, makeStorage } from '../../map/__tests__/fixtures.js';
-import { CellProcessKind } from '../../map/types.js';
-import { TxStatus } from '../../wallet/types.js';
+import { toCell } from '../../map/cell-view.utils.js';
+import { toProjectionConfig } from '../../map/reader.utils.js';
+import { CellProcessKind, type Cell, type RawCell, type RevealCellReader } from '../../map/types.js';
+import { ContractClient } from '../../wallet/contract-client.js';
+import { TxStatus, type WalletProvider } from '../../wallet/types.js';
 import { BuildService } from '../build.service.js';
-import type { BuildInput, CatalogBuildingView } from '../types.js';
+import { CellClient } from '../cell.client.js';
+import type { AppConfig, BuildInput, CatalogBuildingView } from '../types.js';
 import {
     APPROVE_HASH,
     CELL,
     CPU_TOKEN,
     DEFAULT_SERVER_TIME,
+    FakeAllowance,
+    FakeAppConfig,
     type FakeContractClient,
+    FakeMapReader,
+    FakeWallet,
     makeCellHarness,
     makeConfig,
     WALLET_ADDRESS,
@@ -485,5 +497,301 @@ describe('BuildService upgrade', () => {
 
         expect(contracts.sent).toHaveLength(1);
         expect(result.status).toBe(TxStatus.Success);
+    });
+
+    it("submits even when the current building has not finished its own construction — readiness is the contract's call", async () => {
+        const config = upgradeConfig();
+        const cell = makeCell({
+            tokenId: '42',
+            owner: WALLET_ADDRESS,
+            building: {
+                type: BuildingType.Mine,
+                buildFinishAt: DEFAULT_SERVER_TIME + 500,
+                modeResource: null,
+                modeRecipeId: null,
+            },
+        });
+        const { service, contracts } = makeService({ cell, config });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(contracts.sent).toHaveLength(1);
+        expect(result.status).toBe(TxStatus.Success);
+    });
+
+    it("submits even when the warehouse lacks the target's configured build inputs — materials are the contract's call", async () => {
+        const config = upgradeConfig();
+        const { service, contracts } = makeService({ cell: occupiedCell({ resources: [] }), config });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(contracts.sent).toHaveLength(1);
+        expect(result.status).toBe(TxStatus.Success);
+    });
+});
+
+describe('BuildService upgrade — no-op idempotency', () => {
+    it('returns a transaction-free no-op reporting the building is still upgrading, with its known finish time', async () => {
+        const config = upgradeConfig();
+        const cell = makeCell({
+            tokenId: '42',
+            owner: WALLET_ADDRESS,
+            building: {
+                type: 'mine_l2a',
+                buildFinishAt: DEFAULT_SERVER_TIME + 300,
+                modeResource: null,
+                modeRecipeId: null,
+            },
+        });
+        const { service, contracts, allowance } = makeService({ cell, config });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(contracts.sent).toHaveLength(0);
+        expect(allowance.calls).toHaveLength(0);
+        expect(result.noop).toBe(true);
+        expect(result.upgrading).toBe(true);
+        expect(result.finishAt).toBe(DEFAULT_SERVER_TIME + 300);
+        expect(result.txHash).toBeNull();
+        expect(result.approveTxHash).toBeNull();
+        expect(result.buildCost).toBe('0');
+        expect(result.buildInputs).toEqual([]);
+    });
+
+    it('returns a transaction-free no-op reporting the building is ready, sending neither approval nor placement', async () => {
+        const config = upgradeConfig();
+        const cell = makeCell({
+            tokenId: '42',
+            owner: WALLET_ADDRESS,
+            building: { type: 'mine_l2a', buildFinishAt: null, modeResource: null, modeRecipeId: null },
+        });
+        const { service, contracts, allowance } = makeService({ cell, config });
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(contracts.sent).toHaveLength(0);
+        expect(allowance.calls).toHaveLength(0);
+        expect(result.noop).toBe(true);
+        expect(result.upgrading).toBe(false);
+        expect(result.finishAt).toBeNull();
+        expect(result.txHash).toBeNull();
+        expect(result.status).toBeNull();
+        expect(result.blockNumber).toBeNull();
+    });
+});
+
+// A projected-state reader whose `readRevealCell` answers with a different snapshot on each call, so a test
+// can simulate the map catching up to a just-confirmed placement only on the fallback re-read.
+class SequenceMapReader implements RevealCellReader {
+    public refreshed = 0;
+    private index = 0;
+    constructor(
+        private readonly cells: ReadonlyArray<Cell | null>,
+        private readonly serverTime: number,
+    ) {}
+    async readRevealCell(): Promise<Cell | null> {
+        const cell = this.cells[Math.min(this.index, this.cells.length - 1)] ?? null;
+        this.index += 1;
+        return cell;
+    }
+    getServerTime(): number {
+        return this.serverTime;
+    }
+    async refresh(): Promise<void> {
+        this.refreshed += 1;
+    }
+}
+
+function toProjectedCell(config: AppConfig, raw: RawCell): Cell {
+    return toCell(raw, DEFAULT_SERVER_TIME, toProjectionConfig(config));
+}
+
+// A real `ContractClient` over a `FakeWallet`: `send()` always succeeds and `confirm()` always returns a
+// success receipt with no logs, so `decodePlacementFinish` finds nothing — the scenario the projected-state
+// fallback exists for.
+function makeFallbackHarness(config: AppConfig, cells: ReadonlyArray<Cell | null>) {
+    const wallet = new FakeWallet(1);
+    const contracts = new ContractClient({
+        wallet: wallet as unknown as WalletProvider,
+        logger: new NoopLogger(),
+        retry: null,
+    });
+    const cellClient = new CellClient({ contracts, logger: new NoopLogger() });
+    const mapReader = new SequenceMapReader(cells, DEFAULT_SERVER_TIME);
+    const service = new BuildService({
+        wallet: wallet as unknown as WalletProvider,
+        appConfig: new FakeAppConfig(config),
+        allowance: new FakeAllowance(APPROVE_HASH),
+        cellClient,
+        contracts,
+        mapReader,
+        logger: new NoopLogger(),
+    });
+    return { service, mapReader };
+}
+
+describe('BuildService upgrade — receipt without a decodable placement event', () => {
+    it('recovers the finish time with a best-effort projected-state refresh', async () => {
+        const config = upgradeConfig();
+        const before = toProjectedCell(config, occupiedCell());
+        const after = toProjectedCell(
+            config,
+            occupiedCell({
+                building: {
+                    type: 'mine_l2a',
+                    buildFinishAt: DEFAULT_SERVER_TIME + 900,
+                    modeResource: null,
+                    modeRecipeId: null,
+                },
+            }),
+        );
+        const { service, mapReader } = makeFallbackHarness(config, [before, after]);
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(mapReader.refreshed).toBe(2);
+        expect(result.finishAt).toBe(DEFAULT_SERVER_TIME + 900);
+        expect(result.status).toBe(TxStatus.Success);
+        expect(result.txHash).not.toBeNull();
+    });
+
+    it('stays a successful result when the refreshed projection also carries no finish time', async () => {
+        const config = upgradeConfig();
+        const before = toProjectedCell(config, occupiedCell());
+        // The refresh lands before the indexer catches up — the projection still shows the pre-upgrade building.
+        const { service } = makeFallbackHarness(config, [before, before]);
+
+        const result = await service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(result.finishAt).toBeNull();
+        expect(result.status).toBe(TxStatus.Success);
+        expect(result.txHash).not.toBeNull();
+    });
+});
+
+function placementRevert(
+    errorName:
+        | 'InvalidUpgrade'
+        | 'ProcessActive'
+        | 'BuildingNotReady'
+        | 'DemolishInProgress'
+        | 'InsufficientLiquid'
+        | 'BuildingNotEnabled'
+        | 'NotCellOwner'
+        | 'StorageExceedsCap',
+    args: ReadonlyArray<unknown> = [],
+): Error {
+    const data = encodeErrorResult({ abi: CELL_ABI as Abi, errorName, args });
+    const error = new Error(`Execution reverted: ${errorName}()`) as Error & { data: Hex };
+    error.data = data;
+    return error;
+}
+
+class ThrowingWallet extends FakeWallet {
+    constructor(private readonly error: unknown) {
+        super(1);
+    }
+    async sendTransaction(): Promise<Hash> {
+        throw this.error;
+    }
+}
+
+function revertingHarness(config: AppConfig, error: unknown): { service: BuildService; allowance: FakeAllowance } {
+    const wallet = new ThrowingWallet(error);
+    const contracts = new ContractClient({
+        wallet: wallet as unknown as WalletProvider,
+        logger: new NoopLogger(),
+        retry: null,
+    });
+    const cellClient = new CellClient({ contracts, logger: new NoopLogger() });
+    const allowance = new FakeAllowance(APPROVE_HASH);
+    const mapReader = new FakeMapReader(toProjectedCell(config, occupiedCell()), DEFAULT_SERVER_TIME);
+    const service = new BuildService({
+        wallet: wallet as unknown as WalletProvider,
+        appConfig: new FakeAppConfig(config),
+        allowance,
+        cellClient,
+        contracts,
+        mapReader,
+        logger: new NoopLogger(),
+    });
+    return { service, allowance };
+}
+
+describe('BuildService upgrade — contract error decoding', () => {
+    it('decodes an invalid transition into a clear lineage error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('InvalidUpgrade'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /not a direct successor/i,
+        );
+    });
+
+    it('decodes an active process into a clear error without implying an automatic claim or cancel', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('ProcessActive'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /active mining or crafting process/i,
+        );
+    });
+
+    it('decodes an unfinished current construction into a distinct readiness error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('BuildingNotReady'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /has not finished its own construction/i,
+        );
+    });
+
+    it('decodes an active demolition cooldown into a distinct cooldown error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('DemolishInProgress'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /demolition cooldown/i,
+        );
+    });
+
+    it('decodes insufficient upgrade inputs into an actionable resource error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('InsufficientLiquid'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /warehouse does not hold/i,
+        );
+    });
+
+    it('decodes insufficient effective storage capacity into an actionable capacity error naming the resource', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('StorageExceedsCap', [101]));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /Concrete.*storage cap/i,
+        );
+    });
+
+    it('decodes a disabled target type into an understandable error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('BuildingNotEnabled'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
+            /not an enabled building/i,
+        );
+    });
+
+    it('decodes an on-chain ownership failure into an understandable error', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, placementRevert('NotCellOwner'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(/do not own/i);
+    });
+
+    it('falls back to a safe general failure for an undecodable revert, without swallowing it', async () => {
+        const config = upgradeConfig();
+        const { service } = revertingHarness(config, new Error('rpc timeout'));
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(/rpc timeout/);
+    });
+
+    it('never reports success when approval already succeeded but placement then reverted on-chain', async () => {
+        const config = upgradeConfig();
+        const { service, allowance } = revertingHarness(config, placementRevert('InvalidUpgrade'));
+
+        await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow();
+        expect(allowance.calls).toHaveLength(1);
     });
 });

@@ -235,6 +235,20 @@ export enum CellRevertName {
     REVEAL_REQUEST_ID_IN_USE = 'RevealRequestIdInUse',
 }
 
+/** Custom errors the Cell contract's `place()` can revert with — the transition/process/resource/access checks. */
+export enum PlacementRevertName {
+    NOT_REVEALED = 'NotRevealed',
+    PROCESS_ACTIVE = 'ProcessActive',
+    DEMOLISH_IN_PROGRESS = 'DemolishInProgress',
+    BUILDING_NOT_ENABLED = 'BuildingNotEnabled',
+    NOT_A_BASE_BUILDING = 'NotABaseBuilding',
+    INVALID_UPGRADE = 'InvalidUpgrade',
+    BUILDING_NOT_READY = 'BuildingNotReady',
+    STORAGE_EXCEEDS_CAP = 'StorageExceedsCap',
+    INSUFFICIENT_LIQUID = 'InsufficientLiquid',
+    NOT_CELL_OWNER = 'NotCellOwner',
+}
+
 export interface PushRevealInput {
     randomness: PushRandomness;
     config: AppConfig;
@@ -407,18 +421,24 @@ export interface UpgradeResult {
     tokenId: string;
     fromBuildingType: string;
     toBuildingType: string;
-    /** Target's configured $CPU build cost (decimal), charged in full — never an incremental difference. */
+    /** Target's configured $CPU build cost (decimal), charged in full — never an incremental difference. "0" for a no-op. */
     buildCost: string;
-    /** Target's configured build inputs (integer units); the contract is authoritative on availability. */
+    /** Target's configured build inputs (integer units); empty for a no-op, since nothing was consumed. */
     buildInputs: Array<CraftStackView>;
-    /** Always true for a submitted upgrade in this flow — a repeated no-op request is not yet distinguished. */
+    /** True when the target type was already installed and no transaction was sent. */
+    noop: boolean;
+    /** True while the installed target's construction window has not passed yet. */
     upgrading: boolean;
-    /** Construction finish time from the placement event; `null` when the event could not be decoded. */
+    /**
+     * Construction finish time, from the placement event, a best-effort projected-state refresh, or the current
+     * building's known finish time for a no-op; `null` when none of those yielded one.
+     */
     finishAt: number | null;
     approveTxHash: Hash | null;
-    txHash: Hash;
-    status: TxStatus;
-    blockNumber: string;
+    /** `null` for a no-op — no placement transaction was sent. */
+    txHash: Hash | null;
+    status: TxStatus | null;
+    blockNumber: string | null;
 }
 
 export interface DemolishInput {

@@ -1,5 +1,6 @@
 import { isAddress, parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
 
+import { withPlacementRevertPhrase } from './placement-revert.utils.js';
 import type {
     AppConfig,
     BuildInput,
@@ -20,7 +21,7 @@ import type { BuildingView } from '../api/types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
 import { activeDemolition } from '../map/map.utils.js';
-import type { Cell, RevealCellReader } from '../map/types.js';
+import type { Cell, CellBuildingView, RevealCellReader } from '../map/types.js';
 import { formatUnixSeconds } from '../utils/format.utils.js';
 import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
 
@@ -151,34 +152,91 @@ export class BuildService {
 
         await this.mapReader.refresh();
         const state = await this.mapReader.readRevealCell(input.tokenId);
-        const fromBuildingType = this.requireCurrentBuilding(input.tokenId, state, wallet.getAddress());
+        const building = this.requireCurrentBuilding(input.tokenId, state, wallet.getAddress());
+
+        if (building.type === target.type) {
+            return this.upgradeNoop(input, target, building);
+        }
 
         const approveTxHash = await this.approveCpuSpend(cpuToken, cell, target.buildCost);
 
         this.logger.info('upgrading building', {
             tokenId: input.tokenId,
-            fromBuildingType,
+            fromBuildingType: building.type,
             toBuildingType: target.type,
             onChainId: target.onChainId,
             buildCost: target.buildCost,
             network: config.network,
         });
-        const txHash = await this.cellClient.place({ cell, tokenId, buildingType: target.onChainId });
+        let txHash: Hash;
+        try {
+            txHash = await this.cellClient.place({ cell, tokenId, buildingType: target.onChainId });
+        } catch (error) {
+            throw withPlacementRevertPhrase(error, {
+                tokenId: input.tokenId,
+                targetType: target.type,
+                resources: config.resources,
+            });
+        }
         const confirmed = await this.contracts.confirm(txHash, 'Upgrade transaction');
+
+        const finishAt =
+            this.decodePlacementFinish(confirmed.logs, cell) ??
+            (await this.refreshUpgradeFinish(input.tokenId, target.type));
 
         return {
             tokenId: input.tokenId,
-            fromBuildingType,
+            fromBuildingType: building.type,
             toBuildingType: target.type,
             buildCost: target.buildCost,
             buildInputs: target.buildInputs,
+            noop: false,
             upgrading: true,
-            finishAt: this.decodePlacementFinish(confirmed.logs, cell),
+            finishAt,
             approveTxHash,
             txHash: confirmed.txHash,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
         };
+    }
+
+    // A repeated request for an already-installed target sends nothing — safe to retry after a lost response.
+    // `upgrading` mirrors the map's own readiness formula (buildFinishAt null or past ⇒ ready) so a no-op reports
+    // the same status a fresh cpu_get_cell would.
+    private upgradeNoop(input: UpgradeInput, target: BuildingView, building: CellBuildingView): UpgradeResult {
+        const upgrading = building.buildFinishAt !== null && this.mapReader.getServerTime() < building.buildFinishAt;
+        this.logger.info('upgrade no-op: target already installed', {
+            tokenId: input.tokenId,
+            toBuildingType: target.type,
+            upgrading,
+        });
+        return {
+            tokenId: input.tokenId,
+            fromBuildingType: building.type,
+            toBuildingType: target.type,
+            buildCost: '0',
+            buildInputs: [],
+            noop: true,
+            upgrading,
+            finishAt: building.buildFinishAt,
+            approveTxHash: null,
+            txHash: null,
+            status: null,
+            blockNumber: null,
+        };
+    }
+
+    // Best-effort recovery when a confirmed placement's receipt did not carry a decodable event — never lets a
+    // stale or unreachable projection turn an already-successful on-chain upgrade into a reported failure.
+    private async refreshUpgradeFinish(tokenId: string, targetType: string): Promise<number | null> {
+        try {
+            await this.mapReader.refresh();
+            const refreshed = await this.mapReader.readRevealCell(tokenId);
+            return refreshed?.building?.type === targetType ? refreshed.building.buildFinishAt : null;
+        } catch (error) {
+            this.logger.error('projected-state refresh failed after a confirmed upgrade', { tokenId, error });
+            return null;
+        }
     }
 
     private decodePlacementFinish(logs: Array<Log>, cell: Address): number | null {
@@ -197,7 +255,7 @@ export class BuildService {
         return view;
     }
 
-    private requireCurrentBuilding(tokenId: string, state: Cell | null, address: string): string {
+    private requireCurrentBuilding(tokenId: string, state: Cell | null, address: string): CellBuildingView {
         this.assertOwner(tokenId, state, address, 'upgrade');
         if (state === null) {
             throw new Error(
@@ -208,7 +266,7 @@ export class BuildService {
         if (state.building === null) {
             throw new Error(`Cell ${tokenId} has no building to upgrade (it is empty).`);
         }
-        return state.building.type;
+        return state.building;
     }
 
     private assertBuildable(input: BuildInput, state: Cell | null, address: string): void {

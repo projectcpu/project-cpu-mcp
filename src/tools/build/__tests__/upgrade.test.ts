@@ -55,6 +55,7 @@ function result(overrides: Partial<UpgradeResult> = {}): UpgradeResult {
         toBuildingType: 'mine_l2a',
         buildCost: '15',
         buildInputs: [{ resourceId: 101, amount: 3 }],
+        noop: false,
         upgrading: true,
         finishAt: 1_700_000_900,
         approveTxHash: '0xapprove',
@@ -106,5 +107,44 @@ describe('upgrade tool', () => {
         await expect(handler({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
             /InvalidUpgradeTransition/,
         );
+    });
+
+    it('reports a no-op with no transaction when the target is already installed and still upgrading', async () => {
+        const { handler } = harness(
+            result({
+                noop: true,
+                upgrading: true,
+                finishAt: 1_700_000_900,
+                approveTxHash: null,
+                txHash: null,
+                status: null,
+                blockNumber: null,
+            }),
+        );
+        const header = (await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' })).content[0]?.text ?? '';
+
+        expect(header).toMatch(/cell 42 already has mine_l2a installed/i);
+        expect(header).toMatch(/no transaction was sent/i);
+        expect(header).toMatch(/still upgrading/i);
+        expect(header).not.toMatch(/upgrade tx/i);
+    });
+
+    it('reports a no-op with no transaction when the target is already installed and ready', async () => {
+        const { handler } = harness(
+            result({
+                noop: true,
+                upgrading: false,
+                finishAt: null,
+                approveTxHash: null,
+                txHash: null,
+                status: null,
+                blockNumber: null,
+            }),
+        );
+        const header = (await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' })).content[0]?.text ?? '';
+
+        expect(header).toMatch(/cell 42 already has mine_l2a installed/i);
+        expect(header).toMatch(/no transaction was sent/i);
+        expect(header).toMatch(/is ready/i);
     });
 });
