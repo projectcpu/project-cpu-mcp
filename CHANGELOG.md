@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.8.1...v0.9.0) (2026-08-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* the config `reveal` block is now `{ethContribution, cpuBurn}` and a reveal result reports `cpuBurn`, not `reRevealCost`. No reveal is free.
+
+### Features
+
+* add cpu_upgrade and surface the upgrade graph in cpu_get_game_config ([#7](https://github.com/projectcpu/project-cpu-mcp/issues/7)) ([7d04e7b](https://github.com/projectcpu/project-cpu-mcp/commit/7d04e7bca931762e13799e2dc7e7d420ab3acfff))
+* pay every reveal from the cell's own quote ([#9](https://github.com/projectcpu/project-cpu-mcp/issues/9)) ([12084c6](https://github.com/projectcpu/project-cpu-mcp/commit/12084c62cfd817fec5f9017e276028d4cb8909f0))
+
 ## [0.8.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.8.0...v0.8.1) (2026-08-08)
 
 
