@@ -289,7 +289,6 @@ export interface SelfServiceRevealInput {
     owner: Address;
 }
 
-/** A reveal paid for and priced, ready to be sent: the approval it took, the Cell's quote, and the ETH to carry. */
 export interface FundedRevealRequest {
     approveTxHash: Hash | null;
     quote: RevealQuote;
