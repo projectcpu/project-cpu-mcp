@@ -5,3 +5,4 @@ export const SESSION_FILE = 'session.json';
 export const SESSION_KEY_FILE = 'session-key';
 export const DEFAULT_API_URL = 'https://api.projectcpu.cc';
 export const MAX_BATCHES_PER_PROCESS = 1000;
+export const BPS_DENOMINATOR = 10_000n;

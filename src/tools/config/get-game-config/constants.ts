@@ -6,9 +6,14 @@ export const GET_GAME_CONFIG_DESCRIPTION = [
     'bindings and build time), a compact upgrade graph for every building that has a predecessor or a successor',
     '(catalog type, level, branch, immediate predecessor/successors, cost, inputs, build time, and effects — feed',
     'this into `cpu_upgrade`), one compact line per recipe (id, cycle duration, inputs, outputs, $CPU/cycle),',
-    'reveal-cost params (first reveal free; re-reveal price), how this network delivers randomness (self-service',
-    'or push — it decides what `cpu_reveal` does), and the on-chain contract addresses. A free reference read —',
+    'what every reveal is charged, how this network delivers randomness (self-service or push — it decides what',
+    '`cpu_reveal` does), and the on-chain contract addresses. A read-only reference call —',
     'call it once to ground planning. No session needed.',
+].join(' ');
+
+export const REVEAL_PAYMENT_UNKNOWN_SUMMARY = [
+    'every reveal is charged, the first reveal of a cell included, but this network serves no price for it, so',
+    'the amounts are unknown here — `cpu_reveal` reads the exact total off the chain and pays that.',
 ].join(' ');
 
 export const SELF_SERVICE_RANDOMNESS_SUMMARY = [

@@ -1,6 +1,8 @@
 import { parseEventLogs, type Address, type Log } from 'viem';
 
+import { REVEAL_FEE_BUFFER_BPS } from './reveal.constants.js';
 import type { RevealDepositView } from './types.js';
+import { BPS_DENOMINATOR } from '../config/constants.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import { sameAddress, sameTokenId } from '../randomness/request.utils.js';
 import type { ResourceNames } from '../utils/format.utils.js';
@@ -8,6 +10,17 @@ import type { ResourceNames } from '../utils/format.utils.js';
 export interface RevealRequestedView {
     requestId: bigint;
     source: Address;
+}
+
+/**
+ * The ETH a reveal transaction carries: the quoted total plus headroom. The randomness leg of the quote is
+ * read in an `eth_call`, where it can price lower than the send is charged, so a transaction carrying the
+ * quote exactly can still underpay. The headroom goes on the total for that reason — a share of the fee leg
+ * alone would be zero exactly when it is needed. The excess is refunded inside the same transaction, so
+ * the reveal still costs the quoted total.
+ */
+export function bufferedRevealValue(totalRequiredWei: bigint): bigint {
+    return totalRequiredWei + (totalRequiredWei * REVEAL_FEE_BUFFER_BPS) / BPS_DENOMINATOR;
 }
 
 export function revealRequestedOf(logs: Array<Log>, cell: Address, tokenId: string): RevealRequestedView | null {

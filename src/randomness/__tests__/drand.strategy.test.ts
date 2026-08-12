@@ -134,7 +134,6 @@ function makeStrategy(options: StrategyOptions): {
         clock: { genesis: 1_700_000_000, period: 3 },
         beacon: new SilentBeacon(),
         contracts,
-        wallet,
         revealRequests,
         logger: new NoopLogger(),
     });
@@ -161,44 +160,13 @@ function sentCall(tx: TransactionRequest): { functionName: string; args: Readonl
 }
 
 describe('DrandRandomnessStrategy', () => {
-    it('quotes the request fee at the current gas price, which the adapter needs to price a fulfilment', async () => {
-        const { strategy, contracts, wallet } = makeStrategy({
-            results: { quoteFeeAt: 4_200n },
-            gasPrices: [7_000_000_000n],
-        });
+    it('prices no part of a reveal, leaving the whole price to the Cell that charges it', async () => {
+        const { strategy, contracts, wallet } = makeStrategy({ results: { quoteFeeAt: 4_200n } });
 
-        expect(await strategy.quoteRequestFee()).toBe(4_200n);
-        expect(wallet.gasPriceReads).toBe(1);
-        expect(contracts.reads).toEqual([
-            {
-                address: SOURCE,
-                abi: RANDOMNESS_ADAPTER_ABI,
-                functionName: 'quoteFeeAt',
-                args: [7_000_000_000n],
-            },
-        ]);
-    });
-
-    it('never quotes through the gas-price-free view, which answers zero off-chain here', async () => {
-        const { strategy, contracts } = makeStrategy({ results: { quoteFeeAt: 4_200n, quoteFee: 0n } });
-
-        await strategy.quoteRequestFee();
-
-        expect(contracts.reads.map((read) => read.functionName)).not.toContain('quoteFee');
+        expect('quoteRequestFee' in strategy).toBe(false);
         expect('quoteFee' in strategy).toBe(false);
-    });
-
-    it('carries a rising gas price into the quote instead of caching it', async () => {
-        const { strategy, contracts, wallet } = makeStrategy({
-            results: { quoteFeeAt: 9n },
-            gasPrices: [42n, 77n],
-        });
-
-        await strategy.quoteRequestFee();
-        await strategy.quoteRequestFee();
-
-        expect(wallet.gasPriceReads).toBe(2);
-        expect(contracts.reads.map((read) => read.args)).toEqual([[42n], [77n]]);
+        expect(contracts.reads).toHaveLength(0);
+        expect(wallet.gasPriceReads).toBe(0);
     });
 
     it('reads an open request at the adapter and reports the round it targets', async () => {

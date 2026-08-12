@@ -8,6 +8,18 @@ export const CELL_ABI = [
     },
     {
         type: 'function',
+        name: 'quoteReveal',
+        inputs: [],
+        outputs: [
+            { name: 'ethContributionWei', type: 'uint256', internalType: 'uint256' },
+            { name: 'randomnessFeeWei', type: 'uint256', internalType: 'uint256' },
+            { name: 'totalRequiredWei', type: 'uint256', internalType: 'uint256' },
+            { name: 'cpuBurnWei', type: 'uint256', internalType: 'uint256' },
+        ],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
         name: 'getCell',
         inputs: [{ name: 'tokenId', type: 'uint256', internalType: 'uint256' }],
         outputs: [
@@ -239,7 +251,30 @@ export const CELL_ABI = [
     },
     {
         type: 'error',
-        name: 'InsufficientRevealFee',
+        name: 'InsufficientRevealPayment',
+        inputs: [
+            { name: 'required', type: 'uint256', internalType: 'uint256' },
+            { name: 'provided', type: 'uint256', internalType: 'uint256' },
+        ],
+    },
+    {
+        type: 'error',
+        name: 'RevealPaymentNotConfigured',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'RevealHookNotConfigured',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'HookDeliveryFailed',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'RefundFailed',
         inputs: [],
     },
     {

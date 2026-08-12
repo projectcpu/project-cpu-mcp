@@ -7,11 +7,33 @@ const CELL_REVERT_NAMES: ReadonlyArray<CellRevertName> = Object.values(CellRever
 
 function messageFor(name: CellRevertName, args: ReadonlyArray<unknown>, tokenId: string): string {
     switch (name) {
-        case CellRevertName.INSUFFICIENT_REVEAL_FEE:
+        case CellRevertName.INSUFFICIENT_REVEAL_PAYMENT:
             return (
-                `The reveal fee moved between the quote and the send: the cell asks the randomness source for ` +
-                `its fee inside the request, and this transaction carried less than it quoted. The quote ` +
-                `follows the gas price, so quote again and retry.`
+                `The reveal price moved between the quote and the send: cell ${tokenId} required ` +
+                `${String(args[0] ?? 'more')} wei and this transaction carried ${String(args[1] ?? 'less')}. ` +
+                `Nothing was spent — reveal cell ${tokenId} again and it prices the reveal afresh.`
+            );
+        case CellRevertName.REVEAL_PAYMENT_NOT_CONFIGURED:
+            return (
+                `This deployment has put no price on a reveal yet — neither the ETH leg nor the $CPU leg — so ` +
+                `no cell can be revealed on it. Nothing was spent and cell ${tokenId} is untouched.`
+            );
+        case CellRevertName.REVEAL_HOOK_NOT_CONFIGURED:
+            return (
+                `This deployment has nowhere to send a reveal's ETH contribution, so it refuses every reveal. ` +
+                `Nothing was spent and cell ${tokenId} is untouched.`
+            );
+        case CellRevertName.HOOK_DELIVERY_FAILED:
+            return (
+                `The reveal's ETH contribution could not be delivered, so the whole request was undone: ` +
+                `nothing was spent and cell ${tokenId} is untouched. This is a fault of the deployment, not ` +
+                `of your wallet — retry later.`
+            );
+        case CellRevertName.REFUND_FAILED:
+            return (
+                `The reveal carried more ETH than it cost and the change could not be returned, so the whole ` +
+                `request was undone: nothing was spent and cell ${tokenId} is untouched. A wallet that ` +
+                `refuses a plain ETH transfer cannot reveal.`
             );
         case CellRevertName.REVEAL_NOT_CONFIGURED:
             return (

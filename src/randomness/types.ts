@@ -6,10 +6,14 @@ import type { ILogger } from '../logger/types.js';
 import type { IAppConfig } from '../services/types.js';
 import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
+/**
+ * Names the source a push network draws from, and nothing more: the Cell prices the whole reveal — its own
+ * legs and the source's fee together — so a second, client-side quote could only disagree with it. The
+ * factory hands this back as a plain value; it stays a union member so a reveal must still name its mode.
+ */
 export interface PushRandomness {
     kind: RandomnessKind.ENTROPY;
     source: Address;
-    quoteFee(): Promise<bigint>;
 }
 
 export interface SelfServiceRandomness {
@@ -17,7 +21,6 @@ export interface SelfServiceRandomness {
     source: Address;
     clock: BeaconRoundClock;
     beacon: IBeaconClient;
-    quoteRequestFee(): Promise<bigint>;
     readRequest(requestId: bigint): Promise<AdapterRequestView>;
     findOpenRequest(owner: Address, tokenId: string): Promise<OpenRequestMatch | null>;
     findRetiredSourceRequest(owner: Address, tokenId: string): Promise<OpenRequestMatch | null>;
@@ -30,25 +33,17 @@ export interface IRandomnessStrategyFactory {
     create(descriptor: RandomnessDescriptor, cell: Address): Promise<RandomnessStrategy>;
 }
 
-export interface PushRandomnessOptions {
-    source: Address;
-    contracts: IContractClient;
-    logger: ILogger;
-}
-
 export interface SelfServiceRandomnessOptions {
     source: Address;
     clock: BeaconRoundClock;
     beacon: IBeaconClient;
     contracts: IContractClient;
-    wallet: WalletProvider;
     revealRequests: IRevealRequestsReader;
     logger: ILogger;
 }
 
 export interface RandomnessStrategyFactoryOptions {
     contracts: IContractClient;
-    wallet: WalletProvider;
     revealRequests: IRevealRequestsReader;
     logger: ILogger;
 }

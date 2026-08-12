@@ -70,7 +70,7 @@ function makeResponse(overrides: Partial<AppConfigResponse> = {}): AppConfigResp
                 branch: null,
             },
         ],
-        reveal: { firstFree: true, reRevealCost: '1000' },
+        reveal: { ethContribution: '1000', cpuBurn: '2000' },
         transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
         trade: { saleBurnPercent: 1, maxSaleFeeBp: 5000 },
         storage: { hubStorageMultiplier: 10 },
@@ -317,7 +317,34 @@ describe('AppConfigService', () => {
         ).load();
         expect(without.recipes).toEqual([]);
         expect(without.buildings).toEqual([]);
-        expect(without.reveal).toEqual({ firstFree: true, reRevealCost: '0' });
+        expect(without.reveal).toBeNull();
+    });
+
+    it('reports an unknown reveal payment, never a free one, when the API serves a shape it cannot price', async () => {
+        const api = new FakeApi({
+            status: 200,
+            data: makeResponse({ reveal: { firstFree: true, reRevealCost: '1000' } as never }),
+        });
+
+        expect((await makeService(api).load()).reveal).toBeNull();
+    });
+
+    it('reads the fractional reveal legs a live stand serves, rather than dropping them as unpriceable', async () => {
+        const api = new FakeApi({
+            status: 200,
+            data: makeResponse({ reveal: { ethContribution: '0.0001', cpuBurn: '1' } }),
+        });
+
+        expect((await makeService(api).load()).reveal).toEqual({ ethContribution: '0.0001', cpuBurn: '1' });
+    });
+
+    it('keeps both reveal legs as served, including a leg priced at zero', async () => {
+        const api = new FakeApi({
+            status: 200,
+            data: makeResponse({ reveal: { ethContribution: '0', cpuBurn: '7' } }),
+        });
+
+        expect((await makeService(api).load()).reveal).toEqual({ ethContribution: '0', cpuBurn: '7' });
     });
 
     it('throws on a non-200 config response', async () => {

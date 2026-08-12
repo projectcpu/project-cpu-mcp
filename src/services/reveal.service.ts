@@ -1,21 +1,22 @@
-import { isAddress, parseEther, type Address, type Hash } from 'viem';
+import { isAddress, type Address, type Hash } from 'viem';
 
 import { isRevealAlreadyPending } from './reveal-revert.utils.js';
 import {
-    REVEAL_FEE_BUFFER_BPS,
     REVEAL_POLL_INTERVAL_MS,
     REVEAL_POLL_TIMEOUT_MS,
     REVEAL_PRIME_ATTEMPTS,
     REVEAL_PRIME_INTERVAL_MS,
 } from './reveal.constants.js';
-import { revealDepositsOf, revealRequestedOf } from './reveal.utils.js';
+import { bufferedRevealValue, revealDepositsOf, revealRequestedOf } from './reveal.utils.js';
 import {
     type AppConfig,
+    type FundedRevealRequest,
     type IAllowanceService,
     type IAppConfig,
     type ICellClient,
     type PushRevealInput,
     type RevealDepositView,
+    type RevealQuote,
     type RevealRequestContext,
     type RevealResult,
     type RevealServiceOptions,
@@ -40,7 +41,7 @@ import {
 } from '../randomness/types.js';
 import { sleep } from '../utils/async.utils.js';
 import { errorMessage } from '../utils/error.utils.js';
-import { cpuFromWei } from '../utils/format.utils.js';
+import { cpuFromWei, ethFromWei } from '../utils/format.utils.js';
 import type { ConfirmedTx, IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class RevealService {
@@ -127,24 +128,9 @@ export class RevealService {
     }
 
     private async revealThroughPushSource(input: PushRevealInput): Promise<RevealResult> {
-        const { randomness, config, cell, tokenId, genesis, previousRevealCount } = input;
-        const { approveTxHash, reRevealCostWei } = await this.settleReRevealCost(config, cell, genesis);
-
-        const fee = await randomness.quoteFee();
-        const value = fee + (fee * REVEAL_FEE_BUFFER_BPS) / 10_000n;
-
-        this.logger.info('requesting on-chain reveal', {
-            tokenId,
-            cell,
-            genesis,
-            source: randomness.source,
-            feeWei: fee.toString(),
-            valueWei: value.toString(),
-            network: config.network,
-        });
-
-        const txHash = await this.cellClient.requestReveal({ cell, tokenId: BigInt(tokenId), value });
-        const confirmed = await this.contracts.confirm(txHash, 'Reveal request');
+        const { randomness, cell, tokenId, genesis, previousRevealCount } = input;
+        const { approveTxHash, quote, value } = await this.prepareRevealRequest(input);
+        const confirmed = await this.sendRevealRequest(cell, tokenId, value);
 
         const fulfilled = await this.pollFulfillment(tokenId, previousRevealCount);
 
@@ -166,8 +152,8 @@ export class RevealService {
             deposits: null,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
-            fee: cpuFromWei(fee.toString()),
-            reRevealCost: cpuFromWei(reRevealCostWei.toString()),
+            ethPaid: ethFromWei(quote.totalRequiredWei.toString()),
+            cpuBurn: cpuFromWei(quote.cpuBurnWei.toString()),
             approveTxHash,
             fulfilled,
             note: null,
@@ -175,31 +161,17 @@ export class RevealService {
     }
 
     private async revealThroughSelfServiceSource(input: SelfServiceRevealInput): Promise<RevealResult> {
-        const { randomness, config, cell, tokenId, genesis } = input;
+        const { randomness, cell, tokenId } = input;
 
         if (input.pending) {
             return this.settleOpenRequest(input, null);
         }
 
-        const { approveTxHash, reRevealCostWei } = await this.settleReRevealCost(config, cell, genesis);
-
-        const fee = await randomness.quoteRequestFee();
-        const value = fee + (fee * REVEAL_FEE_BUFFER_BPS) / 10_000n;
-
-        this.logger.info('requesting on-chain reveal', {
-            tokenId,
-            cell,
-            genesis,
-            source: randomness.source,
-            feeWei: fee.toString(),
-            valueWei: value.toString(),
-            network: config.network,
-        });
+        const { approveTxHash, quote, value } = await this.prepareRevealRequest(input);
 
         let confirmed: ConfirmedTx;
         try {
-            const txHash = await this.cellClient.requestReveal({ cell, tokenId: BigInt(tokenId), value });
-            confirmed = await this.contracts.confirm(txHash, 'Reveal request');
+            confirmed = await this.sendRevealRequest(cell, tokenId, value);
         } catch (error) {
             if (!isRevealAlreadyPending(error)) {
                 throw error;
@@ -225,8 +197,8 @@ export class RevealService {
             source: requested?.source ?? randomness.source,
             requestTxHash: confirmed.txHash,
             approveTxHash,
-            feeWei: fee,
-            reRevealCostWei,
+            paidWei: quote.totalRequiredWei,
+            cpuBurnWei: quote.cpuBurnWei,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
         });
@@ -247,8 +219,8 @@ export class RevealService {
             source: open.source,
             requestTxHash: null,
             approveTxHash,
-            feeWei: 0n,
-            reRevealCostWei: 0n,
+            paidWei: 0n,
+            cpuBurnWei: 0n,
             status: null,
             blockNumber: null,
         });
@@ -469,7 +441,7 @@ export class RevealService {
             fulfilled: false,
             note:
                 `${reason} The reveal request stays open: call reveal on cell ${input.tokenId} again to settle ` +
-                `it — that charges no new fee — or read the draw with get_cell ${input.tokenId} once anyone ` +
+                `it — that pays for no second reveal — or read the draw with get_cell ${input.tokenId} once anyone ` +
                 `settles it.`,
         };
     }
@@ -488,8 +460,8 @@ export class RevealService {
             round: round === null ? null : round.toString(),
             status: ctx.status,
             blockNumber: ctx.blockNumber,
-            fee: cpuFromWei(ctx.feeWei.toString()),
-            reRevealCost: cpuFromWei(ctx.reRevealCostWei.toString()),
+            ethPaid: ethFromWei(ctx.paidWei.toString()),
+            cpuBurn: cpuFromWei(ctx.cpuBurnWei.toString()),
             approveTxHash: ctx.approveTxHash,
         };
     }
@@ -520,8 +492,8 @@ export class RevealService {
             source: retired.source,
             requestTxHash: null,
             approveTxHash,
-            feeWei: 0n,
-            reRevealCostWei: 0n,
+            paidWei: 0n,
+            cpuBurnWei: 0n,
             status: null,
             blockNumber: null,
         };
@@ -534,7 +506,7 @@ export class RevealService {
                 `Cell ${input.tokenId} carries reveal request ${retired.requestId}, opened at randomness source ` +
                 `${retired.source}, while the chain config now reveals through ${input.randomness.source}. A cell ` +
                 `takes its draw only from the source its own request names, so nothing you can send closes this ` +
-                `one: this call requested nothing and paid no reveal fee, calling reveal again will not clear the ` +
+                `one: this call requested nothing and paid nothing, calling reveal again will not clear the ` +
                 `cell, and fulfill_reveal refuses a request of a retired source. The cell stays locked on this ` +
                 `open request until an admin of the contracts clears it on-chain — that admin cleanup is the only ` +
                 `way out.`,
@@ -557,35 +529,62 @@ export class RevealService {
             deposits: null,
             status: null,
             blockNumber: null,
-            fee: '0',
-            reRevealCost: '0',
+            ethPaid: '0',
+            cpuBurn: '0',
             approveTxHash,
             fulfilled: false,
             note:
                 `Cell ${input.tokenId} already carries a reveal request, so this call requested nothing and ` +
-                `paid no reveal fee, but the game API does not list that request yet, so this call cannot tell ` +
+                `paid nothing, but the game API does not list that request yet, so this call cannot tell ` +
                 `which request to settle. Two ways out: call reveal on cell ${input.tokenId} again in a few ` +
                 `seconds and it settles the request once the API lists it; or leave it — anyone holding the ` +
                 `beacon signature can settle it — and read the draw with get_cell ${input.tokenId} once it lands.`,
         };
     }
 
-    private async settleReRevealCost(
+    /**
+     * Every reveal is paid for, first one included, and only the Cell knows the price: the chain config
+     * carries the two gameplay legs but not the live randomness fee, so a value rebuilt from it underpays.
+     * Either leg may be zero — a zero burn needs no approval, and a zero contribution is not a free reveal.
+     */
+    private async fundReveal(
         config: AppConfig,
         cell: Address,
-        genesis: boolean,
-    ): Promise<{ approveTxHash: Hash | null; reRevealCostWei: bigint }> {
-        if (genesis) {
-            return { approveTxHash: null, reRevealCostWei: 0n };
+    ): Promise<{ approveTxHash: Hash | null; quote: RevealQuote }> {
+        const quote = await this.cellClient.quoteReveal(cell);
+        if (quote.cpuBurnWei === 0n) {
+            return { approveTxHash: null, quote };
         }
         const cpuToken = config.contracts.cpuToken;
         if (!isAddress(cpuToken, { strict: false })) {
-            throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay for re-reveal.`);
+            throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay for a reveal.`);
         }
-        const reRevealCostWei = parseEther(config.reveal.reRevealCost);
-        const approveTxHash =
-            reRevealCostWei > 0n ? await this.allowance.ensureAllowance(cpuToken, cell, reRevealCostWei) : null;
-        return { approveTxHash, reRevealCostWei };
+        const approveTxHash = await this.allowance.ensureAllowance(cpuToken, cell, quote.cpuBurnWei);
+        return { approveTxHash, quote };
+    }
+
+    private async prepareRevealRequest(input: PushRevealInput | SelfServiceRevealInput): Promise<FundedRevealRequest> {
+        const { randomness, config, cell, tokenId, genesis } = input;
+        const { approveTxHash, quote } = await this.fundReveal(config, cell);
+        const value = bufferedRevealValue(quote.totalRequiredWei);
+
+        this.logger.info('requesting on-chain reveal', {
+            tokenId,
+            cell,
+            genesis,
+            source: randomness.source,
+            quotedWei: quote.totalRequiredWei.toString(),
+            valueWei: value.toString(),
+            cpuBurnWei: quote.cpuBurnWei.toString(),
+            network: config.network,
+        });
+
+        return { approveTxHash, quote, value };
+    }
+
+    private async sendRevealRequest(cell: Address, tokenId: string, value: bigint): Promise<ConfirmedTx> {
+        const txHash = await this.cellClient.requestReveal({ cell, tokenId: BigInt(tokenId), value });
+        return this.contracts.confirm(txHash, 'Reveal request');
     }
 
     private async pollFulfillment(tokenId: string, previousRevealCount: number): Promise<boolean> {

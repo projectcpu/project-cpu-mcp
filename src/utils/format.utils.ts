@@ -29,6 +29,11 @@ export function cpuFromWei(wei: string): string {
     return formatEther(BigInt(wei));
 }
 
+/** Native ETH amounts are wei too; kept apart from `cpuFromWei` so a call site names the currency it renders. */
+export function ethFromWei(wei: string): string {
+    return formatEther(BigInt(wei));
+}
+
 const BP_PER_PERCENT = 100;
 const BP_EPSILON = 1e-6;
 

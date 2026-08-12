@@ -98,7 +98,7 @@ async function build(config: AppConfig): Promise<RevealFulfiller | null> {
     const logger = new NoopLogger();
     return createRevealFulfiller({
         appConfig: new FakeAppConfig(config),
-        randomness: new RandomnessStrategyFactory({ contracts, wallet, revealRequests, logger }),
+        randomness: new RandomnessStrategyFactory({ contracts, revealRequests, logger }),
         revealRequests,
         contracts,
         wallet,
@@ -135,7 +135,7 @@ describe('startRevealFulfilment', () => {
         const logger = new NoopLogger();
         const handle = startRevealFulfilment({
             appConfig,
-            randomness: new RandomnessStrategyFactory({ contracts, wallet, revealRequests: requests, logger }),
+            randomness: new RandomnessStrategyFactory({ contracts, revealRequests: requests, logger }),
             revealRequests: requests,
             contracts,
             wallet,

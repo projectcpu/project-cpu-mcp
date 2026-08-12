@@ -216,7 +216,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
                 branch: null,
             },
         ],
-        reveal: { firstFree: true, reRevealCost: '0' },
+        reveal: { ethContribution: '0', cpuBurn: '0' },
         transport: {
             moveRadius: 1,
             hubRadius: 3,

@@ -1,4 +1,9 @@
-import { normalizeOptionalAddress, parseRandomnessDescriptor, toModeSwitchView } from './app-config.utils.js';
+import {
+    normalizeOptionalAddress,
+    parseRandomnessDescriptor,
+    parseRevealPayment,
+    toModeSwitchView,
+} from './app-config.utils.js';
 import type { AppConfig, AppConfigServiceOptions, IAppConfig } from './types.js';
 import type { ApiClient } from '../api/client.js';
 import { type AppConfigResponse, appConfigResponseSchema, HttpStatus } from '../api/types.js';
@@ -77,7 +82,7 @@ export class AppConfigService implements IAppConfig {
                 level: b.level ?? null,
                 branch: b.branch ?? null,
             })),
-            reveal: data.reveal ?? { firstFree: true, reRevealCost: '0' },
+            reveal: parseRevealPayment(data.reveal),
             transport: {
                 moveRadius: data.transport.moveRadius,
                 hubRadius: data.transport.hubRadius,

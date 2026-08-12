@@ -6,6 +6,7 @@ import {
     NO_UPGRADE_PARTICIPANTS_NOTE,
     NONE_LABEL,
     PUSH_RANDOMNESS_SUMMARY,
+    REVEAL_PAYMENT_UNKNOWN_SUMMARY,
     SELF_SERVICE_RANDOMNESS_SUMMARY,
     TERMINAL_UPGRADE_SUCCESSOR_LABEL,
     UNKNOWN_LABEL,
@@ -16,12 +17,24 @@ import {
     type RandomnessDescriptor,
     RandomnessKind,
     type RecipeView,
+    type RevealPaymentView,
 } from '../../../api/types.js';
 import type { CatalogBuildingView } from '../../../services/types.js';
 import { formatStacks, resourceLabel, type ResourceNames } from '../../../utils/format.utils.js';
 
 export function describeRandomnessMode(randomness: RandomnessDescriptor): string {
     return randomness.kind === RandomnessKind.DRAND ? SELF_SERVICE_RANDOMNESS_SUMMARY : PUSH_RANDOMNESS_SUMMARY;
+}
+
+export function describeRevealPayment(payment: RevealPaymentView | null): string {
+    if (payment === null) {
+        return REVEAL_PAYMENT_UNKNOWN_SUMMARY;
+    }
+    return (
+        `every reveal contributes ${payment.ethContribution} ETH to the $CPU liquidity ` +
+        `pool and burns ${payment.cpuBurn} $CPU, the first reveal of a cell included; ` +
+        `cpu_reveal reads the exact total off the chain and pays that`
+    );
 }
 
 export function summarizeRecipeLines(recipes: Array<RecipeView>, resources: ResourceNames): string {

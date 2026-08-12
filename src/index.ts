@@ -84,7 +84,6 @@ async function main(): Promise<void> {
     const claims = new FulfilmentClaims();
     const randomness = new RandomnessStrategyFactory({
         contracts,
-        wallet,
         revealRequests,
         logger: logger.child('randomness'),
     });

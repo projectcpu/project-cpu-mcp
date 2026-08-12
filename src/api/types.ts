@@ -169,10 +169,16 @@ export interface BuildingView {
     branch: string | null;
 }
 
-/** Reveal-cost params — the first reveal of a cell is free; re-revealing a depleted cell costs `reRevealCost`. */
-export interface RevealCostView {
-    firstFree: boolean;
-    reRevealCost: string;
+/**
+ * The two gameplay legs charged on every reveal, both whole-unit decimals as `GET /api/v1/config` serves
+ * them — never wei. Either leg may be zero, and the pair is never the total a reveal transaction must
+ * carry — only the Cell's own quote is (see `ICellClient.quoteReveal`).
+ */
+export interface RevealPaymentView {
+    /** ETH contributed to the $CPU liquidity pool, decimal ETH. */
+    ethContribution: string;
+    /** $CPU burned from the caller, decimal $CPU. */
+    cpuBurn: string;
 }
 
 export interface TransportRoutingView {
@@ -231,8 +237,8 @@ export interface AppConfigResponse {
     recipes: Array<RecipeView>;
     /** Per-building catalog — on-chain id, kind, costs, and mine/craft bindings. */
     buildings: Array<BuildingView>;
-    /** First-reveal-free + re-reveal cost params. */
-    reveal: RevealCostView;
+    /** The two gameplay legs every reveal is charged. */
+    reveal: RevealPaymentView;
     transport: TransportRoutingView;
     trade: TradeFeeView;
     storage: StorageConfigView;
