@@ -16,6 +16,16 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    APPROVE_HASH,
+    CELL,
+    CPU_TOKEN,
+    FakeAllowance,
+    FakeWallet,
+    RANDOMNESS_ADAPTER,
+    WALLET_ADDRESS,
+    makeConfig,
+} from './service-fakes.js';
+import {
     type IRevealRequestsReader,
     type OpenRevealRequestsView,
     type OpenRevealRequestView,
@@ -49,17 +59,8 @@ import {
 } from '../../wallet/types.js';
 import { CellClient } from '../cell.client.js';
 import { RevealService } from '../reveal.service.js';
+import { bufferedRevealValue } from '../reveal.utils.js';
 import type { AppConfig, CellViewResult, ICellClient, IAppConfig, RequestRevealParams, RevealQuote } from '../types.js';
-import {
-    APPROVE_HASH,
-    CELL,
-    CPU_TOKEN,
-    FakeAllowance,
-    FakeWallet,
-    RANDOMNESS_ADAPTER,
-    WALLET_ADDRESS,
-    makeConfig,
-} from './service-fakes.js';
 
 const REQUEST_HASH = `0x${'e'.repeat(64)}` as Hash;
 
@@ -217,7 +218,7 @@ describe('RevealService on a push randomness source', () => {
         vi.useRealTimers();
     });
 
-    it('submits a genesis reveal paying the quoted total, with no $CPU to approve on a zero-burn profile', async () => {
+    it('submits a genesis reveal covering the quoted total, with no $CPU to approve on a zero-burn profile', async () => {
         const h = makeReveal({ bumpTo: 1 });
 
         const p = h.service.reveal('42');
@@ -225,7 +226,7 @@ describe('RevealService on a push randomness source', () => {
         const result = await p;
 
         expect(h.allowance.calls).toHaveLength(0);
-        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 4_000n }]);
+        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 5_000n }]);
         expect(result.genesis).toBe(true);
         expect(result.fee).toBe(formatEther(4_000n));
         expect(result.cpuBurn).toBe('0');
@@ -276,10 +277,47 @@ describe('RevealService on a push randomness source', () => {
         await vi.runAllTimersAsync();
         const result = await p;
 
-        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 4_000n }]);
+        const value = h.cellClient.requests[0]?.value ?? 0n;
+        expect(value).toBeGreaterThanOrEqual(4_000n);
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: 9n }]);
         expect(result.fee).toBe(formatEther(4_000n));
         expect(result.cpuBurn).toBe(formatEther(9n));
+    });
+
+    it('covers the quoted total and carries headroom over it, while approving the burn to the wei', async () => {
+        const h = makeReveal({
+            quote: { ethContributionWei: 3_000n, randomnessFeeWei: 1_000n, totalRequiredWei: 4_000n, cpuBurnWei: 9n },
+            approve: APPROVE_HASH,
+            bumpTo: 1,
+        });
+
+        const p = h.service.reveal('42');
+        await vi.runAllTimersAsync();
+        await p;
+
+        const value = h.cellClient.requests[0]?.value ?? 0n;
+        expect(value).toBeGreaterThanOrEqual(4_000n);
+        expect(value).toBe(5_000n);
+        expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: 9n }]);
+    });
+
+    it('still overshoots the contribution when the fee leg quotes zero off-chain, which is when a send of the bare total underpays', async () => {
+        const h = makeReveal({
+            quote: { ethContributionWei: 3_000n, randomnessFeeWei: 0n, totalRequiredWei: 3_000n, cpuBurnWei: 0n },
+            bumpTo: 1,
+        });
+
+        const p = h.service.reveal('42');
+        await vi.runAllTimersAsync();
+        await p;
+
+        expect(h.cellClient.requests[0]?.value).toBeGreaterThan(3_000n);
+    });
+
+    it('puts the headroom on the total, so a zero fee leg never shrinks it to nothing', () => {
+        expect(bufferedRevealValue(4_000n)).toBe(5_000n);
+        expect(bufferedRevealValue(3_000n)).toBe(3_750n);
+        expect(bufferedRevealValue(0n)).toBe(0n);
     });
 
     it('fails the reveal when the cell cannot be quoted, before any request goes out', async () => {
@@ -771,12 +809,14 @@ describe('RevealService on a self-service randomness source', () => {
         expect(h.reader.refreshes).toBe(3);
     });
 
-    it('sends exactly the total the cell quoted, with no buffer of its own on top', async () => {
+    it('covers the total the cell quoted and carries headroom over it', async () => {
         const h = makeSelfService();
 
         await runReveal(h);
 
-        expect(h.wallet.sent[0]?.value).toBe(SELF_CONTRIBUTION + FEE);
+        const value = h.wallet.sent[0]?.value ?? 0n;
+        expect(value).toBeGreaterThanOrEqual(SELF_CONTRIBUTION + FEE);
+        expect(value).toBe(7_500n);
     });
 
     it('tells an empty draw apart from a draw it could not read', async () => {
@@ -1174,13 +1214,13 @@ describe('RevealService on a self-service randomness source', () => {
         expect(h.claims.has(SELF_SOURCE_ON_WIRE, REQUEST_ID)).toBe(false);
     });
 
-    it('approves the quoted burn and sends the quoted total for a fresh request on a revealed cell', async () => {
+    it('approves the quoted burn to the wei and covers the quoted total for a fresh request on a revealed cell', async () => {
         const h = makeSelfService({ revealCount: 1, cpuBurnWei: parseEther('1'), approve: APPROVE_HASH });
 
         const result = await runReveal(h);
 
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: SELF_CELL, needed: parseEther('1') }]);
-        expect(h.wallet.sent[0]?.value).toBe(SELF_CONTRIBUTION + FEE);
+        expect(h.wallet.sent[0]?.value).toBe(7_500n);
         expect(result.genesis).toBe(false);
         expect(result.fee).toBe(formatEther(SELF_CONTRIBUTION + FEE));
         expect(result.cpuBurn).toBe('1');

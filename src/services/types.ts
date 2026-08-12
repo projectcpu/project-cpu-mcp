@@ -164,7 +164,8 @@ export interface RequestRevealParams {
 
 /**
  * What one reveal costs right now, read from the Cell itself and the only source a reveal is funded from:
- * `totalRequiredWei` is the whole ETH the transaction must carry and `cpuBurnWei` the exact burn to approve.
+ * `totalRequiredWei` is the whole ETH the reveal is charged and `cpuBurnWei` the exact burn to approve. The
+ * transaction carries headroom over the total (see `bufferedRevealValue`); the burn is approved as quoted.
  * Any leg may be zero.
  */
 export interface RevealQuote {
@@ -280,7 +281,7 @@ export interface RevealRequestContext {
     source: Address;
     requestTxHash: Hash | null;
     approveTxHash: Hash | null;
-    /** The whole ETH the request carried, as the Cell quoted it. */
+    /** The whole ETH the reveal cost, as the Cell quoted it; the transaction carries headroom above it. */
     paidWei: bigint;
     cpuBurnWei: bigint;
     status: TxStatus | null;
@@ -325,7 +326,11 @@ export interface RevealResult {
     deposits: Array<RevealDepositView> | null;
     status: TxStatus | null;
     blockNumber: string | null;
-    /** The whole ETH this reveal paid (decimal); "0" when the call sent no request of its own. */
+    /**
+     * The whole ETH this reveal cost (decimal), as the cell quoted it; "0" when the call sent no request of
+     * its own. The transaction carries headroom above it and the excess comes back in the same transaction,
+     * so this is what the wallet is left down by.
+     */
     fee: string;
     /** $CPU burned by this reveal (decimal); "0" when the call sent no request of its own. */
     cpuBurn: string;

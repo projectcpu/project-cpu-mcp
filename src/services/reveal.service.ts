@@ -7,7 +7,7 @@ import {
     REVEAL_PRIME_ATTEMPTS,
     REVEAL_PRIME_INTERVAL_MS,
 } from './reveal.constants.js';
-import { revealDepositsOf, revealRequestedOf } from './reveal.utils.js';
+import { bufferedRevealValue, revealDepositsOf, revealRequestedOf } from './reveal.utils.js';
 import {
     type AppConfig,
     type IAllowanceService,
@@ -129,13 +129,14 @@ export class RevealService {
     private async revealThroughPushSource(input: PushRevealInput): Promise<RevealResult> {
         const { randomness, config, cell, tokenId, genesis, previousRevealCount } = input;
         const { approveTxHash, quote } = await this.fundReveal(config, cell);
-        const value = quote.totalRequiredWei;
+        const value = bufferedRevealValue(quote.totalRequiredWei);
 
         this.logger.info('requesting on-chain reveal', {
             tokenId,
             cell,
             genesis,
             source: randomness.source,
+            quotedWei: quote.totalRequiredWei.toString(),
             valueWei: value.toString(),
             cpuBurnWei: quote.cpuBurnWei.toString(),
             network: config.network,
@@ -164,7 +165,7 @@ export class RevealService {
             deposits: null,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
-            fee: cpuFromWei(value.toString()),
+            fee: cpuFromWei(quote.totalRequiredWei.toString()),
             cpuBurn: cpuFromWei(quote.cpuBurnWei.toString()),
             approveTxHash,
             fulfilled,
@@ -180,13 +181,14 @@ export class RevealService {
         }
 
         const { approveTxHash, quote } = await this.fundReveal(config, cell);
-        const value = quote.totalRequiredWei;
+        const value = bufferedRevealValue(quote.totalRequiredWei);
 
         this.logger.info('requesting on-chain reveal', {
             tokenId,
             cell,
             genesis,
             source: randomness.source,
+            quotedWei: quote.totalRequiredWei.toString(),
             valueWei: value.toString(),
             cpuBurnWei: quote.cpuBurnWei.toString(),
             network: config.network,
@@ -221,7 +223,7 @@ export class RevealService {
             source: requested?.source ?? randomness.source,
             requestTxHash: confirmed.txHash,
             approveTxHash,
-            paidWei: value,
+            paidWei: quote.totalRequiredWei,
             cpuBurnWei: quote.cpuBurnWei,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
