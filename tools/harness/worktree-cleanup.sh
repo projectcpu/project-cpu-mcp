@@ -13,6 +13,10 @@ EOF
 log() { printf '[worktree-cleanup] %s\n' "$*" >&2; }
 fail() { log "refusing: $*"; exit 2; }
 
+harness_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+# shellcheck source=tools/harness/worktree-common.sh
+source "$harness_dir/worktree-common.sh"
+
 SOURCE=$PWD
 TARGET=
 DISCARD=0
@@ -31,15 +35,8 @@ done
 [ -n "$TARGET" ] || { usage; fail 'target is required'; }
 [ -d "$SOURCE" ] || fail "source does not exist: $SOURCE"
 
-common_dir=$(git -C "$SOURCE" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
-  || fail "source is not a Git worktree: $SOURCE"
-case "$common_dir" in
-  /*) ;;
-  *) common_dir=$(cd "$SOURCE/$common_dir" && pwd -P) ;;
-esac
-main_root=$(dirname "$common_dir")
-main_root=$(cd "$main_root" && pwd -P)
-expected_parent=$(cd "$(dirname "$main_root")" && pwd -P)/mcp-worktrees
+resolve_harness_roots "$SOURCE"
+resolve_worktree_container 0
 
 if [ -e "$TARGET" ]; then
   [ -d "$TARGET" ] || fail "target is not a directory: $TARGET"
@@ -65,7 +62,7 @@ fi
 [ "$target" != "$expected_parent" ] || fail 'the worktree container cannot be removed'
 
 record=$(git -C "$main_root" worktree list --porcelain | awk -v target="$target" '
-  $1 == "worktree" { active = ($2 == target); block = $0 ORS; next }
+  $1 == "worktree" { active = (substr($0, 10) == target); block = $0 ORS; next }
   active { block = block $0 ORS }
   active && NF == 0 { printf "%s", block; active = 0; exit }
   END { if (active) printf "%s", block }
@@ -93,7 +90,15 @@ branch=$(printf '%s\n' "$record" | sed -n 's#^branch refs/heads/##p' | head -n 1
 [ "$branch" != main ] || fail 'the main branch worktree cannot be removed'
 
 dirty=$(git -C "$target" status --porcelain --untracked-files=all)
-ignored=$(git -C "$target" ls-files --others --ignored --exclude-standard)
+ignored_pathspecs=(. ':(exclude)node_modules' ':(exclude)node_modules/**')
+for rel in "${HARNESS_LOCAL_FILES[@]}"; do
+  if [ -f "$target/$rel" ] && [ -f "$main_root/$rel" ] \
+    && [ ! -L "$target/$rel" ] && [ ! -L "$main_root/$rel" ] \
+    && cmp -s "$target/$rel" "$main_root/$rel"; then
+    ignored_pathspecs+=(":(exclude)$rel")
+  fi
+done
+ignored=$(git -C "$target" ls-files --others --ignored --exclude-standard -- "${ignored_pathspecs[@]}")
 if { [ -n "$dirty" ] || [ -n "$ignored" ]; } && [ "$DISCARD" -ne 1 ]; then
   fail 'worktree has tracked, untracked, or ignored files; repeat with --discard-changes only after an explicit discard decision'
 fi

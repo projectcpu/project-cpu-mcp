@@ -24,13 +24,15 @@ Branches: `<type>/<kebab-slug>`, type — conventional-commit (`feat` `fix` `cho
   without a type becomes `feat/<slug>`. Never use `git worktree add` directly and never create a
   branch in the hub — both bypass the repository lifecycle.
 - Worktrees live in the sibling `../mcp-worktrees/<branch-slug>` directory.
-- A new local-only (gitignored) file a worktree needs → add its path to `ENV_FILES` in
-  `tools/harness/worktree-create.sh`.
+- A new local-only (gitignored) file a worktree needs → add its path to `HARNESS_LOCAL_FILES` in
+  `tools/harness/worktree-common.sh` so creation and safe cleanup use the same inventory.
 - Remove a worktree with
   `bash tools/harness/worktree-cleanup.sh --target PATH [--source PATH]`. Cleanup preserves local and
-  unmerged work and keeps the branch by default. Use `--discard-changes` only after an explicit
-  decision to destroy detected work, and use the independent `--delete-branch` flag only after an
-  explicit decision to remove the branch. Never finish cleanup with hand-written recursive deletion.
+  unmerged work and keeps the branch by default. Installed dependencies and unchanged copies of the
+  configured local files are reproducible lifecycle artifacts; changed local copies and all other
+  ignored files remain protected. Use `--discard-changes` only after an explicit decision to destroy
+  detected work, and use the independent `--delete-branch` flag only after an explicit decision to
+  remove the branch. Never finish cleanup with hand-written recursive deletion.
 
 Local specs, tickets, handoffs, investigation artifacts, and working notes belong under the main
 checkout's root `scratch/` directory. Keep them untracked; never put them in `docs/`, `.scratch/`, or a
