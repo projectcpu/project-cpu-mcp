@@ -1,5 +1,10 @@
 import { GET_GAME_CONFIG_DESCRIPTION, SALE_FEE_STRUCTURAL_BOUND_PERCENT } from './constants.js';
-import { describeRandomnessMode, describeRevealPayment } from './get-game-config.utils.js';
+import {
+    describeRandomnessMode,
+    describeRevealPayment,
+    summarizeRecipeLines,
+    summarizeUpgradeGraph,
+} from './get-game-config.utils.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 
@@ -49,10 +54,18 @@ export function registerGetGameConfigTool(server: ToolRegistrar, context: AppCon
                 `Contracts — land ${config.contracts.land}, $CPU ${config.contracts.cpuToken}, ` +
                 `cpuHook ${config.contracts.cpuHook}, cell ${config.contracts.cell}, ` +
                 `transport ${config.contracts.transport}.`;
+            const recipeLines = summarizeRecipeLines(config.recipes, config.resources);
+            const upgradeGraph = summarizeUpgradeGraph(config.buildings, config.resources);
+            const text =
+                `${header}\n\n` +
+                `Recipes (one line each — id | cycle duration | in resource stacks | out resource stacks | ` +
+                `$CPU/cycle):\n${recipeLines}\n\n` +
+                'Upgrade graph (one line per building with a predecessor or a successor — type | level | branch ' +
+                `| predecessor | successors | cost | inputs | build time | effects):\n${upgradeGraph}`;
 
             return {
                 content: [
-                    { type: 'text', text: header },
+                    { type: 'text', text },
                     { type: 'text', text: JSON.stringify(config) },
                 ],
             };

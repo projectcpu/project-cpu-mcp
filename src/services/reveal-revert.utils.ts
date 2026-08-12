@@ -1,13 +1,9 @@
+import { decodeKnownRevert } from './revert-decode.utils.js';
 import { CellRevertName } from './types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import { withAdapterPhrase } from '../randomness/adapter-revert.utils.js';
-import { decodeRevert } from '../wallet/revert.utils.js';
 
 const CELL_REVERT_NAMES: ReadonlyArray<CellRevertName> = Object.values(CellRevertName);
-
-function toCellRevertName(name: string): CellRevertName | null {
-    return CELL_REVERT_NAMES.find((known) => known === name) ?? null;
-}
 
 function messageFor(name: CellRevertName, args: ReadonlyArray<unknown>, tokenId: string): string {
     switch (name) {
@@ -86,26 +82,22 @@ function messageFor(name: CellRevertName, args: ReadonlyArray<unknown>, tokenId:
 }
 
 export function isRevealAlreadyPending(error: unknown): boolean {
-    const decoded = decodeRevert(error, CELL_ABI);
-    return decoded !== null && toCellRevertName(decoded.name) === CellRevertName.REVEAL_ALREADY_PENDING;
+    const decoded = decodeKnownRevert(error, CELL_ABI, CELL_REVERT_NAMES);
+    return decoded !== null && decoded.name === CellRevertName.REVEAL_ALREADY_PENDING;
 }
 
 export function withRevealInFlightPhrase(error: unknown, tokenId: string): unknown {
-    const decoded = decodeRevert(error, CELL_ABI);
-    if (decoded === null || toCellRevertName(decoded.name) !== CellRevertName.REVEAL_IN_FLIGHT) {
+    const decoded = decodeKnownRevert(error, CELL_ABI, CELL_REVERT_NAMES);
+    if (decoded === null || decoded.name !== CellRevertName.REVEAL_IN_FLIGHT) {
         return error;
     }
     return new Error(messageFor(CellRevertName.REVEAL_IN_FLIGHT, decoded.args, tokenId), { cause: error });
 }
 
 export function withRevealRequestPhrase(error: unknown, tokenId: string): unknown {
-    const decoded = decodeRevert(error, CELL_ABI);
+    const decoded = decodeKnownRevert(error, CELL_ABI, CELL_REVERT_NAMES);
     if (decoded === null) {
         return withAdapterPhrase(error);
     }
-    const name = toCellRevertName(decoded.name);
-    if (name === null) {
-        return withAdapterPhrase(error);
-    }
-    return new Error(messageFor(name, decoded.args, tokenId), { cause: error });
+    return new Error(messageFor(decoded.name, decoded.args, tokenId), { cause: error });
 }

@@ -9,6 +9,19 @@ export const BUILD_DESCRIPTION = [
     'rebuilding until its cooldown ends). Inspect the result with `cpu_get_cell`.',
 ].join(' ');
 
+export const UPGRADE_DESCRIPTION = [
+    'Upgrade the building on a Land cell you own to a dynamically configured target type — needs a session',
+    '(`cpu_authenticate` first). Pick `targetBuildingType` from the current catalog (`cpu_get_game_config`): only',
+    'upgraded entries (those with a predecessor) are valid targets — a base building belongs to `cpu_build`.',
+    "Costs the target's full configured $CPU build cost (auto-approved once); reuses the same on-chain placement",
+    'as `cpu_build`, so it installs the target immediately and starts a new construction timer. The contract is',
+    'the final authority on whether the target is a valid direct successor, on active processes, demolition',
+    'cooldown, materials, and storage capacity — this tool does not pre-check any of them locally, so a stale',
+    'local view never blocks a transaction the chain would accept. Deposits, liquid warehouse balances, and the',
+    'selected mode survive the upgrade. Production and Hub functionality are unavailable until construction',
+    'finishes; inspect progress with `cpu_get_cell`.',
+].join(' ');
+
 export const DEMOLISH_DESCRIPTION = [
     'Remove the building from a Land cell you own, clearing it for a different building. Requires a session —',
     'call `cpu_authenticate` first. Not free: it burns a fraction of the building’s build cost in $CPU',

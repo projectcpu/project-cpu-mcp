@@ -63,6 +63,11 @@ function makeResponse(overrides: Partial<AppConfigResponse> = {}): AppConfigResp
                 recipes: [],
                 effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
                 recipeOpexCpu: null,
+                upgradeFrom: null,
+                upgradeTo: [],
+                family: null,
+                level: null,
+                branch: null,
             },
         ],
         reveal: { ethContribution: '1000', cpuBurn: '2000' },
@@ -366,6 +371,40 @@ describe('AppConfigService', () => {
             new FakeApi({ status: 200, data: { ...base, buildings: [withoutOpex] } }),
         ).load();
         expect(withNull.buildings[0]?.recipeOpexCpu).toBeNull();
+    });
+
+    it('carries a served upgrade graph entry through untouched', async () => {
+        const base = makeResponse();
+        const [mine] = base.buildings;
+        const served = {
+            ...(mine as BuildingView),
+            upgradeTo: ['mine_branch_a_l2', 'mine_branch_b_l2'],
+            family: 'mine',
+            level: 1,
+            branch: null,
+        };
+        const config = await makeService(new FakeApi({ status: 200, data: { ...base, buildings: [served] } })).load();
+        expect(config.buildings[0]?.upgradeTo).toEqual(['mine_branch_a_l2', 'mine_branch_b_l2']);
+        expect(config.buildings[0]?.family).toBe('mine');
+        expect(config.buildings[0]?.level).toBe(1);
+        expect(config.buildings[0]?.branch).toBeNull();
+    });
+
+    it('defaults a catalog entry from an API that predates the upgrade graph to no upgrade participation', async () => {
+        const base = makeResponse();
+        const [mine] = base.buildings;
+        const {
+            upgradeTo: _upgradeTo,
+            family: _family,
+            level: _level,
+            branch: _branch,
+            ...legacy
+        } = mine as BuildingView;
+        const config = await makeService(new FakeApi({ status: 200, data: { ...base, buildings: [legacy] } })).load();
+        expect(config.buildings[0]?.upgradeTo).toEqual([]);
+        expect(config.buildings[0]?.family).toBeNull();
+        expect(config.buildings[0]?.level).toBeNull();
+        expect(config.buildings[0]?.branch).toBeNull();
     });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BuildingKind, CraftRecipeId } from '../../../api/types.js';
+import { BuildingKind, BuildingType, CraftRecipeId } from '../../../api/types.js';
 import { makeCell, makeProjectionConfig } from '../../../map/__tests__/fixtures.js';
 import { toCell } from '../../../map/cell-view.utils.js';
 import { type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
@@ -24,6 +24,11 @@ const catalogEntry: CatalogBuildingView = {
     recipes: [CraftRecipeId.SmeltSteel],
     effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
     recipeOpexCpu: null,
+    upgradeFrom: BuildingType.OilPowerPlant,
+    upgradeTo: [],
+    family: 'oil_power_plant',
+    level: 2,
+    branch: 'a',
 };
 
 function upgradedCraftCell() {

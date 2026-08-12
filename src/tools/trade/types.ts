@@ -124,6 +124,25 @@ export const listLotsInputSchema = {
         .describe(`Zone radius in grid steps around aroundTokenId (server clamps to ${MAX_ROUTE_RADIUS}).`),
 };
 
+export const listFillsInputSchema = {
+    resourceId: z.number().int().nullable().default(null).describe('Filter by resource id.'),
+    hubTokenId: tokenIdSchema.nullable().default(null).describe('Filter to a Hub by its cell token id.'),
+    before: z
+        .string()
+        .nullable()
+        .default(null)
+        .describe(
+            'Cursor "<blockNumber>:<logIndex>", copied from the last row of the previous page — the feed pages ' +
+                'DOWN from it, towards older fills. Omit to read the head (newest).',
+        ),
+    limit: z
+        .number()
+        .int()
+        .nullable()
+        .default(null)
+        .describe('Page size, 1–200 (default 50). The server rejects anything outside that range.'),
+};
+
 export const marketsInputSchema = {
     hub: tokenIdSchema.nullable().default(null).describe('Filter to a Hub by its cell token id.'),
     resourceId: z.number().int().nullable().default(null).describe('Filter by resource id.'),

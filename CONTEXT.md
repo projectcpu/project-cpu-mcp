@@ -109,6 +109,12 @@ The reported burn is the authority whenever it disagrees with the estimate.
   Neither is ever reconstructed by subtracting a demolition's configured length from its end: that length
   can be changed while a demolition is already running, so the arithmetic would produce a confident lie.
 
+## Trading
+
+- **Fill** — one executed purchase against a lot, whole or partial; a lot has many of them, and the
+  last one buys the lot out.
+  *Avoid*: trade, settlement, sale.
+
 ## Fees
 
 All fee rates on the MCP surface are expressed in **percent**. The contracts and the game API express

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BuildingKind, BuildingType, CraftRecipeId, RandomnessKind } from '../../../api/types.js';
 import { Network } from '../../../config/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import { type AppConfig, ModeSwitchKind } from '../../../services/types.js';
+import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerGetGameConfigTool } from '../get-game-config/get-game-config.js';
@@ -26,14 +26,14 @@ const CONFIG: AppConfig = {
         syndicate: '0x9999999999999999999999999999999999999999',
     },
     randomness: { kind: RandomnessKind.ENTROPY, adapter: '0x00000000000000000000000000000000000000a1' },
-    resources: { 5: 'Iron' },
+    resources: { 5: 'Iron', 101: 'Concrete', 102: 'Steel' },
     recipes: [
         {
             id: CraftRecipeId.SmeltSteel,
             name: 'Smelt Steel',
             tier: 2,
-            inputs: [],
-            outputs: [],
+            inputs: [{ resourceId: 5, amount: 4 }],
+            outputs: [{ resourceId: 102, amount: 2 }],
             durationSec: 30,
             costCpu: '0',
         },
@@ -55,6 +55,11 @@ const CONFIG: AppConfig = {
             recipes: [],
             effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
             recipeOpexCpu: null,
+            upgradeFrom: null,
+            upgradeTo: ['mine_branch_a_l2', 'mine_branch_b_l2'],
+            family: 'mine',
+            level: 1,
+            branch: null,
         },
         {
             type: BuildingType.SteelMill,
@@ -72,6 +77,77 @@ const CONFIG: AppConfig = {
             recipes: [CraftRecipeId.SmeltSteel],
             effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
             recipeOpexCpu: { smelt_steel: '2' },
+            upgradeFrom: null,
+            upgradeTo: [],
+            family: null,
+            level: null,
+            branch: null,
+        },
+        {
+            type: 'mine_branch_a_l2' as BuildingType,
+            onChainId: 46,
+            name: 'Mine Branch A L2',
+            kind: BuildingKind.Extractor,
+            tier: 2,
+            buildCost: '15',
+            buildTimeSec: 300,
+            buildInputs: [{ resourceId: 101, amount: 3 }],
+            demolishCost: { cpu: '7.5', inputs: [] },
+            modeSwitchCost: '1',
+            modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: '1' },
+            minableResources: [5, 6],
+            recipes: [],
+            effects: { cycleTimeBp: 9000, extractionShareBp: 10000, inputEfficiency: [] },
+            recipeOpexCpu: null,
+            upgradeFrom: 'mine',
+            upgradeTo: ['mine_branch_a_l3'],
+            family: 'mine',
+            level: 2,
+            branch: 'a',
+        },
+        {
+            type: 'mine_branch_a_l3' as BuildingType,
+            onChainId: 47,
+            name: 'Mine Branch A L3',
+            kind: BuildingKind.Extractor,
+            tier: 3,
+            buildCost: '40',
+            buildTimeSec: 600,
+            buildInputs: [{ resourceId: 102, amount: 2 }],
+            demolishCost: { cpu: '20', inputs: [] },
+            modeSwitchCost: '1',
+            modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: '1' },
+            minableResources: [5, 6],
+            recipes: [],
+            effects: { cycleTimeBp: 8000, extractionShareBp: 10000, inputEfficiency: [] },
+            recipeOpexCpu: null,
+            upgradeFrom: 'mine_branch_a_l2',
+            upgradeTo: [],
+            family: 'mine',
+            level: 3,
+            branch: 'a',
+        },
+        {
+            type: 'mine_branch_b_l2' as BuildingType,
+            onChainId: 48,
+            name: 'Mine Branch B L2',
+            kind: BuildingKind.Extractor,
+            tier: 2,
+            buildCost: '18',
+            buildTimeSec: 360,
+            buildInputs: [],
+            demolishCost: { cpu: '9', inputs: [] },
+            modeSwitchCost: '1',
+            modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: '1' },
+            minableResources: [5, 6],
+            recipes: [],
+            effects: { cycleTimeBp: 11000, extractionShareBp: 12000, inputEfficiency: [] },
+            recipeOpexCpu: null,
+            upgradeFrom: 'mine',
+            upgradeTo: [],
+            family: 'mine',
+            level: 2,
+            branch: 'b',
         },
     ],
     reveal: { ethContribution: '1000000000000000', cpuBurn: '2000000000000000000' },
@@ -206,5 +282,144 @@ describe('get_game_config tool', () => {
             kind: 'entropy',
             adapter: '0x00000000000000000000000000000000000000a1',
         });
+    });
+});
+
+describe('get_game_config tool — recipe summary', () => {
+    it('summarizes each recipe on one compact machine-readable line with its id, cycle, inputs, outputs, and cost', async () => {
+        const header = (await capture()({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain('smelt_steel | 30s/cycle | in 4 Iron (#5) | out 2 Steel (#102) | 0 $CPU/cycle');
+    });
+
+    it('preserves recipe cycle duration and outputs in the raw configuration', async () => {
+        const json = JSON.parse((await capture()({} as never)).content[1]?.text ?? '{}') as AppConfig;
+
+        expect(json.recipes[0]?.durationSec).toBe(30);
+        expect(json.recipes[0]?.outputs).toEqual([{ resourceId: 102, amount: 2 }]);
+    });
+});
+
+describe('get_game_config tool — upgrade graph', () => {
+    it('shows a base building with multiple immediate targets, its level, and no predecessor', async () => {
+        const header = (await capture()({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain(
+            'mine | level 1 | branch none | predecessor none (base building) | ' +
+                'successors mine_branch_a_l2,mine_branch_b_l2 | cost 5 $CPU',
+        );
+    });
+
+    it('shows a branch-specific intermediate building with its predecessor and successor', async () => {
+        const header = (await capture()({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain(
+            'mine_branch_a_l2 | level 2 | branch a | predecessor mine | successors mine_branch_a_l3 | ' +
+                'cost 15 $CPU | inputs 3 Concrete (#101) | build 300s',
+        );
+    });
+
+    it('shows a terminal upgrade with no successors', async () => {
+        const header = (await capture()({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain(
+            'mine_branch_a_l3 | level 3 | branch a | predecessor mine_branch_a_l2 | successors none (terminal)',
+        );
+        expect(header).toContain(
+            'mine_branch_b_l2 | level 2 | branch b | predecessor mine | successors none (terminal)',
+        );
+    });
+
+    it('excludes buildings that do not participate in any upgrade line', async () => {
+        const header = (await capture()({} as never)).content[0]?.text ?? '';
+
+        expect(header).not.toMatch(/steel_mill \|/);
+    });
+
+    it('labels cycleTimeBp as a modifier rather than an absolute duration', async () => {
+        const header = (await capture()({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain(
+            'cycleTimeBp 9000 (a cycle-time modifier applied on top of the base production cycle, ' +
+                'not an absolute duration)',
+        );
+        expect(header).not.toMatch(/cycleTimeBp 9000 \(9s\)/);
+        expect(header).not.toMatch(/cycleTimeBp 9000 seconds/);
+    });
+
+    it('does not present extractor-compatible resources as a guaranteed mining yield', async () => {
+        const header = (await capture()({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain('extractor-compatible Iron (#5),resource #6 (compatible resources only');
+        expect(header).toContain('actual mining yield is set at runtime, not a guaranteed amount');
+    });
+});
+
+describe('get_game_config tool — upgrade graph against awkward configurations', () => {
+    function withOrphanParticipant(overrides: Partial<CatalogBuildingView> = {}): AppConfig {
+        return {
+            ...CONFIG,
+            buildings: [
+                ...CONFIG.buildings,
+                {
+                    ...(CONFIG.buildings[0] as CatalogBuildingView),
+                    type: 'mine_branch_c_l2' as BuildingType,
+                    onChainId: 49,
+                    name: 'Mine Branch C L2',
+                    buildCost: '19',
+                    buildTimeSec: 300,
+                    buildInputs: [],
+                    upgradeFrom: 'mine',
+                    upgradeTo: [],
+                    family: null,
+                    level: null,
+                    branch: 'c',
+                    ...overrides,
+                },
+            ],
+        };
+    }
+
+    it('shows a participant with no configured level as unknown rather than crashing or blanking it', async () => {
+        const header = (await capture(withOrphanParticipant())({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain(
+            'mine_branch_c_l2 | level unknown | branch c | predecessor mine | successors none (terminal)',
+        );
+    });
+
+    it('sorts a participant with no configured family after every family-grouped participant, not before', async () => {
+        const header = (await capture(withOrphanParticipant())({} as never)).content[0]?.text ?? '';
+
+        const mineIndex = header.indexOf('mine | level 1');
+        const orphanIndex = header.indexOf('mine_branch_c_l2 |');
+        expect(mineIndex).toBeGreaterThan(-1);
+        expect(orphanIndex).toBeGreaterThan(mineIndex);
+    });
+
+    it('renders a predecessor reference even when that predecessor type no longer exists in the catalog (a stale config)', async () => {
+        const header =
+            (await capture(withOrphanParticipant({ upgradeFrom: 'deleted_predecessor' }))({} as never)).content[0]
+                ?.text ?? '';
+
+        expect(header).toContain('predecessor deleted_predecessor');
+    });
+
+    it('reports no upgrade participants when every building in the catalog predates the upgrade graph', async () => {
+        const legacy: AppConfig = {
+            ...CONFIG,
+            buildings: CONFIG.buildings.map((b) => ({
+                ...b,
+                upgradeFrom: null,
+                upgradeTo: [],
+                family: null,
+                level: null,
+                branch: null,
+            })),
+        };
+
+        const header = (await capture(legacy)({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain('No buildings currently participate in an upgrade line.');
     });
 });

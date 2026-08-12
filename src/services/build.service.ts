@@ -11,14 +11,17 @@ import type {
     IAllowanceService,
     IAppConfig,
     ICellClient,
+    UpgradeInput,
+    UpgradeResult,
 } from './types.js';
+import { withUpgradeRevertPhrase } from './upgrade-revert.utils.js';
 import { assertWarehouseHas } from './warehouse.utils.js';
 import { BuildingKind } from '../api/types.js';
 import type { BuildingView } from '../api/types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
 import { activeDemolition } from '../map/map.utils.js';
-import type { Cell, RevealCellReader } from '../map/types.js';
+import type { Cell, CellBuildingView, RevealCellReader } from '../map/types.js';
 import { formatUnixSeconds } from '../utils/format.utils.js';
 import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
 
@@ -109,7 +112,7 @@ export class BuildService {
         const txHash = await this.cellClient.demolish({ cell, tokenId });
         const confirmed = await this.contracts.confirm(txHash, 'Demolish transaction');
 
-        const rebuildUnlockAt = this.decodeDemolishFinish(confirmed.logs, cell);
+        const rebuildUnlockAt = this.decodeFinishAt(confirmed.logs, cell, 'BuildingDemolished');
         const rebuildCooldownSec =
             rebuildUnlockAt === null ? null : Math.max(0, rebuildUnlockAt - this.mapReader.getServerTime());
 
@@ -127,10 +130,136 @@ export class BuildService {
         };
     }
 
-    private decodeDemolishFinish(logs: Array<Log>, cell: Address): number | null {
-        const events = parseEventLogs({ abi: CELL_ABI, eventName: 'BuildingDemolished', logs });
+    async upgrade(input: UpgradeInput): Promise<UpgradeResult> {
+        const config = await this.appConfig.load();
+        const wallet = this.wallet.get();
+        this.assertChain(config, wallet);
+
+        const cell = this.requireCell(config);
+        const cpuToken = this.requireCpuToken(config);
+        const tokenId = BigInt(input.tokenId);
+        const target = this.resolveUpgradeTarget(config, input.targetBuildingType);
+
+        await this.mapReader.refresh();
+        const state = await this.mapReader.readRevealCell(input.tokenId);
+        const building = this.requireCurrentBuilding(input.tokenId, state, wallet.getAddress());
+
+        if (building.type === target.type) {
+            return this.upgradeNoop(input, target, building);
+        }
+
+        const approveTxHash = await this.approveCpuSpend(cpuToken, cell, target.buildCost);
+
+        this.logger.info('upgrading building', {
+            tokenId: input.tokenId,
+            fromBuildingType: building.type,
+            toBuildingType: target.type,
+            onChainId: target.onChainId,
+            buildCost: target.buildCost,
+            network: config.network,
+        });
+        let txHash: Hash;
+        try {
+            txHash = await this.cellClient.place({ cell, tokenId, buildingType: target.onChainId });
+        } catch (error) {
+            throw withUpgradeRevertPhrase(error, {
+                tokenId: input.tokenId,
+                targetType: target.type,
+                resources: config.resources,
+            });
+        }
+        const confirmed = await this.contracts.confirm(txHash, 'Upgrade transaction');
+
+        const finishAt =
+            this.decodeFinishAt(confirmed.logs, cell, 'BuildingPlaced') ??
+            (await this.refreshUpgradeFinish(input.tokenId, target.type));
+
+        return {
+            tokenId: input.tokenId,
+            fromBuildingType: building.type,
+            toBuildingType: target.type,
+            buildCost: target.buildCost,
+            buildInputs: target.buildInputs,
+            noop: false,
+            upgrading: true,
+            finishAt,
+            approveTxHash,
+            txHash: confirmed.txHash,
+            status: confirmed.status,
+            blockNumber: confirmed.blockNumber,
+        };
+    }
+
+    private upgradeNoop(input: UpgradeInput, target: BuildingView, building: CellBuildingView): UpgradeResult {
+        const upgrading = building.buildFinishAt !== null && this.mapReader.getServerTime() < building.buildFinishAt;
+        this.logger.info('upgrade no-op: target already installed', {
+            tokenId: input.tokenId,
+            toBuildingType: target.type,
+            upgrading,
+        });
+        return {
+            tokenId: input.tokenId,
+            fromBuildingType: building.type,
+            toBuildingType: target.type,
+            buildCost: '0',
+            buildInputs: [],
+            noop: true,
+            upgrading,
+            finishAt: building.buildFinishAt,
+            approveTxHash: null,
+            txHash: null,
+            status: null,
+            blockNumber: null,
+        };
+    }
+
+    private async refreshUpgradeFinish(tokenId: string, targetType: string): Promise<number | null> {
+        try {
+            await this.mapReader.refresh();
+            const refreshed = await this.mapReader.readRevealCell(tokenId);
+            return refreshed?.building?.type === targetType ? refreshed.building.buildFinishAt : null;
+        } catch (error) {
+            this.logger.error('projected-state refresh failed after a confirmed upgrade', { tokenId, error });
+            return null;
+        }
+    }
+
+    private decodeFinishAt(
+        logs: Array<Log>,
+        cell: Address,
+        eventName: 'BuildingPlaced' | 'BuildingDemolished',
+    ): number | null {
+        const events = parseEventLogs({ abi: CELL_ABI, eventName, logs });
         const event = events.find((e) => e.address.toLowerCase() === cell.toLowerCase());
-        return event === undefined ? null : Number(event.args.demolishFinishAt);
+        if (event === undefined) {
+            return null;
+        }
+        const finishAt = 'buildFinishAt' in event.args ? event.args.buildFinishAt : event.args.demolishFinishAt;
+        return Number(finishAt);
+    }
+
+    private resolveUpgradeTarget(config: AppConfig, targetBuildingType: string): BuildingView {
+        const view = this.buildingView(config, targetBuildingType);
+        if (view.upgradeFrom === null) {
+            throw new Error(
+                `${targetBuildingType} is a base building with no predecessor; place it with cpu_build, not cpu_upgrade.`,
+            );
+        }
+        return view;
+    }
+
+    private requireCurrentBuilding(tokenId: string, state: Cell | null, address: string): CellBuildingView {
+        this.assertOwner(tokenId, state, address, 'upgrade');
+        if (state === null) {
+            throw new Error(
+                `Cell ${tokenId} was not found on the map (it may not be revealed yet, or not synced — retry ` +
+                    `shortly); nothing to upgrade.`,
+            );
+        }
+        if (state.building === null) {
+            throw new Error(`Cell ${tokenId} has no building to upgrade (it is empty).`);
+        }
+        return state.building;
     }
 
     private assertBuildable(input: BuildInput, state: Cell | null, address: string): void {
