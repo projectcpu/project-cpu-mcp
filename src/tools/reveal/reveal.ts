@@ -6,13 +6,13 @@ import type { ToolRegistrar } from '../types.js';
 
 function requestLine(result: RevealResult): string {
     if (result.requestTxHash === null) {
-        return `Cell ${result.tokenId} already carried a reveal request, so nothing new was requested and no $CPU was spent.`;
+        return `Cell ${result.tokenId} already carried a reveal request, so nothing new was requested and nothing was spent.`;
     }
-    const cost = result.genesis ? 'first reveal (free)' : `re-reveal (burned ${result.reRevealCost} $CPU)`;
     const approve = result.approveTxHash !== null ? ` approve tx ${result.approveTxHash},` : '';
     return (
-        `Requested reveal for cell ${result.tokenId} — ${cost}, paid ${result.fee} ETH fee.${approve} ` +
-        `request tx ${result.requestTxHash} confirmed in block ${result.blockNumber}.`
+        `Requested reveal for cell ${result.tokenId} — paid ${result.fee} ETH and burned ${result.cpuBurn} ` +
+        `$CPU, the price the cell quoted for this reveal.${approve} request tx ${result.requestTxHash} ` +
+        `confirmed in block ${result.blockNumber}.`
     );
 }
 

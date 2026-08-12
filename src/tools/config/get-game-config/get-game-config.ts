@@ -1,5 +1,5 @@
 import { GET_GAME_CONFIG_DESCRIPTION, SALE_FEE_STRUCTURAL_BOUND_PERCENT } from './constants.js';
-import { describeRandomnessMode } from './get-game-config.utils.js';
+import { describeRandomnessMode, describeRevealPayment } from './get-game-config.utils.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 
@@ -26,9 +26,7 @@ export function registerGetGameConfigTool(server: ToolRegistrar, context: AppCon
                         return `${b.name} (${b.kind}, build ${b.buildCost} $CPU, demolish ${b.demolishCost.cpu} $CPU${opex})`;
                     })
                     .join(', ') || 'none';
-            const reveal = config.reveal.firstFree
-                ? `first reveal free, re-reveal ${config.reveal.reRevealCost} $CPU`
-                : `reveal ${config.reveal.reRevealCost} $CPU`;
+            const reveal = describeRevealPayment(config.reveal);
             const trade =
                 `${config.trade.saleBurnPercent}% sale burn, sale fee up to ${SALE_FEE_STRUCTURAL_BOUND_PERCENT}% ` +
                 `(the structural bound — a hub owner can set any rate up to this maximum)`;

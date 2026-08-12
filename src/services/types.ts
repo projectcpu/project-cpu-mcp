@@ -12,7 +12,7 @@ import type {
     OpenRevealRequestView,
     RandomnessDescriptor,
     RecipeView,
-    RevealCostView,
+    RevealPaymentView,
     StorageConfigView,
     SyndicateSort,
     TransportRoutingView,
@@ -114,8 +114,11 @@ export interface AppConfig {
     recipes: Array<RecipeView>;
     /** Per-building catalog — on-chain id, kind, costs, and mine/craft bindings. */
     buildings: Array<CatalogBuildingView>;
-    /** First-reveal-free + re-reveal cost params. */
-    reveal: RevealCostView;
+    /**
+     * The two gameplay legs every reveal is charged; `null` when the game API serves no reveal payment at
+     * all. Never the total to send — a reveal is always funded from `ICellClient.quoteReveal`.
+     */
+    reveal: RevealPaymentView | null;
     transport: TransportRoutingView;
     /** Trade fee params, normalized to the MCP's percent surface. */
     trade: TradeConfigView;
@@ -157,6 +160,18 @@ export interface RequestRevealParams {
     cell: Address;
     tokenId: bigint;
     value: bigint;
+}
+
+/**
+ * What one reveal costs right now, read from the Cell itself and the only source a reveal is funded from:
+ * `totalRequiredWei` is the whole ETH the transaction must carry and `cpuBurnWei` the exact burn to approve.
+ * Any leg may be zero.
+ */
+export interface RevealQuote {
+    ethContributionWei: bigint;
+    randomnessFeeWei: bigint;
+    totalRequiredWei: bigint;
+    cpuBurnWei: bigint;
 }
 
 export interface PlaceParams {
@@ -203,6 +218,7 @@ export interface CellViewResult {
 
 export interface ICellClient {
     readCellView(cell: Address, tokenId: bigint): Promise<CellViewResult>;
+    quoteReveal(cell: Address): Promise<RevealQuote>;
     requestReveal(params: RequestRevealParams): Promise<Hash>;
     place(params: PlaceParams): Promise<Hash>;
     demolish(params: DemolishParams): Promise<Hash>;
@@ -225,7 +241,11 @@ export interface RevealServiceOptions {
 }
 
 export enum CellRevertName {
-    INSUFFICIENT_REVEAL_FEE = 'InsufficientRevealFee',
+    INSUFFICIENT_REVEAL_PAYMENT = 'InsufficientRevealPayment',
+    REVEAL_PAYMENT_NOT_CONFIGURED = 'RevealPaymentNotConfigured',
+    REVEAL_HOOK_NOT_CONFIGURED = 'RevealHookNotConfigured',
+    HOOK_DELIVERY_FAILED = 'HookDeliveryFailed',
+    REFUND_FAILED = 'RefundFailed',
     REVEAL_NOT_CONFIGURED = 'RevealNotConfigured',
     REVEAL_CELL_OCCUPIED = 'RevealCellOccupied',
     REVEAL_PROCESS_ACTIVE = 'RevealProcessActive',
@@ -260,8 +280,9 @@ export interface RevealRequestContext {
     source: Address;
     requestTxHash: Hash | null;
     approveTxHash: Hash | null;
-    feeWei: bigint;
-    reRevealCostWei: bigint;
+    /** The whole ETH the request carried, as the Cell quoted it. */
+    paidWei: bigint;
+    cpuBurnWei: bigint;
     status: TxStatus | null;
     blockNumber: string | null;
 }
@@ -304,9 +325,10 @@ export interface RevealResult {
     deposits: Array<RevealDepositView> | null;
     status: TxStatus | null;
     blockNumber: string | null;
+    /** The whole ETH this reveal paid (decimal); "0" when the call sent no request of its own. */
     fee: string;
-    /** Re-reveal cost in $CPU (decimal); "0" for a first reveal. */
-    reRevealCost: string;
+    /** $CPU burned by this reveal (decimal); "0" when the call sent no request of its own. */
+    cpuBurn: string;
     approveTxHash: Hash | null;
     fulfilled: boolean;
     note: string | null;

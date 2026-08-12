@@ -253,8 +253,20 @@ itself or has to be delivered. These terms govern that split and what an undeliv
   carries `revealPending`, and that flag locks more than the draw: the cell holds no new draw, a second request
   on it is refused on-chain (`RevealAlreadyPending`), and so is building on it (`RevealInFlight`) — `cpu_build`
   places nothing until the request is settled.
-  *Avoid*: re-reveal (that is a fresh request on a cell already mined dry — it needs every deposit exhausted
-  and burns $CPU).
+  *Avoid*: re-reveal (that is a fresh request on a cell already mined dry — it needs every deposit exhausted;
+  it is not a differently-priced reveal, since every reveal pays the same Reveal payment).
+- **Reveal payment** — what a reveal costs, the first reveal of a cell and every later one alike: an ETH
+  contribution to the $CPU liquidity pool plus a $CPU burn, both set by the deployment and served in
+  `cpu_get_game_config` as `reveal`. Either leg may be priced at zero, and a zero leg is skipped rather than
+  charged; both at zero is a cell with no price set at all, which refuses every reveal
+  (`RevealPaymentNotConfigured`). There is no free reveal.
+  *Avoid*: first reveal free, re-reveal price.
+- **Reveal quote** — the Cell's own price for one reveal, read immediately before the request and the only
+  thing a reveal is ever funded from: it carries the whole ETH the transaction must send and the exact $CPU
+  to approve. The Reveal payment names the two gameplay legs but never the total, so a value rebuilt from it
+  underpays and the request reverts (`InsufficientRevealPayment`). Surfaced on a `cpu_reveal` result as
+  `fee` — the whole ETH paid — and `cpuBurn`, both `0` when the call settled an open request instead of
+  opening one.
 - **Target round** — the beacon round whose signature closes one particular request. The source stores it
   with the request and hands it back when the request is read, and no signature for it exists until the beacon
   publishes that round — so a fulfilment attempted earlier has nothing to carry and the request just stays

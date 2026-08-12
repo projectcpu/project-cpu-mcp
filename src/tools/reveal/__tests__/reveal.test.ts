@@ -52,7 +52,7 @@ const fulfilledGenesis: RevealResult = {
     status: TxStatus.Success,
     blockNumber: '100',
     fee: '0.0001',
-    reRevealCost: '0',
+    cpuBurn: '0',
     approveTxHash: null,
     fulfilled: true,
     note: null,
@@ -74,15 +74,15 @@ const STALE_MAP_NOTE =
     'so get_cell 42 may still show the cell without the new draw until the map catches up.';
 
 const SETTLED_HEAD =
-    'Requested reveal for cell 42 — first reveal (free), paid 0.0001 ETH fee. ' +
-    'request tx 0xreveal confirmed in block 100. ' +
+    'Requested reveal for cell 42 — paid 0.0001 ETH and burned 0 $CPU, the price the cell quoted for this ' +
+    'reveal. request tx 0xreveal confirmed in block 100. ' +
     `Reveal request 7 at randomness source ${SOURCE}, settled by beacon round 91. fulfil tx 0xfulfil.`;
 
 describe('reveal tool', () => {
-    it('reports a fulfilled genesis reveal without an approve line', async () => {
+    it('reports a fulfilled genesis reveal as paid, without an approve line', async () => {
         const result = await harness(fulfilledGenesis)({ tokenId: '42' });
         expect(result.content[0]?.text).toMatch(/0xreveal/);
-        expect(result.content[0]?.text).toMatch(/first reveal \(free\)/);
+        expect(result.content[0]?.text).toMatch(/paid 0\.0001 ETH and burned 0 \$CPU/);
         expect(result.content[0]?.text).toMatch(/revealed/i);
         expect(result.content[0]?.text).not.toMatch(/approve/i);
         const parsed = JSON.parse(result.content[1]?.text ?? '{}') as RevealResult;
@@ -90,16 +90,31 @@ describe('reveal tool', () => {
         expect(parsed.approveTxHash).toBeNull();
     });
 
-    it('reports the approve tx and re-reveal cost for a paid re-reveal', async () => {
+    it('never calls a reveal free, whichever reveal of the cell it is', async () => {
+        for (const genesis of [true, false]) {
+            const text = (await harness({ ...fulfilledGenesis, genesis })({ tokenId: '42' })).content[0]?.text ?? '';
+            expect(text).not.toMatch(/free/i);
+        }
+    });
+
+    it('charges a first reveal and a later reveal the same way in the line it prints', async () => {
+        const first = (await harness({ ...fulfilledGenesis, cpuBurn: '1' })({ tokenId: '42' })).content[0]?.text;
+        const later = (await harness({ ...fulfilledGenesis, genesis: false, cpuBurn: '1' })({ tokenId: '42' }))
+            .content[0]?.text;
+
+        expect(first).toBe(later);
+        expect(first).toMatch(/paid 0\.0001 ETH and burned 1 \$CPU/);
+    });
+
+    it('reports the approve tx and the burn when the reveal approved $CPU', async () => {
         const result = await harness({
             ...fulfilledGenesis,
             genesis: false,
             approveTxHash: '0xapprove',
-            reRevealCost: '1',
+            cpuBurn: '1',
         })({ tokenId: '42' });
         expect(result.content[0]?.text).toMatch(/approve tx 0xapprove/);
-        expect(result.content[0]?.text).toMatch(/re-reveal/);
-        expect(result.content[0]?.text).toMatch(/1 \$CPU/);
+        expect(result.content[0]?.text).toMatch(/burned 1 \$CPU/);
     });
 
     it('tells the agent to poll get_cell when a pushed draw is still pending', async () => {
@@ -174,7 +189,7 @@ describe('reveal tool', () => {
         })({ tokenId: '42' });
         const text = result.content[0]?.text ?? '';
         expect(text).toMatch(/already carried a reveal request/i);
-        expect(text).toMatch(/no \$CPU was spent/i);
+        expect(text).toMatch(/nothing was spent/i);
         expect(text).toMatch(/does not list that request yet/i);
         expect(text).toMatch(/call reveal on cell 42 again/i);
         expect(text).toMatch(/get_cell 42/);

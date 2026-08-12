@@ -9,7 +9,6 @@ import type { IContractClient, WalletProvider } from '../wallet/types.js';
 export interface PushRandomness {
     kind: RandomnessKind.ENTROPY;
     source: Address;
-    quoteFee(): Promise<bigint>;
 }
 
 export interface SelfServiceRandomness {
@@ -17,7 +16,6 @@ export interface SelfServiceRandomness {
     source: Address;
     clock: BeaconRoundClock;
     beacon: IBeaconClient;
-    quoteRequestFee(): Promise<bigint>;
     readRequest(requestId: bigint): Promise<AdapterRequestView>;
     findOpenRequest(owner: Address, tokenId: string): Promise<OpenRequestMatch | null>;
     findRetiredSourceRequest(owner: Address, tokenId: string): Promise<OpenRequestMatch | null>;
@@ -32,8 +30,6 @@ export interface IRandomnessStrategyFactory {
 
 export interface PushRandomnessOptions {
     source: Address;
-    contracts: IContractClient;
-    logger: ILogger;
 }
 
 export interface SelfServiceRandomnessOptions {
@@ -41,14 +37,12 @@ export interface SelfServiceRandomnessOptions {
     clock: BeaconRoundClock;
     beacon: IBeaconClient;
     contracts: IContractClient;
-    wallet: WalletProvider;
     revealRequests: IRevealRequestsReader;
     logger: ILogger;
 }
 
 export interface RandomnessStrategyFactoryOptions {
     contracts: IContractClient;
-    wallet: WalletProvider;
     revealRequests: IRevealRequestsReader;
     logger: ILogger;
 }

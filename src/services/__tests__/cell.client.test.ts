@@ -124,25 +124,54 @@ describe('CellClient', () => {
         expect(contracts.sent).toHaveLength(0);
     });
 
-    it('explains an underpaid reveal request in plain words instead of leaving a bare selector', async () => {
+    it('explains an underpaid reveal request in plain words, naming what was required and carried', async () => {
         const data = encodeErrorResult({
-            abi: parseAbi(['error InsufficientRevealFee()']),
-            errorName: 'InsufficientRevealFee',
+            abi: CELL_ABI,
+            errorName: 'InsufficientRevealPayment',
+            args: [4_000n, 1_000n],
         });
         const { client } = makeClient({}, new Error('Execution reverted', { cause: { data } }));
 
         await expect(client.requestReveal({ cell: CELL, tokenId: 42n, value: 1_000n })).rejects.toThrow(
-            /reveal fee moved between the quote and the send.*quote again and retry/is,
+            /required 4000 wei and this transaction carried 1000.*prices the reveal afresh/is,
         );
     });
 
-    it('names the reveal fee revert of the cell, which no abi decoded before', () => {
+    it('explains a cell with no reveal price set as unconfigured, never as a free reveal', async () => {
+        const data = encodeErrorResult({ abi: CELL_ABI, errorName: 'RevealPaymentNotConfigured' });
+        const { client } = makeClient({}, new Error('Execution reverted', { cause: { data } }));
+
+        await expect(client.requestReveal({ cell: CELL, tokenId: 42n, value: 0n })).rejects.toThrow(
+            /put no price on a reveal yet.*no cell can be revealed/is,
+        );
+    });
+
+    it('explains a cell with nowhere to send the contribution', async () => {
+        const data = encodeErrorResult({ abi: CELL_ABI, errorName: 'RevealHookNotConfigured' });
+        const { client } = makeClient({}, new Error('Execution reverted', { cause: { data } }));
+
+        await expect(client.requestReveal({ cell: CELL, tokenId: 42n, value: 1_000n })).rejects.toThrow(
+            /nowhere to send a reveal's ETH contribution/i,
+        );
+    });
+
+    it('explains a failed refund as an undone request, so nothing reads as spent', async () => {
+        const data = encodeErrorResult({ abi: CELL_ABI, errorName: 'RefundFailed' });
+        const { client } = makeClient({}, new Error('Execution reverted', { cause: { data } }));
+
+        await expect(client.requestReveal({ cell: CELL, tokenId: 42n, value: 9_000n })).rejects.toThrow(
+            /whole request was undone: nothing was spent/i,
+        );
+    });
+
+    it('names the reveal payment revert of the cell, which no abi decoded before', () => {
         const data = encodeErrorResult({
-            abi: parseAbi(['error InsufficientRevealFee()']),
-            errorName: 'InsufficientRevealFee',
+            abi: parseAbi(['error InsufficientRevealPayment(uint256 required, uint256 provided)']),
+            errorName: 'InsufficientRevealPayment',
+            args: [4_000n, 1_000n],
         });
 
-        expect(describeRevert({ data }, CELL_ABI)).toBe('InsufficientRevealFee()');
+        expect(describeRevert({ data }, CELL_ABI)).toBe('InsufficientRevealPayment(4000, 1000)');
     });
 
     it('phrases a randomness-source fee revert, which the current chain never raises through the request', async () => {

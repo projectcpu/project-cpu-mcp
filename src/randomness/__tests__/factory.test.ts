@@ -8,14 +8,7 @@ import {
     RandomnessKind,
 } from '../../api/types.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
-import type {
-    ConfirmedTx,
-    IContractClient,
-    ReadContractParams,
-    TransactionRequest,
-    WalletManager,
-    WalletProvider,
-} from '../../wallet/types.js';
+import type { ConfirmedTx, IContractClient, ReadContractParams, TransactionRequest } from '../../wallet/types.js';
 import { RandomnessStrategyFactory } from '../factory.js';
 import type { PushRandomness, RandomnessStrategy, SelfServiceRandomness } from '../types.js';
 
@@ -44,15 +37,6 @@ class FakeContracts implements IContractClient {
 class FakeRevealRequests implements IRevealRequestsReader {
     async listOpenRequests(): Promise<OpenRevealRequestsView> {
         return { serverTime: 0, requests: [] };
-    }
-}
-
-class FakeWallet implements WalletProvider {
-    get(): WalletManager {
-        return { getGasPrice: () => Promise.resolve(1_000_000_000n) } as unknown as WalletManager;
-    }
-    isReady(): boolean {
-        return true;
     }
 }
 
@@ -91,7 +75,6 @@ function makeFactory(results: Record<string, unknown> = {}): {
     const contracts = new FakeContracts(results);
     const factory = new RandomnessStrategyFactory({
         contracts,
-        wallet: new FakeWallet(),
         revealRequests: new FakeRevealRequests(),
         logger: new NoopLogger(),
     });
@@ -118,7 +101,7 @@ describe('RandomnessStrategyFactory', () => {
     });
 
     it('falls back to the source the cell reports when the config carries none', async () => {
-        const { factory, contracts } = makeFactory({ randomnessSource: ON_CHAIN_SOURCE, quoteFee: 7n });
+        const { factory, contracts } = makeFactory({ randomnessSource: ON_CHAIN_SOURCE });
 
         const strategy = await factory.create(pushDescriptor(''), CELL);
 
@@ -127,14 +110,13 @@ describe('RandomnessStrategyFactory', () => {
         expect(contracts.reads[0]?.functionName).toBe('randomnessSource');
     });
 
-    it('quotes at the source read off the cell', async () => {
-        const { factory, contracts } = makeFactory({ randomnessSource: ON_CHAIN_SOURCE, quoteFee: 7n });
+    it('names the source read off the cell and reads nothing else there', async () => {
+        const { factory, contracts } = makeFactory({ randomnessSource: ON_CHAIN_SOURCE });
 
         const strategy = await factory.create(pushDescriptor('   '), CELL);
 
-        expect(await asPush(strategy).quoteFee()).toBe(7n);
-        expect(contracts.reads.at(-1)?.address).toBe(ON_CHAIN_SOURCE);
-        expect(contracts.reads.at(-1)?.functionName).toBe('quoteFee');
+        expect(asPush(strategy).source).toBe(ON_CHAIN_SOURCE);
+        expect(contracts.reads.map((read) => read.functionName)).toEqual(['randomnessSource']);
     });
 
     it('refuses when neither the config nor the cell knows a source', async () => {
@@ -169,13 +151,15 @@ describe('RandomnessStrategyFactory', () => {
         expect(strategy.clock).toEqual({ genesis: 1_700_000_000, period: 3 });
     });
 
-    it('gives the self-service strategy no push-shaped fee quote to fall into', async () => {
+    it('gives neither strategy a fee quote of its own — the Cell prices a reveal', async () => {
         const { factory } = makeFactory();
 
-        const strategy = await factory.create(selfServiceDescriptor(CONFIGURED_SOURCE), CELL);
+        const push = await factory.create(pushDescriptor(CONFIGURED_SOURCE), CELL);
+        const selfService = await factory.create(selfServiceDescriptor(CONFIGURED_SOURCE), CELL);
 
-        expect('quoteFee' in strategy).toBe(false);
-        expect(typeof asSelfService(strategy).quoteRequestFee).toBe('function');
+        expect('quoteFee' in push).toBe(false);
+        expect('quoteRequestFee' in selfService).toBe(false);
+        expect(typeof asSelfService(selfService).fulfill).toBe('function');
     });
 
     it('falls back to the cell source for a self-service descriptor too', async () => {

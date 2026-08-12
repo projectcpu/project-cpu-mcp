@@ -7,17 +7,15 @@ import type { IRandomnessStrategyFactory, RandomnessStrategy, RandomnessStrategy
 import { type IRevealRequestsReader, type RandomnessDescriptor, RandomnessKind } from '../api/types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
-import type { IContractClient, WalletProvider } from '../wallet/types.js';
+import type { IContractClient } from '../wallet/types.js';
 
 export class RandomnessStrategyFactory implements IRandomnessStrategyFactory {
     private readonly contracts: IContractClient;
-    private readonly wallet: WalletProvider;
     private readonly revealRequests: IRevealRequestsReader;
     private readonly logger: ILogger;
 
     constructor(options: RandomnessStrategyFactoryOptions) {
         this.contracts = options.contracts;
-        this.wallet = options.wallet;
         this.revealRequests = options.revealRequests;
         this.logger = options.logger;
     }
@@ -26,7 +24,7 @@ export class RandomnessStrategyFactory implements IRandomnessStrategyFactory {
         switch (descriptor.kind) {
             case RandomnessKind.ENTROPY: {
                 const source = await this.resolveSource(descriptor, cell);
-                return new PushRandomnessStrategy({ source, contracts: this.contracts, logger: this.logger });
+                return new PushRandomnessStrategy({ source });
             }
             case RandomnessKind.DRAND: {
                 const source = await this.resolveSource(descriptor, cell);
@@ -35,7 +33,6 @@ export class RandomnessStrategyFactory implements IRandomnessStrategyFactory {
                     clock: { genesis: descriptor.genesis, period: descriptor.period },
                     beacon: new BeaconClient({ baseUrl: descriptor.beaconApi, logger: this.logger.child('beacon') }),
                     contracts: this.contracts,
-                    wallet: this.wallet,
                     revealRequests: this.revealRequests,
                     logger: this.logger,
                 });

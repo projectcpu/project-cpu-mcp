@@ -17,7 +17,7 @@ import { type IRevealRequestsReader, RandomnessKind } from '../api/types.js';
 import { RANDOMNESS_ADAPTER_ABI } from '../contracts/randomness-adapter.abi.js';
 import type { ILogger } from '../logger/types.js';
 import { bufferedGasLimit } from '../wallet/gas.utils.js';
-import type { IContractClient, WalletProvider } from '../wallet/types.js';
+import type { IContractClient } from '../wallet/types.js';
 
 export class DrandRandomnessStrategy implements SelfServiceRandomness {
     public readonly kind: RandomnessKind.DRAND = RandomnessKind.DRAND;
@@ -25,7 +25,6 @@ export class DrandRandomnessStrategy implements SelfServiceRandomness {
     public readonly clock: BeaconRoundClock;
     public readonly beacon: IBeaconClient;
     private readonly contracts: IContractClient;
-    private readonly wallet: WalletProvider;
     private readonly revealRequests: IRevealRequestsReader;
     private readonly logger: ILogger;
 
@@ -34,26 +33,8 @@ export class DrandRandomnessStrategy implements SelfServiceRandomness {
         this.clock = options.clock;
         this.beacon = options.beacon;
         this.contracts = options.contracts;
-        this.wallet = options.wallet;
         this.revealRequests = options.revealRequests;
         this.logger = options.logger;
-    }
-
-    async quoteRequestFee(): Promise<bigint> {
-        const gasPrice = await this.wallet.get().getGasPrice();
-        const fee = await this.contracts.read<bigint>({
-            address: this.source,
-            abi: RANDOMNESS_ADAPTER_ABI,
-            functionName: 'quoteFeeAt',
-            args: [gasPrice],
-        });
-        this.logger.info('quoted randomness fee at the current gas price', {
-            source: this.source,
-            kind: this.kind,
-            gasPriceWei: gasPrice.toString(),
-            feeWei: fee.toString(),
-        });
-        return fee;
     }
 
     async readRequest(requestId: bigint): Promise<AdapterRequestView> {

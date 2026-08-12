@@ -3,10 +3,15 @@ export const SALE_FEE_STRUCTURAL_BOUND_PERCENT = 100;
 export const GET_GAME_CONFIG_DESCRIPTION = [
     'Return the game rulebook for the active network: the resource catalog (id → name), the building catalog',
     '(name, kind — extractor/crafter/hub — and $CPU cost; the full JSON also carries each building’s mine/craft',
-    'bindings and build time), reveal-cost params (first reveal free; re-reveal price), how this network delivers',
+    'bindings and build time), what every reveal is charged, how this network delivers',
     'randomness (self-service or push — it decides what `cpu_reveal` does), the on-chain contract addresses, and',
-    'the recipe count (use `cpu_list_recipes` for the full recipe graph). A free reference read —',
+    'the recipe count (use `cpu_list_recipes` for the full recipe graph). A read-only reference call —',
     'call it once to ground planning. No session needed.',
+].join(' ');
+
+export const REVEAL_PAYMENT_UNKNOWN_SUMMARY = [
+    'every reveal is charged, the first reveal of a cell included, but this network serves no price for it, so',
+    'the amounts are unknown here — `cpu_reveal` reads the exact total off the chain and pays that.',
 ].join(' ');
 
 export const SELF_SERVICE_RANDOMNESS_SUMMARY = [

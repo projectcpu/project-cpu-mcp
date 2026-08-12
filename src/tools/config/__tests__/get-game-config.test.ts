@@ -74,7 +74,7 @@ const CONFIG: AppConfig = {
             recipeOpexCpu: { smelt_steel: '2' },
         },
     ],
-    reveal: { firstFree: true, reRevealCost: '1000' },
+    reveal: { ethContribution: '1000000000000000', cpuBurn: '2000000000000000000' },
     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
     trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
     storage: { hubStorageMultiplier: 10 },
@@ -99,6 +99,29 @@ function capture(config: AppConfig = CONFIG): (args: never) => Promise<ToolResul
 }
 
 describe('get_game_config tool', () => {
+    it('never offers a free reveal, whatever the legs are priced at', async () => {
+        const profiles: Array<AppConfig['reveal']> = [
+            { ethContribution: '1000000000000000', cpuBurn: '2000000000000000000' },
+            { ethContribution: '0', cpuBurn: '2000000000000000000' },
+            { ethContribution: '1000000000000000', cpuBurn: '0' },
+            null,
+        ];
+
+        for (const reveal of profiles) {
+            const header = (await capture({ ...CONFIG, reveal })({} as never)).content[0]?.text ?? '';
+
+            expect(header).toContain('Reveal: every reveal');
+            expect(header).not.toMatch(/free reveal|reveal (is |)free|first reveal free|re-reveal/i);
+        }
+    });
+
+    it('says the amounts are unknown, not zero, when the network serves no reveal payment', async () => {
+        const header = (await capture({ ...CONFIG, reveal: null })({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain('this network serves no price for it, so the amounts are unknown here');
+        expect(header).toContain('`cpu_reveal` reads the exact total off the chain and pays that');
+    });
+
     it('summarizes the rulebook and returns the full config', async () => {
         const result = await capture()({} as never);
 
@@ -108,7 +131,10 @@ describe('get_game_config tool', () => {
         expect(header).toMatch(
             /Steel Mill \(crafter, build 20 \$CPU, demolish 10 \$CPU, opex smelt_steel:2 \$CPU\/batch\)/,
         );
-        expect(header).toMatch(/first reveal free, re-reveal 1000 \$CPU/);
+        expect(header).toContain(
+            'every reveal contributes 0.001 ETH to the $CPU liquidity pool and burns 2 $CPU, the first reveal ' +
+                'of a cell included',
+        );
         expect(header).toMatch(/1 recipe\(s\)/);
         expect(header).toMatch(/5:Iron/);
         expect(header).toMatch(/cell 0x5555555555555555555555555555555555555555/);
@@ -122,7 +148,7 @@ describe('get_game_config tool', () => {
 
         const json = JSON.parse(result.content[1]?.text ?? '{}') as AppConfig;
         expect(json.buildings[0]?.buildCost).toBe('5');
-        expect(json.reveal.reRevealCost).toBe('1000');
+        expect(json.reveal).toEqual({ ethContribution: '1000000000000000', cpuBurn: '2000000000000000000' });
         expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
         expect(json.transport.moveFeeFloors).toEqual({ 5: '0.1' });
         expect(json.storage).toEqual({ hubStorageMultiplier: 10 });

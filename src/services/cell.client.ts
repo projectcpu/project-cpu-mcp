@@ -9,6 +9,7 @@ import type {
     ICellClient,
     PlaceParams,
     RequestRevealParams,
+    RevealQuote,
     StartCraftParams,
     StartMiningParams,
     WithdrawCpuParams,
@@ -34,6 +35,23 @@ export class CellClient implements ICellClient {
             functionName: 'getCell',
             args: [tokenId],
         });
+    }
+
+    async quoteReveal(cell: Address): Promise<RevealQuote> {
+        const [ethContributionWei, randomnessFeeWei, totalRequiredWei, cpuBurnWei] = await this.contracts.read<
+            readonly [bigint, bigint, bigint, bigint]
+        >({
+            address: cell,
+            abi: CELL_ABI,
+            functionName: 'quoteReveal',
+            args: [],
+        });
+        this.logger.info('quoted the reveal', {
+            cell,
+            totalRequiredWei: totalRequiredWei.toString(),
+            cpuBurnWei: cpuBurnWei.toString(),
+        });
+        return { ethContributionWei, randomnessFeeWei, totalRequiredWei, cpuBurnWei };
     }
 
     async requestReveal(params: RequestRevealParams): Promise<Hash> {

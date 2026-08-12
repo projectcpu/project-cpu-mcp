@@ -1,5 +1,6 @@
 import {
     decodeEventLog,
+    decodeFunctionResult,
     encodeAbiParameters,
     encodeEventTopics,
     encodeFunctionData,
@@ -70,6 +71,28 @@ describe('CELL_ABI reveal surface', () => {
             amounts: [100n, 200n, 0n],
             strengths: [3, 4, 0],
         });
+    });
+
+    it('reads the reveal price back as four words, so a caller can send the total and approve the burn', () => {
+        const result = encodeAbiParameters(
+            [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }],
+            [3_000n, 1_000n, 4_000n, 2n],
+        );
+
+        const decoded = decodeFunctionResult({ abi: CELL_ABI, functionName: 'quoteReveal', data: result });
+
+        expect(decoded).toEqual([3_000n, 1_000n, 4_000n, 2n]);
+    });
+
+    it('carries the payment reverts of a paid reveal, and no longer the fee revert they replaced', () => {
+        const names = CELL_ABI.map((entry) => entry.name);
+
+        expect(names).toContain('InsufficientRevealPayment');
+        expect(names).toContain('RevealPaymentNotConfigured');
+        expect(names).toContain('RevealHookNotConfigured');
+        expect(names).toContain('HookDeliveryFailed');
+        expect(names).toContain('RefundFailed');
+        expect(names).not.toContain('InsufficientRevealFee');
     });
 
     it('knows the randomness source view and no longer names a provider of its own', () => {

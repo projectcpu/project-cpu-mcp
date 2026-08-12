@@ -49,7 +49,7 @@ import {
 } from '../../wallet/types.js';
 import { CellClient } from '../cell.client.js';
 import { RevealService } from '../reveal.service.js';
-import type { AppConfig, CellViewResult, ICellClient, IAppConfig, RequestRevealParams } from '../types.js';
+import type { AppConfig, CellViewResult, ICellClient, IAppConfig, RequestRevealParams, RevealQuote } from '../types.js';
 import {
     APPROVE_HASH,
     CELL,
@@ -62,6 +62,13 @@ import {
 } from './service-fakes.js';
 
 const REQUEST_HASH = `0x${'e'.repeat(64)}` as Hash;
+
+const DEFAULT_QUOTE: RevealQuote = {
+    ethContributionWei: 3_000n,
+    randomnessFeeWei: 1_000n,
+    totalRequiredWei: 4_000n,
+    cpuBurnWei: 0n,
+};
 
 function revealState(over: Partial<Cell> = {}): Cell {
     return { tokenId: '42', owner: WALLET_ADDRESS, revealCount: 0, revealPending: false, ...over } as unknown as Cell;
@@ -76,8 +83,17 @@ class FakeAppConfig implements IAppConfig {
 
 class FakeCellClient implements ICellClient {
     public readonly requests: Array<RequestRevealParams> = [];
+    public readonly quoted: Array<Address> = [];
+    constructor(private readonly quote: RevealQuote | Error = DEFAULT_QUOTE) {}
     async readCellView(): Promise<CellViewResult> {
         return { buildingType: 0, modeResource: 0, modeRecipeId: 0n };
+    }
+    async quoteReveal(cell: Address): Promise<RevealQuote> {
+        this.quoted.push(cell);
+        if (this.quote instanceof Error) {
+            throw this.quote;
+        }
+        return this.quote;
     }
     async requestReveal(params: RequestRevealParams): Promise<Hash> {
         this.requests.push(params);
@@ -128,27 +144,9 @@ class FakeContractClient implements IContractClient {
 
 class FakePushRandomnessFactory implements IRandomnessStrategyFactory {
     public readonly calls: Array<{ descriptor: RandomnessDescriptor; cell: Address }> = [];
-    public readonly used: Array<string> = [];
-    constructor(
-        private readonly fee: bigint = 1_000n,
-        private readonly quoteError: Error | null = null,
-    ) {}
     async create(descriptor: RandomnessDescriptor, cell: Address): Promise<RandomnessStrategy> {
         this.calls.push({ descriptor, cell });
-        const used = this.used;
-        const quoteError = this.quoteError;
-        const fee = this.fee;
-        return {
-            kind: RandomnessKind.ENTROPY,
-            source: RANDOMNESS_ADAPTER as Address,
-            async quoteFee(): Promise<bigint> {
-                used.push('quoteFee');
-                if (quoteError !== null) {
-                    throw quoteError;
-                }
-                return fee;
-            },
-        };
+        return { kind: RandomnessKind.ENTROPY, source: RANDOMNESS_ADAPTER as Address };
     }
 }
 
@@ -176,8 +174,7 @@ type HarnessOptions = Partial<{
     config: AppConfig;
     state: Cell | null;
     bumpTo: number | null;
-    fee: bigint;
-    quoteError: Error | null;
+    quote: RevealQuote | Error;
     approve: Hash | null | Error;
     reverts: boolean;
     walletChainId: number;
@@ -194,9 +191,9 @@ function makeReveal(opts: HarnessOptions = {}): {
 } {
     const wallet = new FakeWallet(opts.walletChainId ?? 1);
     const allowance = new FakeAllowance(opts.approve ?? null);
-    const cellClient = new FakeCellClient();
+    const cellClient = new FakeCellClient(opts.quote ?? DEFAULT_QUOTE);
     const contracts = new FakeContractClient(opts.reverts ?? false);
-    const randomness = new FakePushRandomnessFactory(opts.fee ?? 1_000n, opts.quoteError ?? null);
+    const randomness = new FakePushRandomnessFactory();
     const reader = new FakeRevealCellReader(opts.state === undefined ? revealState() : opts.state, opts.bumpTo ?? null);
     const service = new RevealService({
         wallet: wallet as unknown as WalletProvider,
@@ -220,18 +217,18 @@ describe('RevealService on a push randomness source', () => {
         vi.useRealTimers();
     });
 
-    it('submits a genesis reveal paying the buffered ETH fee, no $CPU touched', async () => {
-        const h = makeReveal({ fee: 1_000n, bumpTo: 1 });
+    it('submits a genesis reveal paying the quoted total, with no $CPU to approve on a zero-burn profile', async () => {
+        const h = makeReveal({ bumpTo: 1 });
 
         const p = h.service.reveal('42');
         await vi.runAllTimersAsync();
         const result = await p;
 
         expect(h.allowance.calls).toHaveLength(0);
-        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 1_250n }]);
+        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 4_000n }]);
         expect(result.genesis).toBe(true);
-        expect(result.fee).toBe(formatEther(1_000n));
-        expect(result.reRevealCost).toBe('0');
+        expect(result.fee).toBe(formatEther(4_000n));
+        expect(result.cpuBurn).toBe('0');
         expect(result.approveTxHash).toBeNull();
         expect(result.requestTxHash).toBe(REQUEST_HASH);
         expect(result.blockNumber).toBe('100');
@@ -240,7 +237,7 @@ describe('RevealService on a push randomness source', () => {
     });
 
     it('leaves the self-service half of the answer empty, since a pushed draw arrives on its own', async () => {
-        const h = makeReveal({ fee: 1_000n, bumpTo: 1 });
+        const h = makeReveal({ bumpTo: 1 });
 
         const p = h.service.reveal('42');
         await vi.runAllTimersAsync();
@@ -254,38 +251,95 @@ describe('RevealService on a push randomness source', () => {
         expect(result.source).toBe(RANDOMNESS_ADAPTER);
     });
 
-    it('quotes the fee through the randomness source of the configured descriptor and cell', async () => {
+    it('creates the strategy for the configured descriptor and cell, and quotes that same cell', async () => {
         const config = makeConfig();
-        const h = makeReveal({ config, fee: 800n, bumpTo: 1 });
+        const h = makeReveal({ config, bumpTo: 1 });
 
         const p = h.service.reveal('42');
         await vi.runAllTimersAsync();
         await p;
 
         expect(h.randomness.calls).toEqual([{ descriptor: config.randomness, cell: CELL }]);
-        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 1_000n }]);
+        expect(h.cellClient.quoted).toEqual([CELL]);
     });
 
-    it('fails the reveal when the randomness source cannot be quoted, before any request goes out', async () => {
-        const h = makeReveal({ quoteError: new Error('quoteFee reverted') });
-
-        await expect(h.service.reveal('42')).rejects.toThrow(/quoteFee reverted/i);
-        expect(h.cellClient.requests).toHaveLength(0);
-    });
-
-    it('approves $CPU to the Cell before a paid re-reveal, then requests', async () => {
-        const config = { ...makeConfig(), reveal: { firstFree: true, reRevealCost: '1' } };
-        const h = makeReveal({ config, state: revealState({ revealCount: 1 }), approve: APPROVE_HASH, bumpTo: 2 });
+    it('funds the reveal from the chain quote, not from the amounts the chain config carries', async () => {
+        const config: AppConfig = { ...makeConfig(), reveal: { ethContribution: '1', cpuBurn: '2' } };
+        const h = makeReveal({
+            config,
+            quote: { ethContributionWei: 3_000n, randomnessFeeWei: 1_000n, totalRequiredWei: 4_000n, cpuBurnWei: 9n },
+            approve: APPROVE_HASH,
+            bumpTo: 1,
+        });
 
         const p = h.service.reveal('42');
         await vi.runAllTimersAsync();
         const result = await p;
 
-        expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: parseEther('1') }]);
-        expect(h.cellClient.requests).toHaveLength(1);
-        expect(result.genesis).toBe(false);
-        expect(result.reRevealCost).toBe('1');
-        expect(result.approveTxHash).toBe(APPROVE_HASH);
+        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 4_000n }]);
+        expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: 9n }]);
+        expect(result.fee).toBe(formatEther(4_000n));
+        expect(result.cpuBurn).toBe(formatEther(9n));
+    });
+
+    it('fails the reveal when the cell cannot be quoted, before any request goes out', async () => {
+        const h = makeReveal({ quote: new Error('quoteReveal reverted') });
+
+        await expect(h.service.reveal('42')).rejects.toThrow(/quoteReveal reverted/i);
+        expect(h.cellClient.requests).toHaveLength(0);
+    });
+
+    it('charges a first reveal and a later reveal alike, quoting and approving the same way for both', async () => {
+        const quote: RevealQuote = {
+            ethContributionWei: 3_000n,
+            randomnessFeeWei: 1_000n,
+            totalRequiredWei: 4_000n,
+            cpuBurnWei: parseEther('1'),
+        };
+        const first = makeReveal({ quote, approve: APPROVE_HASH, bumpTo: 1 });
+        const later = makeReveal({
+            quote,
+            state: revealState({ revealCount: 1 }),
+            approve: APPROVE_HASH,
+            bumpTo: 2,
+        });
+
+        const firstResult = await (async () => {
+            const p = first.service.reveal('42');
+            await vi.runAllTimersAsync();
+            return p;
+        })();
+        const laterResult = await (async () => {
+            const p = later.service.reveal('42');
+            await vi.runAllTimersAsync();
+            return p;
+        })();
+
+        expect(firstResult.genesis).toBe(true);
+        expect(laterResult.genesis).toBe(false);
+        expect(first.allowance.calls).toEqual(later.allowance.calls);
+        expect(first.cellClient.requests).toEqual(later.cellClient.requests);
+        expect(firstResult.fee).toBe(laterResult.fee);
+        expect(firstResult.cpuBurn).toBe(laterResult.cpuBurn);
+        expect(firstResult.cpuBurn).toBe('1');
+        expect(firstResult.approveTxHash).toBe(APPROVE_HASH);
+    });
+
+    it('sends no value and approves nothing beyond the quote on a $CPU-only profile', async () => {
+        const h = makeReveal({
+            quote: { ethContributionWei: 0n, randomnessFeeWei: 0n, totalRequiredWei: 0n, cpuBurnWei: parseEther('2') },
+            approve: APPROVE_HASH,
+            bumpTo: 1,
+        });
+
+        const p = h.service.reveal('42');
+        await vi.runAllTimersAsync();
+        const result = await p;
+
+        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 0n }]);
+        expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: parseEther('2') }]);
+        expect(result.fee).toBe('0');
+        expect(result.cpuBurn).toBe('2');
     });
 
     it('polls the map for the draw and reports fulfilled=false when it does not land in the window', async () => {
@@ -321,13 +375,12 @@ describe('RevealService on a push randomness source', () => {
         await expect(h.service.reveal('42')).rejects.toThrow(/do not own/i);
     });
 
-    it('throws before requesting when $CPU is not configured for a paid re-reveal', async () => {
-        const config = {
-            ...makeConfig(),
-            contracts: { ...makeConfig().contracts, cpuToken: '' },
-            reveal: { firstFree: true, reRevealCost: '1' },
-        };
-        const h = makeReveal({ config, state: revealState({ revealCount: 1 }) });
+    it('throws before requesting when $CPU is not configured but the quote asks for a burn', async () => {
+        const config = { ...makeConfig(), contracts: { ...makeConfig().contracts, cpuToken: '' } };
+        const h = makeReveal({
+            config,
+            quote: { ...DEFAULT_QUOTE, cpuBurnWei: parseEther('1') },
+        });
         await expect(h.service.reveal('42')).rejects.toThrow(/not configured/i);
         expect(h.allowance.calls).toHaveLength(0);
         expect(h.cellClient.requests).toHaveLength(0);
@@ -348,6 +401,7 @@ const GENESIS = 1_700_000_000;
 const ROUND = 91n;
 const REQUEST_ID = 7n;
 const FEE = 1_000n;
+const SELF_CONTRIBUTION = 5_000n;
 const SIGNATURE = `0x${'ab'.repeat(64)}` as Hex;
 const WAIT_UNTIL_RELEASE_SEC = 6;
 
@@ -561,7 +615,7 @@ type SelfServiceOptions = Partial<{
     serverTime: number;
     pending: boolean;
     revealCount: number;
-    reRevealCost: string;
+    cpuBurnWei: bigint;
     approve: Hash | null;
     beacon: Array<BeaconRoundResult>;
     openRequests: Array<OpenRevealRequestView>;
@@ -601,8 +655,12 @@ function makeSelfService(opts: SelfServiceOptions = {}): SelfServiceHarness {
     const fulfilLogs = draw === null ? [] : [fulfilledLog(REQUEST_ID, draw)];
     const receiptLogs = pending || alreadyPending ? [fulfilLogs] : [requestLogs, fulfilLogs];
 
+    const cpuBurnWei = opts.cpuBurnWei ?? 0n;
     const wallet = new ScriptedWallet(
-        { quoteFeeAt: FEE, requestOf: [opts.consumer ?? SELF_CELL_ON_WIRE, opts.adapterRound ?? round] },
+        {
+            quoteReveal: [SELF_CONTRIBUTION, FEE, SELF_CONTRIBUTION + FEE, cpuBurnWei],
+            requestOf: [opts.consumer ?? SELF_CELL_ON_WIRE, opts.adapterRound ?? round],
+        },
         receiptLogs,
         opts.gasEstimates ?? [100_000n, 400_000n],
         opts.sendErrors ?? [],
@@ -630,7 +688,6 @@ function makeSelfService(opts: SelfServiceOptions = {}): SelfServiceHarness {
         clock: { genesis: GENESIS, period },
         beacon,
         contracts,
-        wallet,
         revealRequests,
         logger: new NoopLogger(),
     });
@@ -646,7 +703,7 @@ function makeSelfService(opts: SelfServiceOptions = {}): SelfServiceHarness {
             period,
             beaconApi: 'https://beacon.example/v2',
         },
-        reveal: { firstFree: true, reRevealCost: opts.reRevealCost ?? '0' },
+        reveal: { ethContribution: SELF_CONTRIBUTION.toString(), cpuBurn: cpuBurnWei.toString() },
     };
 
     const allowance = new FakeAllowance(opts.approve ?? null);
@@ -714,12 +771,12 @@ describe('RevealService on a self-service randomness source', () => {
         expect(h.reader.refreshes).toBe(3);
     });
 
-    it('carries the same fee buffer the push path carries, quoted at the current gas price', async () => {
+    it('sends exactly the total the cell quoted, with no buffer of its own on top', async () => {
         const h = makeSelfService();
 
         await runReveal(h);
 
-        expect(h.wallet.sent[0]?.value).toBe(1_250n);
+        expect(h.wallet.sent[0]?.value).toBe(SELF_CONTRIBUTION + FEE);
     });
 
     it('tells an empty draw apart from a draw it could not read', async () => {
@@ -844,13 +901,18 @@ describe('RevealService on a self-service randomness source', () => {
     });
 
     it('settles the request the cell already carries without requesting again or paying again', async () => {
-        const h = makeSelfService({ pending: true, revealCount: 1, reRevealCost: '1', approve: APPROVE_HASH });
+        const h = makeSelfService({
+            pending: true,
+            revealCount: 1,
+            cpuBurnWei: parseEther('1'),
+            approve: APPROVE_HASH,
+        });
 
         const result = await runReveal(h);
 
         expect(result.requestTxHash).toBeNull();
         expect(result.fee).toBe('0');
-        expect(result.reRevealCost).toBe('0');
+        expect(result.cpuBurn).toBe('0');
         expect(result.approveTxHash).toBeNull();
         expect(h.allowance.calls).toHaveLength(0);
         expect(h.wallet.sent).toHaveLength(1);
@@ -864,7 +926,7 @@ describe('RevealService on a self-service randomness source', () => {
         const h = makeSelfService({
             alreadyPending: true,
             revealCount: 1,
-            reRevealCost: '1',
+            cpuBurnWei: parseEther('1'),
             approve: APPROVE_HASH,
         });
 
@@ -875,7 +937,7 @@ describe('RevealService on a self-service randomness source', () => {
         expect(result.deposits).toHaveLength(2);
         expect(result.requestTxHash).toBeNull();
         expect(result.fee).toBe('0');
-        expect(result.reRevealCost).toBe('0');
+        expect(result.cpuBurn).toBe('0');
         expect(result.approveTxHash).toBe(APPROVE_HASH);
         expect(h.wallet.sent).toHaveLength(1);
         expect(h.revealRequests.owners).toEqual([WALLET_ADDRESS]);
@@ -1112,14 +1174,16 @@ describe('RevealService on a self-service randomness source', () => {
         expect(h.claims.has(SELF_SOURCE_ON_WIRE, REQUEST_ID)).toBe(false);
     });
 
-    it('charges the re-reveal once for a fresh request on a revealed cell', async () => {
-        const h = makeSelfService({ revealCount: 1, reRevealCost: '1', approve: APPROVE_HASH });
+    it('approves the quoted burn and sends the quoted total for a fresh request on a revealed cell', async () => {
+        const h = makeSelfService({ revealCount: 1, cpuBurnWei: parseEther('1'), approve: APPROVE_HASH });
 
         const result = await runReveal(h);
 
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: SELF_CELL, needed: parseEther('1') }]);
+        expect(h.wallet.sent[0]?.value).toBe(SELF_CONTRIBUTION + FEE);
         expect(result.genesis).toBe(false);
-        expect(result.reRevealCost).toBe('1');
+        expect(result.fee).toBe(formatEther(SELF_CONTRIBUTION + FEE));
+        expect(result.cpuBurn).toBe('1');
         expect(result.approveTxHash).toBe(APPROVE_HASH);
     });
 });
