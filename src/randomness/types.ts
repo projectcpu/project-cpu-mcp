@@ -6,6 +6,11 @@ import type { ILogger } from '../logger/types.js';
 import type { IAppConfig } from '../services/types.js';
 import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
+/**
+ * Names the source a push network draws from, and nothing more: the Cell prices the whole reveal — its own
+ * legs and the source's fee together — so a second, client-side quote could only disagree with it. The
+ * factory hands this back as a plain value; it stays a union member so a reveal must still name its mode.
+ */
 export interface PushRandomness {
     kind: RandomnessKind.ENTROPY;
     source: Address;
@@ -26,10 +31,6 @@ export type RandomnessStrategy = PushRandomness | SelfServiceRandomness;
 
 export interface IRandomnessStrategyFactory {
     create(descriptor: RandomnessDescriptor, cell: Address): Promise<RandomnessStrategy>;
-}
-
-export interface PushRandomnessOptions {
-    source: Address;
 }
 
 export interface SelfServiceRandomnessOptions {

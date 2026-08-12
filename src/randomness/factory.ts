@@ -2,7 +2,6 @@ import { isAddress, zeroAddress, type Address } from 'viem';
 
 import { BeaconClient } from './beacon.client.js';
 import { DrandRandomnessStrategy } from './drand.strategy.js';
-import { PushRandomnessStrategy } from './push.strategy.js';
 import type { IRandomnessStrategyFactory, RandomnessStrategy, RandomnessStrategyFactoryOptions } from './types.js';
 import { type IRevealRequestsReader, type RandomnessDescriptor, RandomnessKind } from '../api/types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
@@ -24,7 +23,7 @@ export class RandomnessStrategyFactory implements IRandomnessStrategyFactory {
         switch (descriptor.kind) {
             case RandomnessKind.ENTROPY: {
                 const source = await this.resolveSource(descriptor, cell);
-                return new PushRandomnessStrategy({ source });
+                return { kind: RandomnessKind.ENTROPY, source };
             }
             case RandomnessKind.DRAND: {
                 const source = await this.resolveSource(descriptor, cell);

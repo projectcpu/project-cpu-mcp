@@ -91,6 +91,26 @@ describe('RandomnessStrategyFactory', () => {
         expect(strategy.source).toBe(CONFIGURED_SOURCE);
     });
 
+    it('hands the push mode back as a plain descriptor, with no method that could quote a second price', async () => {
+        const { factory } = makeFactory();
+
+        const push = asPush(await factory.create(pushDescriptor(CONFIGURED_SOURCE), CELL));
+
+        expect(Object.keys(push).sort()).toEqual(['kind', 'source']);
+        expect(Object.getPrototypeOf(push)).toBe(Object.prototype);
+    });
+
+    it('builds a fresh push descriptor per call, so one cell’s source never leaks into another', async () => {
+        const { factory } = makeFactory();
+
+        const first = await factory.create(pushDescriptor(CONFIGURED_SOURCE), CELL);
+        const second = await factory.create(pushDescriptor(ON_CHAIN_SOURCE), CELL);
+
+        expect(first).not.toBe(second);
+        expect(first.source).toBe(CONFIGURED_SOURCE);
+        expect(second.source).toBe(ON_CHAIN_SOURCE);
+    });
+
     it('takes the source from the descriptor without reading the cell', async () => {
         const { factory, contracts } = makeFactory({ randomnessSource: ON_CHAIN_SOURCE });
 
