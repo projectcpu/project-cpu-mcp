@@ -2,10 +2,10 @@ import { parseEventLogs, type Address, type Log } from 'viem';
 
 import { REVEAL_FEE_BUFFER_BPS } from './reveal.constants.js';
 import type { RevealDepositView } from './types.js';
+import { BPS_DENOMINATOR } from '../config/constants.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import { sameAddress, sameTokenId } from '../randomness/request.utils.js';
 import type { ResourceNames } from '../utils/format.utils.js';
-import { BPS_DENOMINATOR } from '../wallet/constants.js';
 
 export interface RevealRequestedView {
     requestId: bigint;
