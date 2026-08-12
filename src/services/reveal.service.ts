@@ -10,6 +10,7 @@ import {
 import { bufferedRevealValue, revealDepositsOf, revealRequestedOf } from './reveal.utils.js';
 import {
     type AppConfig,
+    type FundedRevealRequest,
     type IAllowanceService,
     type IAppConfig,
     type ICellClient,
@@ -127,23 +128,9 @@ export class RevealService {
     }
 
     private async revealThroughPushSource(input: PushRevealInput): Promise<RevealResult> {
-        const { randomness, config, cell, tokenId, genesis, previousRevealCount } = input;
-        const { approveTxHash, quote } = await this.fundReveal(config, cell);
-        const value = bufferedRevealValue(quote.totalRequiredWei);
-
-        this.logger.info('requesting on-chain reveal', {
-            tokenId,
-            cell,
-            genesis,
-            source: randomness.source,
-            quotedWei: quote.totalRequiredWei.toString(),
-            valueWei: value.toString(),
-            cpuBurnWei: quote.cpuBurnWei.toString(),
-            network: config.network,
-        });
-
-        const txHash = await this.cellClient.requestReveal({ cell, tokenId: BigInt(tokenId), value });
-        const confirmed = await this.contracts.confirm(txHash, 'Reveal request');
+        const { randomness, cell, tokenId, genesis, previousRevealCount } = input;
+        const { approveTxHash, quote, value } = await this.prepareRevealRequest(input);
+        const confirmed = await this.sendRevealRequest(cell, tokenId, value);
 
         const fulfilled = await this.pollFulfillment(tokenId, previousRevealCount);
 
@@ -174,30 +161,17 @@ export class RevealService {
     }
 
     private async revealThroughSelfServiceSource(input: SelfServiceRevealInput): Promise<RevealResult> {
-        const { randomness, config, cell, tokenId, genesis } = input;
+        const { randomness, cell, tokenId } = input;
 
         if (input.pending) {
             return this.settleOpenRequest(input, null);
         }
 
-        const { approveTxHash, quote } = await this.fundReveal(config, cell);
-        const value = bufferedRevealValue(quote.totalRequiredWei);
-
-        this.logger.info('requesting on-chain reveal', {
-            tokenId,
-            cell,
-            genesis,
-            source: randomness.source,
-            quotedWei: quote.totalRequiredWei.toString(),
-            valueWei: value.toString(),
-            cpuBurnWei: quote.cpuBurnWei.toString(),
-            network: config.network,
-        });
+        const { approveTxHash, quote, value } = await this.prepareRevealRequest(input);
 
         let confirmed: ConfirmedTx;
         try {
-            const txHash = await this.cellClient.requestReveal({ cell, tokenId: BigInt(tokenId), value });
-            confirmed = await this.contracts.confirm(txHash, 'Reveal request');
+            confirmed = await this.sendRevealRequest(cell, tokenId, value);
         } catch (error) {
             if (!isRevealAlreadyPending(error)) {
                 throw error;
@@ -587,6 +561,30 @@ export class RevealService {
         }
         const approveTxHash = await this.allowance.ensureAllowance(cpuToken, cell, quote.cpuBurnWei);
         return { approveTxHash, quote };
+    }
+
+    private async prepareRevealRequest(input: PushRevealInput | SelfServiceRevealInput): Promise<FundedRevealRequest> {
+        const { randomness, config, cell, tokenId, genesis } = input;
+        const { approveTxHash, quote } = await this.fundReveal(config, cell);
+        const value = bufferedRevealValue(quote.totalRequiredWei);
+
+        this.logger.info('requesting on-chain reveal', {
+            tokenId,
+            cell,
+            genesis,
+            source: randomness.source,
+            quotedWei: quote.totalRequiredWei.toString(),
+            valueWei: value.toString(),
+            cpuBurnWei: quote.cpuBurnWei.toString(),
+            network: config.network,
+        });
+
+        return { approveTxHash, quote, value };
+    }
+
+    private async sendRevealRequest(cell: Address, tokenId: string, value: bigint): Promise<ConfirmedTx> {
+        const txHash = await this.cellClient.requestReveal({ cell, tokenId: BigInt(tokenId), value });
+        return this.contracts.confirm(txHash, 'Reveal request');
     }
 
     private async pollFulfillment(tokenId: string, previousRevealCount: number): Promise<boolean> {
