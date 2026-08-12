@@ -1,5 +1,3 @@
-import { formatEther } from 'viem';
-
 import {
     BASE_BUILDING_PREDECESSOR_LABEL,
     CYCLE_TIME_MODIFIER_NOTE,
@@ -33,8 +31,8 @@ export function describeRevealPayment(payment: RevealPaymentView | null): string
         return REVEAL_PAYMENT_UNKNOWN_SUMMARY;
     }
     return (
-        `every reveal contributes ${formatEther(BigInt(payment.ethContribution))} ETH to the $CPU liquidity ` +
-        `pool and burns ${formatEther(BigInt(payment.cpuBurn))} $CPU, the first reveal of a cell included; ` +
+        `every reveal contributes ${payment.ethContribution} ETH to the $CPU liquidity ` +
+        `pool and burns ${payment.cpuBurn} $CPU, the first reveal of a cell included; ` +
         `cpu_reveal reads the exact total off the chain and pays that`
     );
 }

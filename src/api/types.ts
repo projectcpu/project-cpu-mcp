@@ -170,13 +170,14 @@ export interface BuildingView {
 }
 
 /**
- * The two gameplay legs charged on every reveal, both in wei. Either leg may be zero, and the pair is never
- * the total a reveal transaction must carry — only the Cell's own quote is (see `ICellClient.quoteReveal`).
+ * The two gameplay legs charged on every reveal, both whole-unit decimals as `GET /api/v1/config` serves
+ * them — never wei. Either leg may be zero, and the pair is never the total a reveal transaction must
+ * carry — only the Cell's own quote is (see `ICellClient.quoteReveal`).
  */
 export interface RevealPaymentView {
-    /** ETH contributed to the $CPU liquidity pool, in wei. */
+    /** ETH contributed to the $CPU liquidity pool, decimal ETH. */
     ethContribution: string;
-    /** $CPU burned from the caller, in wei. */
+    /** $CPU burned from the caller, decimal $CPU. */
     cpuBurn: string;
 }
 

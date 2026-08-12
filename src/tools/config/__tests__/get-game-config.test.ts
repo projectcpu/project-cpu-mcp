@@ -150,7 +150,7 @@ const CONFIG: AppConfig = {
             branch: 'b',
         },
     ],
-    reveal: { ethContribution: '1000000000000000', cpuBurn: '2000000000000000000' },
+    reveal: { ethContribution: '0.001', cpuBurn: '2' },
     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
     trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
     storage: { hubStorageMultiplier: 10 },
@@ -177,9 +177,9 @@ function capture(config: AppConfig = CONFIG): (args: never) => Promise<ToolResul
 describe('get_game_config tool', () => {
     it('never offers a free reveal, whatever the legs are priced at', async () => {
         const profiles: Array<AppConfig['reveal']> = [
-            { ethContribution: '1000000000000000', cpuBurn: '2000000000000000000' },
-            { ethContribution: '0', cpuBurn: '2000000000000000000' },
-            { ethContribution: '1000000000000000', cpuBurn: '0' },
+            { ethContribution: '0.001', cpuBurn: '2' },
+            { ethContribution: '0', cpuBurn: '2' },
+            { ethContribution: '0.001', cpuBurn: '0' },
             null,
         ];
 
@@ -189,6 +189,14 @@ describe('get_game_config tool', () => {
             expect(header).toContain('Reveal: every reveal');
             expect(header).not.toMatch(/free reveal|reveal (is |)free|first reveal free|re-reveal/i);
         }
+    });
+
+    it('prints the reveal legs a live stand serves, without rescaling either of them', async () => {
+        const reveal = { ethContribution: '0.0001', cpuBurn: '1' };
+
+        const header = (await capture({ ...CONFIG, reveal })({} as never)).content[0]?.text ?? '';
+
+        expect(header).toContain('contributes 0.0001 ETH to the $CPU liquidity pool and burns 1 $CPU');
     });
 
     it('says the amounts are unknown, not zero, when the network serves no reveal payment', async () => {
@@ -224,7 +232,7 @@ describe('get_game_config tool', () => {
 
         const json = JSON.parse(result.content[1]?.text ?? '{}') as AppConfig;
         expect(json.buildings[0]?.buildCost).toBe('5');
-        expect(json.reveal).toEqual({ ethContribution: '1000000000000000', cpuBurn: '2000000000000000000' });
+        expect(json.reveal).toEqual({ ethContribution: '0.001', cpuBurn: '2' });
         expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
         expect(json.transport.moveFeeFloors).toEqual({ 5: '0.1' });
         expect(json.storage).toEqual({ hubStorageMultiplier: 10 });

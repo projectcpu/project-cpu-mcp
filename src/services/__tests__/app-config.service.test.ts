@@ -329,6 +329,15 @@ describe('AppConfigService', () => {
         expect((await makeService(api).load()).reveal).toBeNull();
     });
 
+    it('reads the fractional reveal legs a live stand serves, rather than dropping them as unpriceable', async () => {
+        const api = new FakeApi({
+            status: 200,
+            data: makeResponse({ reveal: { ethContribution: '0.0001', cpuBurn: '1' } }),
+        });
+
+        expect((await makeService(api).load()).reveal).toEqual({ ethContribution: '0.0001', cpuBurn: '1' });
+    });
+
     it('keeps both reveal legs as served, including a leg priced at zero', async () => {
         const api = new FakeApi({
             status: 200,
