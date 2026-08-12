@@ -5,6 +5,7 @@ import type { RevealDepositView } from './types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import { sameAddress, sameTokenId } from '../randomness/request.utils.js';
 import type { ResourceNames } from '../utils/format.utils.js';
+import { BPS_DENOMINATOR } from '../wallet/constants.js';
 
 export interface RevealRequestedView {
     requestId: bigint;
@@ -19,7 +20,7 @@ export interface RevealRequestedView {
  * the reveal still costs the quoted total.
  */
 export function bufferedRevealValue(totalRequiredWei: bigint): bigint {
-    return totalRequiredWei + (totalRequiredWei * REVEAL_FEE_BUFFER_BPS) / 10_000n;
+    return totalRequiredWei + (totalRequiredWei * REVEAL_FEE_BUFFER_BPS) / BPS_DENOMINATOR;
 }
 
 export function revealRequestedOf(logs: Array<Log>, cell: Address, tokenId: string): RevealRequestedView | null {
