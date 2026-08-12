@@ -5,13 +5,13 @@ export const REVEAL_DESCRIPTION = [
     'cell a second time additionally needs all its deposits depleted. How the draw arrives depends on the network’s',
     'randomness mode — see `cpu_get_game_config`. On a self-service network this call also settles the draw and',
     'returns the deposits it rolled; call it again on a cell whose reveal is still pending to finish that one,',
-    'which costs no new fee.',
+    'which pays for no second reveal.',
 ].join(' ');
 
 export const FULFILL_REVEAL_DESCRIPTION = [
     'Finish reveal requests you already opened that have not delivered their draw yet (call `cpu_authenticate`',
     'first). Where the network’s randomness mode leaves delivery to the player — see `cpu_get_game_config` — this',
-    'sends the missing draw on-chain: it costs gas but no new reveal fee. With no arguments it works through every',
+    'sends the missing draw on-chain: it costs gas but pays for no second reveal. With no arguments it works through every',
     'open request you own; pass `tokenIds` to settle only those cells. If a request you know exists is not listed,',
     'name it directly with `requestId` plus `source` and it is settled without that list. Requests already settled',
     'are reported as such, not as errors. On a network where the randomness source delivers draws itself this call',

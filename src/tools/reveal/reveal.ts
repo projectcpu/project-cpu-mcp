@@ -10,7 +10,7 @@ function requestLine(result: RevealResult): string {
     }
     const approve = result.approveTxHash !== null ? ` approve tx ${result.approveTxHash},` : '';
     return (
-        `Requested reveal for cell ${result.tokenId} — paid ${result.fee} ETH and burned ${result.cpuBurn} ` +
+        `Requested reveal for cell ${result.tokenId} — paid ${result.ethPaid} ETH and burned ${result.cpuBurn} ` +
         `$CPU, the price the cell quoted for this reveal.${approve} request tx ${result.requestTxHash} ` +
         `confirmed in block ${result.blockNumber}.`
     );

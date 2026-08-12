@@ -41,7 +41,7 @@ import {
 } from '../randomness/types.js';
 import { sleep } from '../utils/async.utils.js';
 import { errorMessage } from '../utils/error.utils.js';
-import { cpuFromWei } from '../utils/format.utils.js';
+import { cpuFromWei, ethFromWei } from '../utils/format.utils.js';
 import type { ConfirmedTx, IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class RevealService {
@@ -152,7 +152,7 @@ export class RevealService {
             deposits: null,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
-            fee: cpuFromWei(quote.totalRequiredWei.toString()),
+            ethPaid: ethFromWei(quote.totalRequiredWei.toString()),
             cpuBurn: cpuFromWei(quote.cpuBurnWei.toString()),
             approveTxHash,
             fulfilled,
@@ -441,7 +441,7 @@ export class RevealService {
             fulfilled: false,
             note:
                 `${reason} The reveal request stays open: call reveal on cell ${input.tokenId} again to settle ` +
-                `it — that charges no new fee — or read the draw with get_cell ${input.tokenId} once anyone ` +
+                `it — that pays for no second reveal — or read the draw with get_cell ${input.tokenId} once anyone ` +
                 `settles it.`,
         };
     }
@@ -460,7 +460,7 @@ export class RevealService {
             round: round === null ? null : round.toString(),
             status: ctx.status,
             blockNumber: ctx.blockNumber,
-            fee: cpuFromWei(ctx.paidWei.toString()),
+            ethPaid: ethFromWei(ctx.paidWei.toString()),
             cpuBurn: cpuFromWei(ctx.cpuBurnWei.toString()),
             approveTxHash: ctx.approveTxHash,
         };
@@ -506,7 +506,7 @@ export class RevealService {
                 `Cell ${input.tokenId} carries reveal request ${retired.requestId}, opened at randomness source ` +
                 `${retired.source}, while the chain config now reveals through ${input.randomness.source}. A cell ` +
                 `takes its draw only from the source its own request names, so nothing you can send closes this ` +
-                `one: this call requested nothing and paid no reveal fee, calling reveal again will not clear the ` +
+                `one: this call requested nothing and paid nothing, calling reveal again will not clear the ` +
                 `cell, and fulfill_reveal refuses a request of a retired source. The cell stays locked on this ` +
                 `open request until an admin of the contracts clears it on-chain — that admin cleanup is the only ` +
                 `way out.`,
@@ -529,13 +529,13 @@ export class RevealService {
             deposits: null,
             status: null,
             blockNumber: null,
-            fee: '0',
+            ethPaid: '0',
             cpuBurn: '0',
             approveTxHash,
             fulfilled: false,
             note:
                 `Cell ${input.tokenId} already carries a reveal request, so this call requested nothing and ` +
-                `paid no reveal fee, but the game API does not list that request yet, so this call cannot tell ` +
+                `paid nothing, but the game API does not list that request yet, so this call cannot tell ` +
                 `which request to settle. Two ways out: call reveal on cell ${input.tokenId} again in a few ` +
                 `seconds and it settles the request once the API lists it; or leave it — anyone holding the ` +
                 `beacon signature can settle it — and read the draw with get_cell ${input.tokenId} once it lands.`,

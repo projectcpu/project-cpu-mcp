@@ -228,7 +228,7 @@ describe('RevealService on a push randomness source', () => {
         expect(h.allowance.calls).toHaveLength(0);
         expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 5_000n }]);
         expect(result.genesis).toBe(true);
-        expect(result.fee).toBe(formatEther(4_000n));
+        expect(result.ethPaid).toBe(formatEther(4_000n));
         expect(result.cpuBurn).toBe('0');
         expect(result.approveTxHash).toBeNull();
         expect(result.requestTxHash).toBe(REQUEST_HASH);
@@ -280,7 +280,7 @@ describe('RevealService on a push randomness source', () => {
         const value = h.cellClient.requests[0]?.value ?? 0n;
         expect(value).toBeGreaterThanOrEqual(4_000n);
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: 9n }]);
-        expect(result.fee).toBe(formatEther(4_000n));
+        expect(result.ethPaid).toBe(formatEther(4_000n));
         expect(result.cpuBurn).toBe(formatEther(9n));
     });
 
@@ -357,7 +357,7 @@ describe('RevealService on a push randomness source', () => {
         expect(laterResult.genesis).toBe(false);
         expect(first.allowance.calls).toEqual(later.allowance.calls);
         expect(first.cellClient.requests).toEqual(later.cellClient.requests);
-        expect(firstResult.fee).toBe(laterResult.fee);
+        expect(firstResult.ethPaid).toBe(laterResult.ethPaid);
         expect(firstResult.cpuBurn).toBe(laterResult.cpuBurn);
         expect(firstResult.cpuBurn).toBe('1');
         expect(firstResult.approveTxHash).toBe(APPROVE_HASH);
@@ -376,7 +376,7 @@ describe('RevealService on a push randomness source', () => {
 
         expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 0n }]);
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: parseEther('2') }]);
-        expect(result.fee).toBe('0');
+        expect(result.ethPaid).toBe('0');
         expect(result.cpuBurn).toBe('2');
     });
 
@@ -951,7 +951,7 @@ describe('RevealService on a self-service randomness source', () => {
         const result = await runReveal(h);
 
         expect(result.requestTxHash).toBeNull();
-        expect(result.fee).toBe('0');
+        expect(result.ethPaid).toBe('0');
         expect(result.cpuBurn).toBe('0');
         expect(result.approveTxHash).toBeNull();
         expect(h.allowance.calls).toHaveLength(0);
@@ -976,7 +976,7 @@ describe('RevealService on a self-service randomness source', () => {
         expect(result.requestId).toBe('7');
         expect(result.deposits).toHaveLength(2);
         expect(result.requestTxHash).toBeNull();
-        expect(result.fee).toBe('0');
+        expect(result.ethPaid).toBe('0');
         expect(result.cpuBurn).toBe('0');
         expect(result.approveTxHash).toBe(APPROVE_HASH);
         expect(h.wallet.sent).toHaveLength(1);
@@ -1222,7 +1222,7 @@ describe('RevealService on a self-service randomness source', () => {
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: SELF_CELL, needed: parseEther('1') }]);
         expect(h.wallet.sent[0]?.value).toBe(7_500n);
         expect(result.genesis).toBe(false);
-        expect(result.fee).toBe(formatEther(SELF_CONTRIBUTION + FEE));
+        expect(result.ethPaid).toBe(formatEther(SELF_CONTRIBUTION + FEE));
         expect(result.cpuBurn).toBe('1');
         expect(result.approveTxHash).toBe(APPROVE_HASH);
     });

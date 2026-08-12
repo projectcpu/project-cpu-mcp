@@ -51,7 +51,7 @@ const fulfilledGenesis: RevealResult = {
     deposits: null,
     status: TxStatus.Success,
     blockNumber: '100',
-    fee: '0.0001',
+    ethPaid: '0.0001',
     cpuBurn: '0',
     approveTxHash: null,
     fulfilled: true,
@@ -181,7 +181,7 @@ describe('reveal tool', () => {
             requestTxHash: null,
             status: null,
             blockNumber: null,
-            fee: '0',
+            ethPaid: '0',
             fulfilled: false,
             note:
                 'Cell 42 already carries a reveal request, but the game API does not list that request yet. ' +
