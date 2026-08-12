@@ -235,6 +235,19 @@ export enum CellRevertName {
     REVEAL_REQUEST_ID_IN_USE = 'RevealRequestIdInUse',
 }
 
+export enum UpgradeRevertName {
+    NOT_REVEALED = 'NotRevealed',
+    PROCESS_ACTIVE = 'ProcessActive',
+    DEMOLISH_IN_PROGRESS = 'DemolishInProgress',
+    BUILDING_NOT_ENABLED = 'BuildingNotEnabled',
+    NOT_A_BASE_BUILDING = 'NotABaseBuilding',
+    INVALID_UPGRADE = 'InvalidUpgrade',
+    BUILDING_NOT_READY = 'BuildingNotReady',
+    STORAGE_EXCEEDS_CAP = 'StorageExceedsCap',
+    INSUFFICIENT_LIQUID = 'InsufficientLiquid',
+    NOT_CELL_OWNER = 'NotCellOwner',
+}
+
 export interface PushRevealInput {
     randomness: PushRandomness;
     config: AppConfig;
@@ -395,6 +408,26 @@ export interface BuildPlacement {
     approveTxHash: Hash | null;
     /** Build cost in $CPU (decimal). */
     buildCost: string;
+}
+
+export interface UpgradeInput {
+    tokenId: string;
+    targetBuildingType: string;
+}
+
+export interface UpgradeResult {
+    tokenId: string;
+    fromBuildingType: string;
+    toBuildingType: string;
+    buildCost: string;
+    buildInputs: Array<CraftStackView>;
+    noop: boolean;
+    upgrading: boolean;
+    finishAt: number | null;
+    approveTxHash: Hash | null;
+    txHash: Hash | null;
+    status: TxStatus | null;
+    blockNumber: string | null;
 }
 
 export interface DemolishInput {

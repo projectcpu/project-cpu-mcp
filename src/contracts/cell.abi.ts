@@ -277,4 +277,54 @@ export const CELL_ABI = [
         name: 'RevealRequestIdInUse',
         inputs: [{ name: 'requestId', type: 'uint64', internalType: 'uint64' }],
     },
+    {
+        type: 'error',
+        name: 'NotCellOwner',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'NotRevealed',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'ProcessActive',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'DemolishInProgress',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'BuildingNotEnabled',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'NotABaseBuilding',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'InvalidUpgrade',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'BuildingNotReady',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'InsufficientLiquid',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'StorageExceedsCap',
+        inputs: [{ name: 'res', type: 'uint16', internalType: 'uint16' }],
+    },
 ] as const;

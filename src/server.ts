@@ -6,6 +6,7 @@ import { registerGetBalanceTool } from './tools/account/get-balance/get-balance.
 import { registerAuthenticateTool } from './tools/authenticate.js';
 import { registerBuildTool } from './tools/build/build.js';
 import { registerDemolishTool } from './tools/build/demolish.js';
+import { registerUpgradeTool } from './tools/build/upgrade.js';
 import { registerGetGameConfigTool } from './tools/config/get-game-config/get-game-config.js';
 import { registerClaimCraftTool } from './tools/craft/claim/claim-craft.js';
 import { registerCraftTool } from './tools/craft/craft.js';
@@ -145,6 +146,7 @@ function registerTools(registrar: ToolRegistrar, context: AppContext): void {
     registerFulfillRevealTool(registrar, context);
     registerBuildTool(registrar, context);
     registerDemolishTool(registrar, context);
+    registerUpgradeTool(registrar, context);
     registerListRecipesTool(registrar, context);
     registerCraftTool(registrar, context);
     registerGetCraftStatusTool(registrar, context);

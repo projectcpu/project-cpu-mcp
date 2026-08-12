@@ -162,6 +162,11 @@ export interface BuildingView {
     recipes: Array<CraftRecipeId>;
     effects: BuildingEffectsView;
     recipeOpexCpu: Record<string, string> | null;
+    upgradeFrom: string | null;
+    upgradeTo: Array<string>;
+    family: string | null;
+    level: number | null;
+    branch: string | null;
 }
 
 /** Reveal-cost params — the first reveal of a cell is free; re-revealing a depleted cell costs `reRevealCost`. */

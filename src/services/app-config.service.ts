@@ -71,6 +71,11 @@ export class AppConfigService implements IAppConfig {
                 demolishCost: b.demolishCost ?? { cpu: '0', inputs: [] },
                 modeSwitch: toModeSwitchView(b.modeSwitchCost),
                 recipeOpexCpu: b.recipeOpexCpu ?? null,
+                upgradeFrom: b.upgradeFrom ?? null,
+                upgradeTo: b.upgradeTo ?? [],
+                family: b.family ?? null,
+                level: b.level ?? null,
+                branch: b.branch ?? null,
             })),
             reveal: data.reveal ?? { firstFree: true, reRevealCost: '0' },
             transport: {
