@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.9.0...v0.9.1) (2026-08-12)
+
+
+### Features
+
+* **harness:** support Codex worktree lifecycle ([1fac56c](https://github.com/projectcpu/project-cpu-mcp/commit/1fac56c456c1cf9aa6748bd2d5930473fb5d4a55))
+
 ## [0.9.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.8.1...v0.9.0) (2026-08-12)
 
 
