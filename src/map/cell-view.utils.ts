@@ -13,8 +13,6 @@ import {
     type UnderivedCell,
 } from './types.js';
 
-const NO_HUB_MULTIPLIER = 1;
-
 function cellReady(cell: RawCell, serverTime: number): boolean | null {
     const building = cell.building;
     if (building === null) {
@@ -23,19 +21,20 @@ function cellReady(cell: RawCell, serverTime: number): boolean | null {
     return building.buildFinishAt === null || serverTime >= building.buildFinishAt;
 }
 
-function deriveStorage(storage: RawCellResourceStorage | null, multiplier: number): CellResourceStorage | null {
+function deriveStorage(storage: RawCellResourceStorage | null, useHubShelf: boolean): CellResourceStorage | null {
     if (storage === null) {
         return null;
     }
-    if (storage.cap === null) {
-        return { ...storage, full: false };
+    const { cellCap, hubCap, ...occupancy } = storage;
+    const cap = useHubShelf ? hubCap : cellCap;
+    if (cap === null) {
+        return { ...occupancy, cap: null, full: false };
     }
-    const cap = BigInt(storage.cap) * BigInt(multiplier);
-    return { ...storage, cap: cap.toString(), full: BigInt(storage.used) >= cap };
+    return { ...occupancy, cap, full: BigInt(storage.used) >= BigInt(cap) };
 }
 
-function deriveResource(resource: RawCellResource, multiplier: number): CellResource {
-    return { ...resource, storage: deriveStorage(resource.storage, multiplier) };
+function deriveResource(resource: RawCellResource, useHubShelf: boolean): CellResource {
+    return { ...resource, storage: deriveStorage(resource.storage, useHubShelf) };
 }
 
 function deriveProcess(
@@ -52,10 +51,13 @@ function deriveProcess(
 
 export function toCell(raw: UnderivedCell, serverTime: number, config: CellProjectionConfig): Cell {
     const ready = cellReady(raw, serverTime);
-    const activeHub = ready === true && raw.building !== null && config.hubBuildingTypes.has(raw.building.type);
-    const resources = raw.resources.map((resource) =>
-        deriveResource(resource, activeHub ? config.hubStorageMultiplier : NO_HUB_MULTIPLIER),
-    );
+    const buildingType = raw.building?.type ?? null;
+    const isHub = buildingType !== null && config.hubBuildingTypes.has(buildingType);
+    const upgradeFrom = buildingType === null ? null : (config.upgradeFromByBuildingType[buildingType] ?? null);
+    const upgradesFromHub = upgradeFrom !== null && config.hubBuildingTypes.has(upgradeFrom);
+    const activeHub = ready === true && isHub;
+    const useHubShelf = isHub && (ready === true || upgradesFromHub);
+    const resources = raw.resources.map((resource) => deriveResource(resource, useHubShelf));
 
     return { ...raw, resources, process: deriveProcess(raw.process, resources, config), ready, activeHub };
 }

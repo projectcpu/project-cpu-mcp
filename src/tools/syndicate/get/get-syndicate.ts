@@ -2,6 +2,7 @@ import { GET_SYNDICATE_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { summarizeSyndicateDetail } from '../format.utils.js';
+import { syndicateDetailOutput } from '../output.utils.js';
 import { getSyndicateInputSchema } from '../types.js';
 
 export function registerGetSyndicateTool(server: ToolRegistrar, context: AppContext): void {
@@ -9,7 +10,7 @@ export function registerGetSyndicateTool(server: ToolRegistrar, context: AppCont
         'cpu_get_syndicate',
         { description: GET_SYNDICATE_DESCRIPTION, inputSchema: getSyndicateInputSchema },
         async (args) => {
-            const detail = await context.syndicate.getSyndicate(args);
+            const detail = syndicateDetailOutput(await context.syndicate.getSyndicate(args));
 
             return {
                 content: [

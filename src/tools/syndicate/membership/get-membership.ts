@@ -2,6 +2,7 @@ import { GET_SYNDICATE_MEMBERSHIP_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { summarizeMembership } from '../format.utils.js';
+import { syndicateMembershipOutput } from '../output.utils.js';
 import { getSyndicateMembershipInputSchema } from '../types.js';
 
 export function registerGetSyndicateMembershipTool(server: ToolRegistrar, context: AppContext): void {
@@ -9,7 +10,7 @@ export function registerGetSyndicateMembershipTool(server: ToolRegistrar, contex
         'cpu_get_syndicate_membership',
         { description: GET_SYNDICATE_MEMBERSHIP_DESCRIPTION, inputSchema: getSyndicateMembershipInputSchema },
         async (args) => {
-            const membership = await context.syndicate.getMembership(args);
+            const membership = syndicateMembershipOutput(await context.syndicate.getMembership(args));
 
             return {
                 content: [

@@ -153,7 +153,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '95',
-                storage: makeStorage({ used: '95', cap: '100' }),
+                storage: makeStorage({ used: '95', cellCap: '100', hubCap: '100' }),
             }),
         ]);
         const { service } = makeService({ cell });
@@ -170,7 +170,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '75',
-                storage: makeStorage({ used: '75', cap: '100' }),
+                storage: makeStorage({ used: '75', cellCap: '100', hubCap: '100' }),
             }),
         ]);
         const { service } = makeService({ cell });
@@ -188,7 +188,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '50',
-                storage: makeStorage({ used: '50', cap: '50' }),
+                storage: makeStorage({ used: '50', cellCap: '50', hubCap: '50' }),
             }),
         ]);
         const { service } = makeService({ cell, serverTime: nowSec });
@@ -208,7 +208,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '50',
-                storage: makeStorage({ used: '50', cap: '50' }),
+                storage: makeStorage({ used: '50', cellCap: '50', hubCap: '50' }),
             }),
         ]);
         const { service } = makeService({ cell });

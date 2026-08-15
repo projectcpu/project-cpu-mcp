@@ -12,12 +12,14 @@ import {
     type RawCellResourceStorage,
 } from '../types.js';
 
-export const TEST_HUB_STORAGE_MULTIPLIER = 10;
+export const TEST_CELL_CAP = '100';
+export const TEST_HUB_CAP = '1000';
 
 export function makeStorage(overrides: Partial<RawCellResourceStorage> = {}): RawCellResourceStorage {
     return {
         used: '0',
-        cap: '100',
+        cellCap: TEST_CELL_CAP,
+        hubCap: TEST_HUB_CAP,
         reserved: { incomingTransport: '0', lots: '0' },
         ...overrides,
     };
@@ -89,8 +91,8 @@ export function makeSnapshot(overrides: Partial<MapSnapshotResponse> = {}): MapS
 
 export function makeProjectionConfig(overrides: Partial<CellProjectionConfig> = {}): CellProjectionConfig {
     return {
-        hubStorageMultiplier: TEST_HUB_STORAGE_MULTIPLIER,
         hubBuildingTypes: new Set<string>([BuildingType.Hub]),
+        upgradeFromByBuildingType: { [BuildingType.Hub]: null },
         craftOutputsByRecipe: {},
         ...overrides,
     };

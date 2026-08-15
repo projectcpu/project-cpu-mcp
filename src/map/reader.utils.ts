@@ -17,8 +17,10 @@ export function extractionShareBpByBuilding(config: AppConfig): Record<string, n
 
 export function toProjectionConfig(config: AppConfig): CellProjectionConfig {
     return {
-        hubStorageMultiplier: config.storage.hubStorageMultiplier,
         hubBuildingTypes: buildingTypesOfKind(config, BuildingKind.Hub),
+        upgradeFromByBuildingType: Object.fromEntries(
+            config.buildings.map((building) => [building.type, building.upgradeFrom]),
+        ),
         craftOutputsByRecipe: craftOutputsByRecipe(config),
     };
 }

@@ -1,5 +1,6 @@
 import { getAddress, isAddress, type Hash } from 'viem';
 
+import { assertChain } from './assert-chain.utils.js';
 import {
     type FulfillRevealInput,
     type IAppConfig,
@@ -64,11 +65,7 @@ export class RevealFulfilmentService {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
 
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
+        assertChain(config.chainId, wallet.getChainId());
 
         const strategy = await this.randomness.resolve();
         if (strategy === null) {

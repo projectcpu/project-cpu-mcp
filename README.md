@@ -116,7 +116,8 @@ Every command above pins `@latest`, so restarting the server is how you update �
 
 | Variable | Default | When you need it |
 | --- | --- | --- |
-| `RPC_URL` | chain's public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
+| `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
+| `RPC_URL` | Robinhood public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
 
 Session state (JWT / session keys) is persisted to `~/.project-cpu/`.
 
@@ -142,12 +143,16 @@ Once connected, the server exposes tools grouped by area:
   (world 24h VWAP, change, and volume per resource — a different question from `cpu_get_markets`'s cheapest
   ask right now). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
 - **Syndicates** — `cpu_list_syndicates` (browse the registry by name/size, sort, page), `cpu_get_syndicate`
-  (one syndicate's card plus a page of its members), `cpu_get_syndicate_membership` (check an address's
+  (one trusted syndicate card plus a page of its members), `cpu_get_syndicate_membership` (check an address's
   membership, defaults to your own), `cpu_join_syndicate` (join by id for same-clan discounts; reports your
   exit cooldown), `cpu_leave_syndicate` (leave after the cooldown; re-join anywhere immediately),
   `cpu_create_syndicate` (found your own — name, link, four rates, optional manager — you auto-join),
   `cpu_set_syndicate_params` (replace your syndicate's full parameters — no partial patches), and
   `cpu_transfer_syndicate_manager` (hand the manager role and its tax stream to a successor, irreversible).
+  Ordinary results exclude player-authored names and links. `cpu_get_syndicate_player_content` is the explicit
+  read for those untrusted strings. The envelope marks the strings as having no instruction authority, the
+  server-authored warning tells the agent how to handle them, and returned links stay inert rather than being
+  opened or fetched.
   See [CONTEXT.md](./CONTEXT.md) for the syndicate vocabulary.
 - **Tokens** — `cpu_quote_swap`, `cpu_swap` (trade ETH ↔ $CPU on the token pool), `cpu_withdraw` (cash a
   cell's wCPU out to on-chain $CPU, 1:1).

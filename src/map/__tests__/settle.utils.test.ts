@@ -104,7 +104,11 @@ describe('settleCell mining', () => {
 
     it('binds warehouse room on the credit, not the take', () => {
         const room = [
-            makeResource({ resourceId: RESOURCE, deposit: '100000', storage: makeStorage({ used: '0', cap: '350' }) }),
+            makeResource({
+                resourceId: RESOURCE,
+                deposit: '100000',
+                storage: makeStorage({ used: '0', cellCap: '350', hubCap: '350' }),
+            }),
         ];
         expect(settleCell(drillCell(room), 5, DRILL_CONFIG)).toEqual({
             settledBatches: 3,
@@ -135,7 +139,11 @@ describe('settleCell mining', () => {
 
     it('settles whole cycles only — room for a partial cycle banks nothing', () => {
         const tight = [
-            makeResource({ resourceId: RESOURCE, deposit: '10000', storage: makeStorage({ used: '10', cap: '99' }) }),
+            makeResource({
+                resourceId: RESOURCE,
+                deposit: '10000',
+                storage: makeStorage({ used: '10', cellCap: '99', hubCap: '99' }),
+            }),
         ];
         const s = settleCell(cell({}, tight), 5, config());
         expect(s.settledBatches).toBe(0);
@@ -144,7 +152,11 @@ describe('settleCell mining', () => {
 
     it('takes the whole cycles the room admits and no more', () => {
         const room = [
-            makeResource({ resourceId: RESOURCE, deposit: '10000', storage: makeStorage({ used: '0', cap: '250' }) }),
+            makeResource({
+                resourceId: RESOURCE,
+                deposit: '10000',
+                storage: makeStorage({ used: '0', cellCap: '250', hubCap: '250' }),
+            }),
         ];
         expect(settleCell(cell({}, room), 5, config())).toEqual({
             settledBatches: 2,
@@ -176,7 +188,11 @@ describe('settleCell mining', () => {
 describe('settleCell craft', () => {
     it('takes the whole batches every output admits', () => {
         const room = [
-            makeResource({ resourceId: RESOURCE, deposit: '0', storage: makeStorage({ used: '0', cap: '250' }) }),
+            makeResource({
+                resourceId: RESOURCE,
+                deposit: '0',
+                storage: makeStorage({ used: '0', cellCap: '250', hubCap: '250' }),
+            }),
         ];
         const crafting = cell({ process: makeCraftProcess({ recipeId: RECIPE }) }, room);
         expect(settleCell(crafting, 5, config()).settledBatches).toBe(2);

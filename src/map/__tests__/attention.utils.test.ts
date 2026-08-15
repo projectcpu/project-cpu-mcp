@@ -61,7 +61,8 @@ describe('buildAttentionReport', () => {
                         balance: '20',
                         storage: makeStorage({
                             used: '50',
-                            cap: '50',
+                            cellCap: '50',
+                            hubCap: '50',
                             reserved: { incomingTransport: '30', lots: '0' },
                         }),
                     }),
@@ -89,18 +90,18 @@ describe('buildAttentionReport', () => {
                         makeResource({
                             resourceId: 10,
                             deposit: '1000',
-                            storage: makeStorage({ used: '60', cap: '60' }),
+                            storage: makeStorage({ used: '60', cellCap: '60', hubCap: '60' }),
                         }),
                         makeResource({
                             resourceId: 11,
                             deposit: '1000',
-                            storage: makeStorage({ used: '60', cap: '60' }),
+                            storage: makeStorage({ used: '60', cellCap: '60', hubCap: '60' }),
                         }),
                         // Not an output of this recipe → must not be flagged even though its box is full.
                         makeResource({
                             resourceId: 99,
                             deposit: '1000',
-                            storage: makeStorage({ used: '60', cap: '60' }),
+                            storage: makeStorage({ used: '60', cellCap: '60', hubCap: '60' }),
                         }),
                     ],
                 },
@@ -126,9 +127,17 @@ describe('buildAttentionReport', () => {
                 process: makeMiningProcess({ resource: 5, yieldPerCycle: 5 }),
                 resources: [
                     // Mined resource at 95%, still room for a whole cycle → warning, not a stall.
-                    makeResource({ resourceId: 5, deposit: '1000', storage: makeStorage({ used: '95', cap: '100' }) }),
+                    makeResource({
+                        resourceId: 5,
+                        deposit: '1000',
+                        storage: makeStorage({ used: '95', cellCap: '100', hubCap: '100' }),
+                    }),
                     // A different resource, also 95% but nothing produces it → not flagged.
-                    makeResource({ resourceId: 6, deposit: '1000', storage: makeStorage({ used: '95', cap: '100' }) }),
+                    makeResource({
+                        resourceId: 6,
+                        deposit: '1000',
+                        storage: makeStorage({ used: '95', cellCap: '100', hubCap: '100' }),
+                    }),
                 ],
             },
         ]);
@@ -149,7 +158,7 @@ describe('buildAttentionReport', () => {
                     makeResource({
                         resourceId: 1,
                         deposit: '1000',
-                        storage: makeStorage({ used: '999999', cap: null }),
+                        storage: makeStorage({ used: '999999', cellCap: null, hubCap: null }),
                     }),
                 ],
             },
@@ -314,7 +323,12 @@ describe('buildAttentionReport', () => {
                 tokenId: '9',
                 revealCount: 1,
                 building: { type: BuildingType.Hub, buildFinishAt: null, modeResource: null, modeRecipeId: null },
-                resources: [makeResource({ resourceId: 1, storage: makeStorage({ used: '500', cap: '500' }) })],
+                resources: [
+                    makeResource({
+                        resourceId: 1,
+                        storage: makeStorage({ used: '500', cellCap: '500', hubCap: '500' }),
+                    }),
+                ],
             },
         ]);
         expect(r.items).toEqual([]);
@@ -332,7 +346,7 @@ describe('buildAttentionReport', () => {
                     makeResource({
                         resourceId: 1,
                         deposit: '1000',
-                        storage: makeStorage({ used: '50', cap: '50' }),
+                        storage: makeStorage({ used: '50', cellCap: '50', hubCap: '50' }),
                     }),
                 ],
             },

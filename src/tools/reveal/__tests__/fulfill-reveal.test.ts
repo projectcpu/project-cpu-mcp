@@ -447,7 +447,7 @@ describe('cpu_fulfill_reveal', () => {
         wallet.chainId = CHAIN_ID + 1;
 
         await expect(handler(noArgs())).rejects.toThrow(
-            `Chain mismatch: the chain config is chainId ${CHAIN_ID} but the wallet is on ${CHAIN_ID + 1}. Check NETWORK.`,
+            `Chain mismatch: the chain config is chainId ${CHAIN_ID} but the wallet is on ${CHAIN_ID + 1}. Check RPC_URL.`,
         );
         expect(requests.owners).toEqual([]);
         expect(strategy.reads).toEqual([]);
@@ -458,7 +458,7 @@ describe('cpu_fulfill_reveal', () => {
         const { handler, wallet, strategy } = setup();
         wallet.chainId = CHAIN_ID + 1;
 
-        await expect(handler(noArgs({ requestId: '7', source: SOURCE }))).rejects.toThrow(/Check NETWORK/);
+        await expect(handler(noArgs({ requestId: '7', source: SOURCE }))).rejects.toThrow(/Check RPC_URL/);
         expect(strategy.sent).toEqual([]);
     });
 

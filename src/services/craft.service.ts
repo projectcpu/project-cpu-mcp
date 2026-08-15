@@ -1,8 +1,10 @@
 import { isAddress, parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
 
 import { MAX_APPROVE_AMOUNT } from './allowance.constants.js';
+import { assertChain } from './assert-chain.utils.js';
 import { decodeBurnedCpu, feeWeiOf } from './burn.utils.js';
 import { recipeNameFromUint64, recipeNameToUint64 } from './cell.utils.js';
+import { effectiveCraftInputs } from './craft-quote.utils.js';
 import {
     type AppConfig,
     type CatalogBuildingView,
@@ -31,7 +33,7 @@ import { cellProcessProgress } from '../map/settle.utils.js';
 import { blockedResourceIds } from '../map/storage.utils.js';
 import { CellProcessKind, type RevealCellReader } from '../map/types.js';
 import { cpuFromWei } from '../utils/format.utils.js';
-import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
+import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class CraftService {
     private readonly wallet: WalletProvider;
@@ -55,7 +57,7 @@ export class CraftService {
     async craft(input: CraftInput): Promise<CraftStartResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = this.requireCell(config);
         const recipe = config.recipes.find((r) => r.id === input.recipeId);
@@ -63,18 +65,25 @@ export class CraftService {
             throw new Error(`Recipe ${input.recipeId} is not available on network ${config.network}.`);
         }
 
-        // Paid action — refresh, then verify the warehouse holds the per-batch inputs × batches before spending
-        // gas, instead of letting startCraft revert InsufficientLiquid after the $CPU approve.
+        // Paid action — resolve the current building before trusting either its recipe set or its input effects.
         await this.mapReader.refresh();
         const state = await this.mapReader.readRevealCell(input.tokenId);
-        const required = recipe.inputs.map((i) => ({ resourceId: i.resourceId, amount: i.amount * input.batches }));
-        assertWarehouseHas(config.resources, state, required, input.tokenId, 'craft');
-
-        const recipeCostWei = parseEther(recipe.costCpu) * BigInt(input.batches);
         const tokenId = BigInt(input.tokenId);
         const targetRecipe = recipeNameToUint64(input.recipeId);
         const mapView = config.buildings.find((b) => b.type === state?.building?.type) ?? null;
         const priced = await this.priceContext(config, cell, tokenId, mapView, state?.building?.modeRecipeId ?? null);
+        if (priced.view === null) {
+            throw new Error(
+                `Cannot determine the current building for cell ${input.tokenId}; cannot quote craft inputs.`,
+            );
+        }
+        if (!priced.view.recipes.includes(input.recipeId)) {
+            throw new Error(`Building ${priced.view.type} does not support recipe ${input.recipeId}.`);
+        }
+        const required = effectiveCraftInputs(recipe, priced.view, input.batches);
+        assertWarehouseHas(config.resources, state, required, input.tokenId, 'craft');
+
+        const recipeCostWei = parseEther(recipe.costCpu) * BigInt(input.batches);
         const opex = this.opexOf(priced.view, input.recipeId, input.batches);
         const expectedBaseWei = recipeCostWei + opex.wei;
         const cost = modeCost(priced.view, priced.mode, targetRecipe);
@@ -180,7 +189,7 @@ export class CraftService {
     async claim(tokenId: string): Promise<CraftClaimResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = this.requireCell(config);
         this.logger.info('claiming craft outputs', { tokenId });
@@ -268,14 +277,6 @@ export class CraftService {
             claimedBatches: event.args.claimedBatches,
             outputs,
         };
-    }
-
-    private assertChain(config: AppConfig, wallet: WalletManager): void {
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
     }
 
     private requireCell(config: AppConfig): Address {

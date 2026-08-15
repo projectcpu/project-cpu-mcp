@@ -1,6 +1,7 @@
 import { isAddress, parseEther, parseEventLogs, type Address, type Hash } from 'viem';
 import { z } from 'zod';
 
+import { assertChain } from './assert-chain.utils.js';
 import { decodeDeliveryScheduled, settleTransitFees } from './delivery.helpers.js';
 import { toFillView } from './trade-fill.helpers.js';
 import {
@@ -527,12 +528,7 @@ export class TradeService {
     private async ready(): Promise<{ config: AppConfig; wallet: WalletManager }> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ` +
-                    `${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
+        assertChain(config.chainId, wallet.getChainId());
         return { config, wallet };
     }
 }

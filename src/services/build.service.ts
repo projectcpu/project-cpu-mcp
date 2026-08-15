@@ -1,5 +1,6 @@
 import { isAddress, parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
 
+import { assertChain } from './assert-chain.utils.js';
 import type {
     AppConfig,
     BuildInput,
@@ -23,7 +24,7 @@ import type { ILogger } from '../logger/types.js';
 import { activeDemolition } from '../map/map.utils.js';
 import type { Cell, CellBuildingView, RevealCellReader } from '../map/types.js';
 import { formatUnixSeconds } from '../utils/format.utils.js';
-import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
+import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class BuildService {
     private readonly wallet: WalletProvider;
@@ -47,7 +48,7 @@ export class BuildService {
     async build(input: BuildInput): Promise<BuildResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = this.requireCell(config);
         const cpuToken = this.requireCpuToken(config);
@@ -77,7 +78,7 @@ export class BuildService {
     async demolish(input: DemolishInput): Promise<DemolishResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = this.requireCell(config);
         const cpuToken = this.requireCpuToken(config);
@@ -133,7 +134,7 @@ export class BuildService {
     async upgrade(input: UpgradeInput): Promise<UpgradeResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = this.requireCell(config);
         const cpuToken = this.requireCpuToken(config);
@@ -338,14 +339,6 @@ export class BuildService {
         await this.contracts.confirm(buildTxHash, 'Build transaction');
 
         return { buildTxHash, approveTxHash, buildCost: view.buildCost };
-    }
-
-    private assertChain(config: AppConfig, wallet: WalletManager): void {
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
     }
 
     private requireCell(config: AppConfig): Address {

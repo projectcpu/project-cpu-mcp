@@ -13,8 +13,8 @@ interface ToolResult {
 }
 
 const CONFIG: AppConfig = {
-    network: Network.ETHEREUM,
-    chainId: 1,
+    network: Network.ROBINHOOD,
+    chainId: 4663,
     contracts: {
         land: '0xland',
         cpuToken: '0xcpu',
@@ -153,7 +153,7 @@ const CONFIG: AppConfig = {
     reveal: { ethContribution: '0.001', cpuBurn: '2' },
     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
     trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
-    storage: { hubStorageMultiplier: 10 },
+    storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
 };
 
 function capture(config: AppConfig = CONFIG): (args: never) => Promise<ToolResult> {
@@ -210,7 +210,7 @@ describe('get_game_config tool', () => {
         const result = await capture()({} as never);
 
         const header = result.content[0]?.text ?? '';
-        expect(header).toMatch(/Network ethereum \(chainId 1\)/);
+        expect(header).toMatch(/Network robinhood \(chainId 4663\)/);
         expect(header).toMatch(/Mine \(extractor, build 5 \$CPU, demolish 2\.5 \$CPU\)/);
         expect(header).toMatch(
             /Steel Mill \(crafter, build 20 \$CPU, demolish 10 \$CPU, opex smelt_steel:2 \$CPU\/batch\)/,
@@ -228,14 +228,15 @@ describe('get_game_config tool', () => {
         );
         expect(header).toContain("every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override");
         expect(header).toContain('5:0.1');
-        expect(header).toMatch(/an active hub multiplies a cell's storage cap by 10x/);
+        expect(header).toContain('storage caps are explicit per-resource cell/hub shelf pairs');
+        expect(header).toContain('`0` means unlimited');
 
         const json = JSON.parse(result.content[1]?.text ?? '{}') as AppConfig;
         expect(json.buildings[0]?.buildCost).toBe('5');
         expect(json.reveal).toEqual({ ethContribution: '0.001', cpuBurn: '2' });
         expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
         expect(json.transport.moveFeeFloors).toEqual({ 5: '0.1' });
-        expect(json.storage).toEqual({ hubStorageMultiplier: 10 });
+        expect(json.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });
     });
 
     it('tells a push network that the draw arrives on its own and fulfilment is not the agent’s job', async () => {

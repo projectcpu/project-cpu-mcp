@@ -1,5 +1,6 @@
 import { isAddress, parseEther, parseEventLogs, type Address, type Log } from 'viem';
 
+import { assertChain } from './assert-chain.utils.js';
 import type {
     AppConfig,
     IAppConfig,
@@ -11,7 +12,7 @@ import type {
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
 import type { Cell, RevealCellReader } from '../map/types.js';
-import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
+import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class WithdrawService {
     private readonly wallet: WalletProvider;
@@ -33,7 +34,7 @@ export class WithdrawService {
     async withdraw(input: WithdrawInput): Promise<WithdrawResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = this.requireCell(config);
         const tokenId = BigInt(input.tokenId);
@@ -74,14 +75,6 @@ export class WithdrawService {
         const events = parseEventLogs({ abi: CELL_ABI, eventName: 'CpuWithdrawn', logs });
         const event = events.find((e) => e.address.toLowerCase() === cell.toLowerCase());
         return event === undefined ? null : event.args.amount;
-    }
-
-    private assertChain(config: AppConfig, wallet: WalletManager): void {
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
     }
 
     private requireCell(config: AppConfig): Address {

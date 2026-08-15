@@ -145,7 +145,7 @@ export class MapReader {
         };
     }
 
-    private nearestOwnedDistance(cell: RawCell, ownerAddress: string | null): number | null {
+    private nearestOwnedDistance(cell: Pick<RawCell, 'tokenId'>, ownerAddress: string | null): number | null {
         if (ownerAddress === null) {
             return null;
         }

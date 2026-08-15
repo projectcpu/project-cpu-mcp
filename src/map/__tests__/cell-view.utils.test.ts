@@ -11,8 +11,8 @@ import {
     type RawCellResourceStorage,
 } from '../types.js';
 
-const HUB_MULTIPLIER = 10;
 const BASE_CAP = '100';
+const HUB_CAP = '1000';
 const FINISH_AT = 1000;
 const RECIPE = 'alloy';
 const YIELD_PER_CYCLE = 77;
@@ -22,8 +22,8 @@ const UPGRADED_HUB = 'hub_l2a';
 
 function config(overrides: Partial<CellProjectionConfig> = {}): CellProjectionConfig {
     return {
-        hubStorageMultiplier: HUB_MULTIPLIER,
         hubBuildingTypes: new Set<string>([BuildingType.Hub]),
+        upgradeFromByBuildingType: { [BuildingType.Hub]: null },
         craftOutputsByRecipe: {
             [RECIPE]: [
                 { resourceId: 5, amount: CRAFT_OUTPUT_PER_CYCLE },
@@ -35,7 +35,13 @@ function config(overrides: Partial<CellProjectionConfig> = {}): CellProjectionCo
 }
 
 function storage(overrides: Partial<RawCellResourceStorage> = {}): RawCellResourceStorage {
-    return { used: '0', cap: BASE_CAP, reserved: { incomingTransport: '0', lots: '0' }, ...overrides };
+    return {
+        used: '0',
+        cellCap: BASE_CAP,
+        hubCap: HUB_CAP,
+        reserved: { incomingTransport: '0', lots: '0' },
+        ...overrides,
+    };
 }
 
 function resource(overrides: Partial<RawCellResource> = {}): RawCellResource {
@@ -126,8 +132,8 @@ describe('toCell active hub', () => {
 describe('toCell storage cap', () => {
     it.each([
         ['serves the base cap when the cell has no building', null, FINISH_AT, BASE_CAP],
-        ['multiplies the cap under an active hub', hub(), FINISH_AT, '1000'],
-        ['keeps the base cap while the hub is still going up', hub(), FINISH_AT - 1, BASE_CAP],
+        ['selects the hub shelf under an active hub', hub(), FINISH_AT, HUB_CAP],
+        ['keeps the cell shelf while the first hub is still going up', hub(), FINISH_AT - 1, BASE_CAP],
         [
             'keeps the base cap under a finished non-hub building',
             { type: BuildingType.Quarry, buildFinishAt: FINISH_AT, modeResource: null, modeRecipeId: null },
@@ -139,9 +145,40 @@ describe('toCell storage cap', () => {
         expect(toCell(cell, serverTime, config()).resources[0]?.storage?.cap).toBe(expected);
     });
 
+    it('keeps the hub shelf during a hub-to-hub upgrade without activating routing', () => {
+        const building = {
+            type: UPGRADED_HUB,
+            buildFinishAt: FINISH_AT,
+            modeResource: null,
+            modeRecipeId: null,
+        };
+        const catalog = config({
+            hubBuildingTypes: new Set<string>([BuildingType.Hub, UPGRADED_HUB]),
+            upgradeFromByBuildingType: { [BuildingType.Hub]: null, [UPGRADED_HUB]: BuildingType.Hub },
+        });
+        const derived = toCell(rawCell({ building, resources: [resource()] }), FINISH_AT - 1, catalog);
+
+        expect(derived.resources[0]?.storage?.cap).toBe(HUB_CAP);
+        expect(derived.activeHub).toBe(false);
+    });
+
     it('leaves an uncapped resource uncapped under an active hub', () => {
-        const cell = rawCell({ building: hub(), resources: [resource({ storage: storage({ cap: null }) })] });
+        const cell = rawCell({
+            building: hub(),
+            resources: [resource({ storage: storage({ cellCap: BASE_CAP, hubCap: null }) })],
+        });
         expect(toCell(cell, FINISH_AT, config()).resources[0]?.storage?.cap).toBeNull();
+    });
+
+    it('selects an uncapped cell shelf without leaking the capped hub shelf', () => {
+        const cell = rawCell({
+            resources: [resource({ storage: storage({ cellCap: null, hubCap: HUB_CAP }) })],
+        });
+        const projected = toCell(cell, FINISH_AT, config()).resources[0]?.storage;
+
+        expect(projected?.cap).toBeNull();
+        expect(projected).not.toHaveProperty('cellCap');
+        expect(projected).not.toHaveProperty('hubCap');
     });
 
     it('leaves a resource with no warehouse alone', () => {
@@ -154,16 +191,18 @@ describe('toCell full', () => {
     it.each([
         ['is full exactly at the cap', null, BASE_CAP, true],
         ['is not full one unit below the cap', null, '99', false],
-        ['is not full at the base cap once the hub multiplies it', hub(), BASE_CAP, false],
-        ['is full at the multiplied cap', hub(), '1000', true],
-        ['is full above the multiplied cap', hub(), '1001', true],
+        ['is not full at the cell cap once the hub shelf applies', hub(), BASE_CAP, false],
+        ['is full at the hub cap', hub(), HUB_CAP, true],
+        ['is full above the hub cap', hub(), '1001', true],
     ])('%s', (_name, building, used, expected) => {
         const cell = rawCell({ building, resources: [resource({ storage: storage({ used }) })] });
         expect(toCell(cell, FINISH_AT, config()).resources[0]?.storage?.full).toBe(expected);
     });
 
     it('never fills an uncapped resource, however much it holds', () => {
-        const cell = rawCell({ resources: [resource({ storage: storage({ cap: null, used: '999999' }) })] });
+        const cell = rawCell({
+            resources: [resource({ storage: storage({ cellCap: null, hubCap: null, used: '999999' }) })],
+        });
         expect(toCell(cell, FINISH_AT, config()).resources[0]?.storage?.full).toBe(false);
     });
 });
@@ -190,7 +229,7 @@ describe('toCell process stall', () => {
 
     it('never stalls a miner on an uncapped resource', () => {
         const cell = rawCell({
-            resources: [resource({ storage: storage({ cap: null, used: '999999' }) })],
+            resources: [resource({ storage: storage({ cellCap: null, hubCap: null, used: '999999' }) })],
             process: mining(1),
         });
         expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(false);
@@ -226,6 +265,23 @@ describe('toCell process stall', () => {
         expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(true);
     });
 
+    it('groups duplicate recipe outputs before checking room for one whole batch', () => {
+        const cell = rawCell({
+            resources: [resource({ resourceId: 5, storage: storage({ used: '50' }) })],
+            process: craft(),
+        });
+        const catalog = config({
+            craftOutputsByRecipe: {
+                [RECIPE]: [
+                    { resourceId: 5, amount: 30 },
+                    { resourceId: 5, amount: 30 },
+                ],
+            },
+        });
+
+        expect(toCell(cell, FINISH_AT, catalog).process?.stalled).toBe(true);
+    });
+
     it('does not stall a craft while every recipe output has room', () => {
         const cell = rawCell({
             resources: [resource({ resourceId: 5 }), resource({ resourceId: 6 })],
@@ -247,7 +303,7 @@ describe('toCell process stall', () => {
         expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(false);
     });
 
-    it('measures a craft stall against the multiplied cap under an active hub', () => {
+    it('measures a craft stall against the hub shelf under an active hub', () => {
         const full = resource({ resourceId: 5, storage: storage({ used: BASE_CAP }) });
         const cell = rawCell({ building: hub(), resources: [full], process: craft() });
         expect(toCell(cell, FINISH_AT - 1, config()).process?.stalled).toBe(true);
@@ -282,13 +338,13 @@ describe('toCell raw facts', () => {
     it('does not mutate the raw cell it projects', () => {
         const cell = rawCell({ building: hub(), resources: [resource()] });
         toCell(cell, FINISH_AT, config());
-        expect(cell.resources[0]?.storage?.cap).toBe(BASE_CAP);
+        expect(cell.resources[0]?.storage?.cellCap).toBe(BASE_CAP);
         expect(cell).not.toHaveProperty('activeHub');
     });
 });
 
 describe('toCell double derivation', () => {
-    it('refuses an already-derived cell, so squaring the storage multiplier cannot compile', () => {
+    it('refuses an already-derived cell, so the shelf cannot be selected twice', () => {
         const derived = toCell(rawCell({ building: hub(), resources: [resource()] }), FINISH_AT, config());
         // @ts-expect-error a derived cell is not a projectable raw cell
         expect(() => toCell(derived, FINISH_AT, config())).toBeDefined();

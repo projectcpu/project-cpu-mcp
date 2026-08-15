@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { LAUNCH_CHAIN_ID, LAUNCH_NETWORK } from '../config/constants.js';
 import type { ILogger } from '../logger/types.js';
 import type { SessionManager } from '../session/manager.js';
 
@@ -193,8 +194,14 @@ export interface TradeFeeView {
     maxSaleFeeBp: number;
 }
 
+export interface ResourceStorageCapsView {
+    resourceId: number;
+    cellCap: number;
+    hubCap: number;
+}
+
 export interface StorageConfigView {
-    hubStorageMultiplier: number;
+    caps: Array<ResourceStorageCapsView>;
 }
 
 export enum RandomnessKind {
@@ -228,8 +235,8 @@ export type RandomnessDescriptor = z.infer<typeof randomnessDescriptorSchema>;
 
 /** `GET /api/v1/config?network=` response — chainId + contract addresses for one network. */
 export interface AppConfigResponse {
-    network: string;
-    chainId: number;
+    network: typeof LAUNCH_NETWORK;
+    chainId: typeof LAUNCH_CHAIN_ID;
     contracts: AppContractsConfig;
     randomness: RandomnessDescriptor;
     /** Resource id → display name (e.g. `{ 5: 'Iron' }`). */
@@ -269,11 +276,37 @@ export const transportRoutingSchema = z
     })
     .passthrough();
 
+const resourceStorageCapsSchema = z
+    .object({
+        resourceId: z.number().int().nonnegative(),
+        cellCap: z.number().int().nonnegative(),
+        hubCap: z.number().int().nonnegative(),
+    })
+    .strict();
+
+export const storageConfigSchema = z
+    .object({ caps: z.array(resourceStorageCapsSchema) })
+    .strict()
+    .superRefine((storage, context) => {
+        for (let index = 1; index < storage.caps.length; index += 1) {
+            const previous = storage.caps[index - 1];
+            const current = storage.caps[index];
+            if (previous !== undefined && current !== undefined && current.resourceId <= previous.resourceId) {
+                context.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['caps', index, 'resourceId'],
+                    message: 'storage caps must be strictly ascending by resourceId',
+                });
+            }
+        }
+    });
+
 export const appConfigResponseSchema = z
     .object({
-        chainId: z.number(),
+        network: z.literal(LAUNCH_NETWORK),
+        chainId: z.literal(LAUNCH_CHAIN_ID),
         contracts: z.object({}).passthrough(),
-        storage: z.object({ hubStorageMultiplier: z.number() }).passthrough(),
+        storage: storageConfigSchema,
         resources: z.record(z.string(), z.string()).optional(),
         recipes: z.array(z.object({}).passthrough()).optional(),
         buildings: z.array(buildingConfigSchema).optional(),

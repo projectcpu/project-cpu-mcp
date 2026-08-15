@@ -93,7 +93,7 @@ export class AppConfigService implements IAppConfig {
                 saleBurnPercent: data.trade?.saleBurnPercent ?? 0,
                 maxSaleFeePercent: bpToPercent(data.trade?.maxSaleFeeBp ?? 0),
             },
-            storage: { hubStorageMultiplier: data.storage.hubStorageMultiplier },
+            storage: { caps: data.storage.caps.map((row) => ({ ...row })) },
         };
         this.logger.info('chain config loaded', { chainId: config.chainId });
         return config;

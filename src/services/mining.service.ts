@@ -1,6 +1,7 @@
 import { isAddress, parseEventLogs, type Address, type Hash, type Log } from 'viem';
 
 import { MAX_APPROVE_AMOUNT } from './allowance.constants.js';
+import { assertChain } from './assert-chain.utils.js';
 import { decodeBurnedCpu, feeWeiOf } from './burn.utils.js';
 import {
     type AppConfig,
@@ -108,11 +109,7 @@ export class MiningService {
     async claim(tokenId: string): Promise<MiningClaimResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = config.contracts.cell;
         if (!isAddress(cell, { strict: false })) {
@@ -138,11 +135,7 @@ export class MiningService {
     async startMining(input: StartMiningInput): Promise<StartMiningResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = config.contracts.cell;
         if (!isAddress(cell, { strict: false })) {

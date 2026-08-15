@@ -1,5 +1,6 @@
 import { isAddress, type Address, type Hash } from 'viem';
 
+import { assertChain } from './assert-chain.utils.js';
 import { isRevealAlreadyPending } from './reveal-revert.utils.js';
 import {
     REVEAL_POLL_INTERVAL_MS,
@@ -71,11 +72,7 @@ export class RevealService {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
 
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
+        assertChain(config.chainId, wallet.getChainId());
 
         const cell = config.contracts.cell;
         if (!isAddress(cell, { strict: false })) {

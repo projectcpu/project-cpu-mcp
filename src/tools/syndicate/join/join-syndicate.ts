@@ -2,6 +2,7 @@ import { JOIN_SYNDICATE_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { summarizeJoin } from '../format.utils.js';
+import { joinSyndicateOutput } from '../output.utils.js';
 import { joinSyndicateInputSchema } from '../types.js';
 
 export function registerJoinSyndicateTool(server: ToolRegistrar, context: AppContext): void {
@@ -9,7 +10,7 @@ export function registerJoinSyndicateTool(server: ToolRegistrar, context: AppCon
         'cpu_join_syndicate',
         { description: JOIN_SYNDICATE_DESCRIPTION, inputSchema: joinSyndicateInputSchema },
         async (args) => {
-            const result = await context.syndicate.join(args);
+            const result = joinSyndicateOutput(await context.syndicate.join(args));
 
             return {
                 content: [

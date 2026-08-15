@@ -105,3 +105,27 @@ describe('CELL_ABI reveal surface', () => {
         expect(names).not.toContain('entropyProvider');
     });
 });
+
+describe('CELL_ABI storage surface', () => {
+    it('encodes the per-resource hub storage cap getter', () => {
+        expect(encodeFunctionData({ abi: CELL_ABI, functionName: 'getHubStorageCap', args: [5] })).toMatch(
+            /^0x[0-9a-f]{72}$/,
+        );
+
+        const getter = CELL_ABI.find((entry) => entry.type === 'function' && entry.name === 'getHubStorageCap');
+        expect(getter).toMatchObject({
+            inputs: [{ type: 'uint16' }],
+            outputs: [{ type: 'uint64' }],
+            stateMutability: 'view',
+        });
+        const result = encodeAbiParameters([{ type: 'uint64' }], [625_000n]);
+        expect(decodeFunctionResult({ abi: CELL_ABI, functionName: 'getHubStorageCap', data: result })).toBe(625_000n);
+    });
+
+    it('does not expose retired storage selectors', () => {
+        const names = CELL_ABI.map((entry) => entry.name);
+
+        expect(names).not.toContain('getHubStorageMultiplier');
+        expect(names).not.toContain('StorageCapOverflow');
+    });
+});

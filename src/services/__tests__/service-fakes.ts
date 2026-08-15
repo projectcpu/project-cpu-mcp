@@ -224,7 +224,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
             moveFeeFloors: { 1: '0', 5: '0', 6: '0', 7: '0', 101: '0', 102: '0' },
         },
         trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
-        storage: { hubStorageMultiplier: 10 },
+        storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
     };
 }
 
@@ -352,12 +352,13 @@ export interface Harness<T> {
 /** Wires the fakes into a service built by `create`, returning the service plus the doubles to assert on. */
 export function makeHarness<T>(create: (opts: PaidServiceOptions) => T, opts: HarnessOptions): Harness<T> {
     const api = new FakeApi(opts.response);
-    const wallet = new FakeWallet(opts.walletChainId ?? 1, opts.receipts ?? [], opts.usedSignId ?? false);
+    const config = opts.config ?? makeConfig();
+    const wallet = new FakeWallet(opts.walletChainId ?? config.chainId, opts.receipts ?? [], opts.usedSignId ?? false);
     const allowance = new FakeAllowance(opts.approve ?? null);
     const service = create({
         api: api as unknown as ApiClient,
         wallet: wallet as unknown as WalletProvider,
-        appConfig: new FakeAppConfig(opts.config ?? makeConfig()),
+        appConfig: new FakeAppConfig(config),
         allowance,
         logger: new NoopLogger(),
     });
@@ -693,7 +694,8 @@ export function makeCellHarness<T>(
     create: (deps: CellServiceDeps) => T,
     opts: CellHarnessOptions = {},
 ): CellHarness<T> {
-    const wallet = new FakeWallet(opts.walletChainId ?? 1);
+    const config = opts.config ?? makeConfig();
+    const wallet = new FakeWallet(opts.walletChainId ?? config.chainId);
     const allowance = new FakeAllowance(opts.approve ?? null);
     const contracts = new FakeContractClient(
         opts.receipts ?? [],
@@ -701,7 +703,6 @@ export function makeCellHarness<T>(
         opts.reads ?? { getCell: chainCellView() },
     );
     const cellClient = new CellClient({ contracts, logger: new NoopLogger() });
-    const config = opts.config ?? makeConfig();
     const serverTime = opts.serverTime ?? DEFAULT_SERVER_TIME;
     const raw = opts.cell ?? null;
     const mapReader = new FakeMapReader(

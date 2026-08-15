@@ -15,7 +15,8 @@ export enum CellProcessKind {
 
 export const rawCellResourceStorageSchema = z.object({
     used: z.string(),
-    cap: z.string().nullable(),
+    cellCap: z.string().nullable(),
+    hubCap: z.string().nullable(),
     reserved: z.object({
         incomingTransport: z.string(),
         lots: z.string(),
@@ -102,7 +103,8 @@ export type RawCell = z.infer<typeof rawCellSchema>;
 export type CellBuildingView = z.infer<typeof cellBuildingViewSchema>;
 export type MapSnapshotResponse = z.infer<typeof mapSnapshotResponseSchema>;
 
-export interface CellResourceStorage extends RawCellResourceStorage {
+export interface CellResourceStorage extends Omit<RawCellResourceStorage, 'cellCap' | 'hubCap'> {
+    cap: string | null;
     full: boolean;
 }
 
@@ -138,8 +140,8 @@ export interface ProcessOutput {
 }
 
 export interface CellProjectionConfig {
-    hubStorageMultiplier: number;
     hubBuildingTypes: Set<string>;
+    upgradeFromByBuildingType: Record<string, string | null>;
     craftOutputsByRecipe: Record<string, Array<ProcessOutput>>;
 }
 

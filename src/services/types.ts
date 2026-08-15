@@ -1337,7 +1337,6 @@ export interface JoinSyndicateResult {
     syndicateId: string;
     joinedAt: number;
     leaveAvailableAt: number;
-    name: string | null;
     rates: SyndicateRatesView | null;
 }
 
@@ -1363,8 +1362,6 @@ export interface CreateSyndicateInput {
 export interface CreateSyndicateResult {
     syndicateId: string;
     manager: string;
-    name: string;
-    link: string;
     rates: SyndicateRatesView;
     joinedAt: number;
     leaveAvailableAt: number;
@@ -1379,8 +1376,6 @@ export interface SetSyndicateParamsInput {
 
 export interface SetSyndicateParamsResult {
     syndicateId: string;
-    name: string;
-    link: string;
     rates: SyndicateRatesView;
 }
 
@@ -1398,11 +1393,15 @@ export interface TransferSyndicateManagerResult {
 export interface SyndicateCardView {
     id: string;
     manager: string;
-    name: string;
-    link: string;
     rates: SyndicateRatesView;
     memberCount: number;
     createdAt: number;
+}
+
+export interface SyndicatePlayerContentView {
+    syndicateId: string;
+    name: string;
+    link: string;
 }
 
 export interface SyndicateMemberView {

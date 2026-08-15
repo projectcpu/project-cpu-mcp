@@ -116,13 +116,39 @@ describe('rawCellSchema wire shape', () => {
                         resourceId: 1,
                         deposit: '100',
                         balance: '0',
-                        storage: { used: '10', cap: '100', reserved: { incomingTransport: '0', lots: '0' } },
+                        storage: {
+                            used: '10',
+                            cellCap: '100',
+                            hubCap: '1000',
+                            reserved: { incomingTransport: '0', lots: '0' },
+                        },
                     },
                 ],
             }),
         );
 
-        expect(cell?.resources[0]?.storage).toMatchObject({ used: '10', cap: '100' });
+        expect(cell?.resources[0]?.storage).toMatchObject({ used: '10', cellCap: '100', hubCap: '1000' });
+    });
+
+    it('rejects the retired single-cap storage shape', () => {
+        expect(
+            parseCell(
+                rawCell({
+                    resources: [
+                        {
+                            resourceId: 1,
+                            deposit: '100',
+                            balance: '0',
+                            storage: {
+                                used: '10',
+                                cap: '100',
+                                reserved: { incomingTransport: '0', lots: '0' },
+                            },
+                        },
+                    ],
+                }),
+            ),
+        ).toBeNull();
     });
 
     it('parses a process that carries no stall flag', () => {

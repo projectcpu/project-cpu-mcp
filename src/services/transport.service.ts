@@ -1,5 +1,6 @@
 import { isAddress, type Address, type Hash } from 'viem';
 
+import { assertChain } from './assert-chain.utils.js';
 import { decodeDeliveryScheduled, settleTransitFees } from './delivery.helpers.js';
 import { TRANSPORT_MAX_FEE_BUFFER_PERCENT } from './transport.constants.js';
 import {
@@ -52,7 +53,7 @@ export class TransportService {
     async transport(input: TransportInput): Promise<TransportResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config.chainId, wallet.getChainId());
+        assertChain(config.chainId, wallet.getChainId());
         const route = this.buildRoute(config, wallet, input);
 
         this.logger.info('quoting transport route', {
@@ -96,7 +97,7 @@ export class TransportService {
     async quote(input: TransportInput): Promise<TransportQuote> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config.chainId, wallet.getChainId());
+        assertChain(config.chainId, wallet.getChainId());
         const route = this.buildRoute(config, wallet, input);
 
         this.logger.info('quoting transport', {
@@ -141,7 +142,7 @@ export class TransportService {
     async finalize(ids: Array<string>): Promise<FinalizeResult> {
         const config = await this.appConfig.load();
         const wallet = this.wallet.get();
-        this.assertChain(config.chainId, wallet.getChainId());
+        assertChain(config.chainId, wallet.getChainId());
         const transport = this.resolveTransport(config);
 
         this.logger.info('finalizing deliveries', { ids, network: config.network });
@@ -217,14 +218,6 @@ export class TransportService {
                 return v.readyToFinalize;
             case DeliveryFilter.InTransit:
                 return !v.delivered && !v.readyToFinalize;
-        }
-    }
-
-    private assertChain(configChainId: number, walletChainId: number): void {
-        if (configChainId !== walletChainId) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${configChainId} but the wallet is on ${walletChainId}. Check NETWORK.`,
-            );
         }
     }
 }
