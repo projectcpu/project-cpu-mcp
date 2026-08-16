@@ -5,9 +5,7 @@ import {
     REVEAL_STUCK_AFTER_SECONDS,
 } from './constants.js';
 import { activeDemolition, isDepleted } from './map.utils.js';
-import { processOutputs } from './process.utils.js';
-import { cellProcessProgress, type SettleConfig } from './settle.utils.js';
-import { blockedResourceIds, needByResource } from './storage.utils.js';
+import { projectCellProcess } from './process-projection.utils.js';
 import {
     type AttentionItem,
     AttentionReason,
@@ -16,6 +14,7 @@ import {
     type CellResource,
     type Cell,
     CellProcessKind,
+    type ProcessProjectionConfig,
     type RevealAttentionInput,
 } from './types.js';
 import type { OpenRevealRequestView } from '../api/types.js';
@@ -42,7 +41,7 @@ const REASON_SEVERITY: Record<AttentionReason, AttentionSeverity> = {
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = { [Critical]: 0, [Warning]: 1, [Info]: 2 };
 
-export interface BuildAttentionInput extends SettleConfig {
+export interface BuildAttentionInput extends ProcessProjectionConfig {
     ownedCells: Array<Cell> | null;
     version: number;
     serverTime: number;
@@ -101,28 +100,24 @@ function isOperationalExtractor(cell: Cell, extractorTypes: Set<string>): boolea
 }
 
 function finishedProcess(cell: Cell, input: BuildAttentionInput): boolean {
-    const process = cell.process;
-    if (process === null) {
-        return false;
-    }
-    return cellProcessProgress(cell, process, input.serverTime, input).progress.isFinished;
+    return projectCellProcess(cell, input.serverTime, input)?.progress.isFinished ?? false;
 }
 
 function cellItems(cell: Cell, input: BuildAttentionInput): Array<AttentionItem> {
     const items: Array<AttentionItem> = [];
-    const outputs = cell.process === null ? [] : processOutputs(cell.process, input.craftOutputsByRecipe);
-    const need = needByResource(outputs);
-    const blocked = new Set(blockedResourceIds(outputs, cell.resources));
+    const projection = projectCellProcess(cell, input.serverTime, input);
+    const effects = new Map(projection?.warehouseEffects.map((effect) => [effect.resourceId, effect]) ?? []);
     const isCraft = cell.process?.kind === CellProcessKind.Craft;
 
     // One pass over the boxes this process feeds: one that can't take a whole cycle stalls it, an
     // almost-full one warns.
     for (const resource of cell.resources) {
         const s = resource.storage;
-        if (!s || s.cap === null || (need.get(resource.resourceId) ?? 0n) === 0n) {
+        const effect = effects.get(resource.resourceId);
+        if (!s || s.cap === null || effect === undefined || effect.requiredPerBatch === 0n) {
             continue;
         }
-        if (blocked.has(resource.resourceId)) {
+        if (effect.blocked) {
             items.push(
                 attentionItem(
                     cell,

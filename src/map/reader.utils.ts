@@ -1,4 +1,3 @@
-import type { SettleConfig } from './settle.utils.js';
 import type { CellProjectionConfig, ProcessOutput } from './types.js';
 import { BuildingKind } from '../api/types.js';
 import type { AppConfig } from '../services/types.js';
@@ -21,12 +20,6 @@ export function toProjectionConfig(config: AppConfig): CellProjectionConfig {
         upgradeFromByBuildingType: Object.fromEntries(
             config.buildings.map((building) => [building.type, building.upgradeFrom]),
         ),
-        craftOutputsByRecipe: craftOutputsByRecipe(config),
-    };
-}
-
-export function toSettleConfig(config: AppConfig): SettleConfig {
-    return {
         craftOutputsByRecipe: craftOutputsByRecipe(config),
         extractionShareBpByBuilding: extractionShareBpByBuilding(config),
     };

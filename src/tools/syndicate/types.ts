@@ -1,6 +1,16 @@
 import { z } from 'zod';
 
 import { SyndicateSort } from '../../api/types.js';
+import type {
+    CreateSyndicateResult,
+    JoinSyndicateResult,
+    LeaveSyndicateResult,
+    SetSyndicateParamsResult,
+    SyndicateCardView,
+    SyndicateDetailView,
+    SyndicateMembershipView,
+    TransferSyndicateManagerResult,
+} from '../../services/types.js';
 
 export const listSyndicatesInputSchema = {
     name: z.string().nullable().default(null).describe('Filter by name (substring match).'),
@@ -64,6 +74,27 @@ export const syndicatePlayerContentOutputSchema = z
     .strict();
 
 export type SyndicatePlayerContentOutput = z.infer<typeof syndicatePlayerContentOutputSchema>;
+
+export enum SyndicatePresentationKind {
+    List = 'list',
+    Detail = 'detail',
+    Membership = 'membership',
+    Join = 'join',
+    Leave = 'leave',
+    Create = 'create',
+    SetParams = 'set_params',
+    TransferManager = 'transfer_manager',
+}
+
+export type SyndicatePresentation =
+    | { kind: SyndicatePresentationKind.List; value: Array<SyndicateCardView> }
+    | { kind: SyndicatePresentationKind.Detail; value: SyndicateDetailView }
+    | { kind: SyndicatePresentationKind.Membership; value: SyndicateMembershipView }
+    | { kind: SyndicatePresentationKind.Join; value: JoinSyndicateResult }
+    | { kind: SyndicatePresentationKind.Leave; value: LeaveSyndicateResult }
+    | { kind: SyndicatePresentationKind.Create; value: CreateSyndicateResult }
+    | { kind: SyndicatePresentationKind.SetParams; value: SetSyndicateParamsResult }
+    | { kind: SyndicatePresentationKind.TransferManager; value: TransferSyndicateManagerResult };
 
 export const getSyndicateMembershipInputSchema = {
     address: z

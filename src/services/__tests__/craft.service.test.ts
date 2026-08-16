@@ -32,7 +32,7 @@ const FORGE: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.ForgeWcpu, ba
 const FORGE_X2: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.ForgeWcpu, batches: 2 };
 const STEEL: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.SmeltSteel, batches: 2 };
 
-function opexConfig(opexByType: Partial<Record<BuildingType, Record<string, string>>>) {
+function opexConfig(opexByType: Partial<Record<string, Record<string, string>>>) {
     const config = makeConfig();
     config.buildings = config.buildings.map((b) => ({ ...b, recipeOpexCpu: opexByType[b.type] ?? b.recipeOpexCpu }));
     return config;

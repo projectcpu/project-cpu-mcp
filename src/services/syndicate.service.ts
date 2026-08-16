@@ -1,7 +1,8 @@
-import { isAddress, parseEventLogs, type Address, type Log } from 'viem';
+import { parseEventLogs, type Address, type Log } from 'viem';
 import { z } from 'zod';
 
-import { assertChain } from './assert-chain.utils.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
 import { SYNDICATE_CREATE_FAILED_MESSAGE, SYNDICATE_UPDATE_FAILED_MESSAGE } from './syndicate.constants.js';
 import { ratesToRegistry, requireRegistryEvent, toError, toSyndicateCardView } from './syndicate.helpers.js';
 import type {
@@ -432,18 +433,13 @@ export class SyndicateService {
     }
 
     private async resolveRegistry(): Promise<{ config: AppConfig; registry: Address }> {
-        const config = await this.appConfig.load();
-        assertChain(config.chainId, this.wallet.get().getChainId());
-        return { config, registry: this.requireRegistry(config) };
-    }
-
-    private requireRegistry(config: AppConfig): Address {
-        const registry = config.contracts.syndicate;
-        if (registry === null || !isAddress(registry, { strict: false })) {
-            throw new Error(
-                `The syndicate registry is not deployed on network ${config.network}, so syndicate actions are unavailable here.`,
-            );
-        }
-        return registry;
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        return {
+            config: action.config,
+            registry: action.requireContract(
+                AppContract.Syndicate,
+                'it is not deployed, so syndicate actions are unavailable here',
+            ),
+        };
     }
 }

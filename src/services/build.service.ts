@@ -1,6 +1,7 @@
-import { isAddress, parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
+import { parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
 
-import { assertChain } from './assert-chain.utils.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
 import type {
     AppConfig,
     BuildInput,
@@ -46,12 +47,10 @@ export class BuildService {
     }
 
     async build(input: BuildInput): Promise<BuildResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        assertChain(config.chainId, wallet.getChainId());
-
-        const cell = this.requireCell(config);
-        const cpuToken = this.requireCpuToken(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot build');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay for build');
         const tokenId = BigInt(input.tokenId);
 
         // Paid action — pull a fresh snapshot so the pre-checks below gate on current on-chain state, not a
@@ -76,12 +75,10 @@ export class BuildService {
     }
 
     async demolish(input: DemolishInput): Promise<DemolishResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        assertChain(config.chainId, wallet.getChainId());
-
-        const cell = this.requireCell(config);
-        const cpuToken = this.requireCpuToken(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot build');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay for build');
         const tokenId = BigInt(input.tokenId);
 
         await this.mapReader.refresh();
@@ -132,12 +129,10 @@ export class BuildService {
     }
 
     async upgrade(input: UpgradeInput): Promise<UpgradeResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        assertChain(config.chainId, wallet.getChainId());
-
-        const cell = this.requireCell(config);
-        const cpuToken = this.requireCpuToken(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot build');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay for build');
         const tokenId = BigInt(input.tokenId);
         const target = this.resolveUpgradeTarget(config, input.targetBuildingType);
 
@@ -339,22 +334,6 @@ export class BuildService {
         await this.contracts.confirm(buildTxHash, 'Build transaction');
 
         return { buildTxHash, approveTxHash, buildCost: view.buildCost };
-    }
-
-    private requireCell(config: AppConfig): Address {
-        const cell = config.contracts.cell;
-        if (!isAddress(cell, { strict: false })) {
-            throw new Error(`Cell contract is not configured for network ${config.network}; cannot build.`);
-        }
-        return cell;
-    }
-
-    private requireCpuToken(config: AppConfig): Address {
-        const cpuToken = config.contracts.cpuToken;
-        if (!isAddress(cpuToken, { strict: false })) {
-            throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay for build.`);
-        }
-        return cpuToken;
     }
 
     private buildingView(config: AppConfig, buildingType: string): BuildingView {

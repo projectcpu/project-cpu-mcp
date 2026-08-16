@@ -462,6 +462,24 @@ describe('AppConfigService', () => {
         expect(config.buildings[0]?.branch).toBeNull();
     });
 
+    it('accepts dynamic upgrade types that are not part of the base building enum', async () => {
+        const base = makeResponse();
+        const [mine] = base.buildings;
+        const upgraded = {
+            ...(mine as BuildingView),
+            type: 'mine_l2a',
+            onChainId: 46,
+            upgradeFrom: BuildingType.Mine,
+        };
+
+        const config = await makeService(
+            new FakeApi({ status: 200, data: { ...base, buildings: [...base.buildings, upgraded] } }),
+        ).load();
+
+        expect(config.buildings.at(-1)?.type).toBe('mine_l2a');
+        expect(config.buildings.at(-1)?.upgradeFrom).toBe(BuildingType.Mine);
+    });
+
     it('defaults a catalog entry from an API that predates the upgrade graph to no upgrade participation', async () => {
         const base = makeResponse();
         const [mine] = base.buildings;

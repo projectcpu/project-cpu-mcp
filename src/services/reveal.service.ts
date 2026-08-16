@@ -1,6 +1,7 @@
 import { isAddress, type Address, type Hash } from 'viem';
 
-import { assertChain } from './assert-chain.utils.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
 import { isRevealAlreadyPending } from './reveal-revert.utils.js';
 import {
     REVEAL_POLL_INTERVAL_MS,
@@ -69,15 +70,9 @@ export class RevealService {
     }
 
     async reveal(tokenId: string): Promise<RevealResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-
-        assertChain(config.chainId, wallet.getChainId());
-
-        const cell = config.contracts.cell;
-        if (!isAddress(cell, { strict: false })) {
-            throw new Error(`Cell contract is not configured for network ${config.network}; cannot reveal.`);
-        }
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot reveal');
 
         const state = await this.mapReader.readRevealCell(tokenId);
         if (state === null) {

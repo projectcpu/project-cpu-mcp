@@ -1,6 +1,6 @@
 import { getAddress, isAddress, type Hash } from 'viem';
 
-import { assertChain } from './assert-chain.utils.js';
+import { preparePaidAction } from './paid-action.js';
 import {
     type FulfillRevealInput,
     type IAppConfig,
@@ -62,10 +62,7 @@ export class RevealFulfilmentService {
     }
 
     async fulfill(input: FulfillRevealInput): Promise<RevealFulfilmentReport> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-
-        assertChain(config.chainId, wallet.getChainId());
+        const { config, wallet } = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
 
         const strategy = await this.randomness.resolve();
         if (strategy === null) {

@@ -1,15 +1,17 @@
 import { zeroAddress } from 'viem';
 
 import { STALE_STAND_CONFIG_HINT } from './app-config.constants.js';
-import { type ModeSwitchView, ModeSwitchKind } from './types.js';
+import { type AppConfig, type ModeSwitchView, ModeSwitchKind } from './types.js';
 import {
+    appConfigResponseSchema,
     type RandomnessDescriptor,
     randomnessDescriptorSchema,
     RandomnessKind,
     type RevealPaymentView,
 } from '../api/types.js';
+import { bpToPercent } from '../utils/format.utils.js';
 
-export function toModeSwitchView(cost: string | null | undefined): ModeSwitchView {
+function toModeSwitchView(cost: string | null | undefined): ModeSwitchView {
     if (cost === undefined) {
         return { kind: ModeSwitchKind.Unknown };
     }
@@ -19,7 +21,7 @@ export function toModeSwitchView(cost: string | null | undefined): ModeSwitchVie
     return { kind: ModeSwitchKind.Possible, costCpu: cost };
 }
 
-export function normalizeOptionalAddress(address: string | null | undefined): string | null {
+function normalizeOptionalAddress(address: string | null | undefined): string | null {
     if (address === undefined || address === null || address === '') {
         return null;
     }
@@ -36,7 +38,7 @@ function isDecimalAmount(value: unknown): value is string {
  * as a free reveal, which no stand offers; the Cell's own quote is the price either way. Both legs are
  * whole-unit decimals as served, never wei: they are displayed, never used in arithmetic.
  */
-export function parseRevealPayment(raw: unknown): RevealPaymentView | null {
+function parseRevealPayment(raw: unknown): RevealPaymentView | null {
     if (typeof raw !== 'object' || raw === null) {
         return null;
     }
@@ -63,7 +65,7 @@ function formatKind(kind: unknown): string {
     return typeof kind === 'string' ? `"${kind}"` : String(kind);
 }
 
-export function parseRandomnessDescriptor(raw: unknown): RandomnessDescriptor {
+function parseRandomnessDescriptor(raw: unknown): RandomnessDescriptor {
     if (raw === undefined || raw === null) {
         throw new Error(
             `GET /api/v1/config serves no randomness descriptor — ${STALE_STAND_CONFIG_HINT}. Reveal cannot ` +
@@ -90,4 +92,44 @@ export function parseRandomnessDescriptor(raw: unknown): RandomnessDescriptor {
         `GET /api/v1/config serves an incomplete "${kind}" randomness descriptor — ` +
             `${STALE_STAND_CONFIG_HINT}. Rejected fields: ${issues}.`,
     );
+}
+
+export function parseAppConfig(raw: unknown): AppConfig {
+    const data = appConfigResponseSchema.parse(raw);
+    return {
+        network: data.network,
+        chainId: data.chainId,
+        contracts: {
+            land: data.contracts.land,
+            cpuToken: data.contracts.cpuToken,
+            cpuHook: data.contracts.cpuHook,
+            cell: data.contracts.cell,
+            cellLens: data.contracts.cellLens,
+            transport: data.contracts.transport,
+            trade: data.contracts.trade,
+            syndicate: normalizeOptionalAddress(data.contracts.syndicate),
+        },
+        randomness: parseRandomnessDescriptor(data.randomness),
+        resources: data.resources,
+        recipes: data.recipes,
+        buildings: data.buildings.map((building) => ({
+            ...building,
+            demolishCost: building.demolishCost ?? { cpu: '0', inputs: [] },
+            modeSwitch: toModeSwitchView(building.modeSwitchCost),
+            modeSwitchCost: building.modeSwitchCost ?? null,
+            recipeOpexCpu: building.recipeOpexCpu,
+            upgradeFrom: building.upgradeFrom,
+            upgradeTo: building.upgradeTo,
+            family: building.family,
+            level: building.level,
+            branch: building.branch,
+        })),
+        reveal: parseRevealPayment(data.reveal),
+        transport: data.transport,
+        trade: {
+            saleBurnPercent: data.trade.saleBurnPercent,
+            maxSaleFeePercent: bpToPercent(data.trade.maxSaleFeeBp),
+        },
+        storage: { caps: data.storage.caps.map((row) => ({ ...row })) },
+    };
 }

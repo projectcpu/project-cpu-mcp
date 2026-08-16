@@ -2,7 +2,7 @@ import { buildAttentionReport } from './attention.utils.js';
 import { toCell } from './cell-view.utils.js';
 import { WAREHOUSE_NEAR_FULL_PCT } from './constants.js';
 import { buildResourceIndex, classifyNeighbors, filterCells, summarizeMap } from './map.utils.js';
-import { buildingTypesOfKind, toProjectionConfig, toSettleConfig } from './reader.utils.js';
+import { buildingTypesOfKind, toProjectionConfig } from './reader.utils.js';
 import type { MapStore } from './store.js';
 import {
     type AttentionReport,
@@ -103,7 +103,7 @@ export class MapReader {
             version: this.store.getLatestUpdated(),
             serverTime: this.store.getServerTime(),
             nearFullPct: WAREHOUSE_NEAR_FULL_PCT,
-            ...toSettleConfig(config),
+            ...toProjectionConfig(config),
             extractorBuildingTypes: buildingTypesOfKind(config, BuildingKind.Extractor),
         });
     }

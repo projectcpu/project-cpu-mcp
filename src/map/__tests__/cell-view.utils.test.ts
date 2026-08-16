@@ -30,6 +30,7 @@ function config(overrides: Partial<CellProjectionConfig> = {}): CellProjectionCo
                 { resourceId: 6, amount: CRAFT_OUTPUT_PER_CYCLE },
             ],
         },
+        extractionShareBpByBuilding: {},
         ...overrides,
     };
 }

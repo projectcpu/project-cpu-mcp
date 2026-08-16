@@ -94,6 +94,7 @@ export function makeProjectionConfig(overrides: Partial<CellProjectionConfig> = 
         hubBuildingTypes: new Set<string>([BuildingType.Hub]),
         upgradeFromByBuildingType: { [BuildingType.Hub]: null },
         craftOutputsByRecipe: {},
+        extractionShareBpByBuilding: {},
         ...overrides,
     };
 }

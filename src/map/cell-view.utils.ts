@@ -1,13 +1,10 @@
-import { processOutputs } from './process.utils.js';
-import { isProcessStalled } from './storage.utils.js';
+import { deriveCellProcess } from './process-projection.utils.js';
 import {
     type Cell,
-    type CellProcessView,
     type CellProjectionConfig,
     type CellResource,
     type CellResourceStorage,
     type RawCell,
-    type RawCellProcessView,
     type RawCellResource,
     type RawCellResourceStorage,
     type UnderivedCell,
@@ -37,18 +34,6 @@ function deriveResource(resource: RawCellResource, useHubShelf: boolean): CellRe
     return { ...resource, storage: deriveStorage(resource.storage, useHubShelf) };
 }
 
-function deriveProcess(
-    process: RawCellProcessView | null,
-    resources: Array<CellResource>,
-    config: CellProjectionConfig,
-): CellProcessView | null {
-    if (process === null) {
-        return null;
-    }
-    const stalled = isProcessStalled(processOutputs(process, config.craftOutputsByRecipe), resources);
-    return { ...process, stalled };
-}
-
 export function toCell(raw: UnderivedCell, serverTime: number, config: CellProjectionConfig): Cell {
     const ready = cellReady(raw, serverTime);
     const buildingType = raw.building?.type ?? null;
@@ -59,5 +44,5 @@ export function toCell(raw: UnderivedCell, serverTime: number, config: CellProje
     const useHubShelf = isHub && (ready === true || upgradesFromHub);
     const resources = raw.resources.map((resource) => deriveResource(resource, useHubShelf));
 
-    return { ...raw, resources, process: deriveProcess(raw.process, resources, config), ready, activeHub };
+    return { ...raw, resources, process: deriveCellProcess(raw.process, resources, config), ready, activeHub };
 }

@@ -1,11 +1,11 @@
-import { isAddress, type Address, type Hash } from 'viem';
+import { type Address, type Hash } from 'viem';
 
-import { assertChain } from './assert-chain.utils.js';
 import { decodeDeliveryScheduled, settleTransitFees } from './delivery.helpers.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract, type PaidActionContext } from './paid-action.types.js';
 import { TRANSPORT_MAX_FEE_BUFFER_PERCENT } from './transport.constants.js';
 import {
     DeliveryFilter,
-    type AppConfig,
     type DeliveryView,
     type FinalizeResult,
     type IAllowanceService,
@@ -51,10 +51,9 @@ export class TransportService {
     }
 
     async transport(input: TransportInput): Promise<TransportResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        assertChain(config.chainId, wallet.getChainId());
-        const route = this.buildRoute(config, wallet, input);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const route = this.buildRoute(action.requireContract(AppContract.Transport, 'cannot move'), wallet, input);
 
         this.logger.info('quoting transport route', {
             resourceId: input.resourceId,
@@ -64,7 +63,7 @@ export class TransportService {
         const quote = await this.transportClient.quoteRoute(route);
         const maxFee = quote.totalFee + (quote.totalFee * BigInt(TRANSPORT_MAX_FEE_BUFFER_PERCENT)) / 100n;
 
-        const approveTxHash = await this.approveFee(config, route.transport, maxFee);
+        const approveTxHash = await this.approveFee(action, route.transport, maxFee);
 
         const txHash = await this.transportClient.move({ ...route, maxFee });
         const confirmed = await this.contracts.confirm(txHash, 'Transport move');
@@ -95,10 +94,9 @@ export class TransportService {
     }
 
     async quote(input: TransportInput): Promise<TransportQuote> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        assertChain(config.chainId, wallet.getChainId());
-        const route = this.buildRoute(config, wallet, input);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const route = this.buildRoute(action.requireContract(AppContract.Transport, 'cannot move'), wallet, input);
 
         this.logger.info('quoting transport', {
             resourceId: input.resourceId,
@@ -140,10 +138,9 @@ export class TransportService {
     }
 
     async finalize(ids: Array<string>): Promise<FinalizeResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        assertChain(config.chainId, wallet.getChainId());
-        const transport = this.resolveTransport(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config } = action;
+        const transport = action.requireContract(AppContract.Transport, 'cannot finalize deliveries');
 
         this.logger.info('finalizing deliveries', { ids, network: config.network });
         const txHash = await this.transportClient.finalize({ transport, ids: ids.map((id) => BigInt(id)) });
@@ -156,9 +153,9 @@ export class TransportService {
         };
     }
 
-    private buildRoute(config: AppConfig, wallet: WalletManager, input: TransportInput): Route {
+    private buildRoute(transport: Address, wallet: WalletManager, input: TransportInput): Route {
         return {
-            transport: this.resolveTransport(config),
+            transport,
             from: wallet.getAddress(),
             tokenIds: input.path.map((tokenId) => BigInt(tokenId)),
             res: input.resourceId,
@@ -166,22 +163,11 @@ export class TransportService {
         };
     }
 
-    private resolveTransport(config: AppConfig): Address {
-        const transport = config.contracts.transport;
-        if (!isAddress(transport, { strict: false })) {
-            throw new Error(`Transport contract is not configured for network ${config.network}; cannot move.`);
-        }
-        return transport;
-    }
-
-    private async approveFee(config: AppConfig, transport: Address, maxFee: bigint): Promise<Hash | null> {
+    private async approveFee(action: PaidActionContext, transport: Address, maxFee: bigint): Promise<Hash | null> {
         if (maxFee === 0n) {
             return null;
         }
-        const cpuToken = config.contracts.cpuToken;
-        if (!isAddress(cpuToken, { strict: false })) {
-            throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay the transit fee.`);
-        }
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay the transit fee');
         return this.allowance.ensureAllowance(cpuToken, transport, maxFee);
     }
 

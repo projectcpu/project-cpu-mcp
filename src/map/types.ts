@@ -139,10 +139,48 @@ export interface ProcessOutput {
     amount: number;
 }
 
-export interface CellProjectionConfig {
+export interface ProcessProgress {
+    completedBatches: number;
+    claimableBatches: number;
+    isFinished: boolean;
+    endsAtSec: number;
+    nextBatchAtSec: number | null;
+}
+
+export interface ProcessBatchSchedule {
+    maturedBatches: number;
+    remainingBatches: number;
+    endsAtSec: number;
+    nextBatchAtSec: number | null;
+}
+
+export interface ProcessSettlement {
+    settledBatches: number;
+    minedUnits: bigint;
+    drainedUnits: bigint;
+    depleted: boolean;
+}
+
+export interface ProcessWarehouseEffect {
+    resourceId: number;
+    requiredPerBatch: bigint;
+    blocked: boolean;
+}
+
+export interface ProcessProjection {
+    warehouseEffects: Array<ProcessWarehouseEffect>;
+    progress: ProcessProgress;
+    settlement: ProcessSettlement;
+}
+
+export interface ProcessProjectionConfig {
+    craftOutputsByRecipe: Record<string, Array<ProcessOutput>>;
+    extractionShareBpByBuilding: Record<string, number>;
+}
+
+export interface CellProjectionConfig extends ProcessProjectionConfig {
     hubBuildingTypes: Set<string>;
     upgradeFromByBuildingType: Record<string, string | null>;
-    craftOutputsByRecipe: Record<string, Array<ProcessOutput>>;
 }
 
 export interface ParsedSnapshot {
