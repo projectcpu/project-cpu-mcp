@@ -69,9 +69,16 @@ export type ModeSwitchView =
     | { kind: ModeSwitchKind.Impossible }
     | { kind: ModeSwitchKind.Unknown };
 
-export interface CatalogBuildingView extends BuildingView {
-    modeSwitch: ModeSwitchView;
-}
+type CatalogBuildingBaseView = Omit<BuildingView, 'modeSwitchCost'>;
+
+export type CatalogBuildingView =
+    | (CatalogBuildingBaseView & {
+          modeSwitch: Exclude<ModeSwitchView, { kind: ModeSwitchKind.Unknown }>;
+          modeSwitchCost: string | null;
+      })
+    | (CatalogBuildingBaseView & {
+          modeSwitch: Extract<ModeSwitchView, { kind: ModeSwitchKind.Unknown }>;
+      });
 
 export type ModeKey = string | number | bigint;
 

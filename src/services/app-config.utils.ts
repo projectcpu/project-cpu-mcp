@@ -1,9 +1,10 @@
 import { zeroAddress } from 'viem';
 
 import { STALE_STAND_CONFIG_HINT } from './app-config.constants.js';
-import { type AppConfig, type ModeSwitchView, ModeSwitchKind } from './types.js';
+import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from './types.js';
 import {
     appConfigResponseSchema,
+    type ParsedBuildingConfig,
     type RandomnessDescriptor,
     randomnessDescriptorSchema,
     RandomnessKind,
@@ -11,14 +12,26 @@ import {
 } from '../api/types.js';
 import { bpToPercent } from '../utils/format.utils.js';
 
-function toModeSwitchView(cost: string | null | undefined): ModeSwitchView {
-    if (cost === undefined) {
-        return { kind: ModeSwitchKind.Unknown };
+function normalizeBuilding({ modeSwitchCost, ...building }: ParsedBuildingConfig): CatalogBuildingView {
+    const normalized = {
+        ...building,
+        demolishCost: building.demolishCost ?? { cpu: '0', inputs: [] },
+    };
+    if (!modeSwitchCost.known) {
+        return { ...normalized, modeSwitch: { kind: ModeSwitchKind.Unknown } };
     }
-    if (cost === null) {
-        return { kind: ModeSwitchKind.Impossible };
+    if (modeSwitchCost.value === null) {
+        return {
+            ...normalized,
+            modeSwitchCost: null,
+            modeSwitch: { kind: ModeSwitchKind.Impossible },
+        };
     }
-    return { kind: ModeSwitchKind.Possible, costCpu: cost };
+    return {
+        ...normalized,
+        modeSwitchCost: modeSwitchCost.value,
+        modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: modeSwitchCost.value },
+    };
 }
 
 function normalizeOptionalAddress(address: string | null | undefined): string | null {
@@ -112,18 +125,7 @@ export function parseAppConfig(raw: unknown): AppConfig {
         randomness: parseRandomnessDescriptor(data.randomness),
         resources: data.resources,
         recipes: data.recipes,
-        buildings: data.buildings.map((building) => ({
-            ...building,
-            demolishCost: building.demolishCost ?? { cpu: '0', inputs: [] },
-            modeSwitch: toModeSwitchView(building.modeSwitchCost),
-            modeSwitchCost: building.modeSwitchCost ?? null,
-            recipeOpexCpu: building.recipeOpexCpu,
-            upgradeFrom: building.upgradeFrom,
-            upgradeTo: building.upgradeTo,
-            family: building.family,
-            level: building.level,
-            branch: building.branch,
-        })),
+        buildings: data.buildings.map(normalizeBuilding),
         reveal: parseRevealPayment(data.reveal),
         transport: data.transport,
         trade: {

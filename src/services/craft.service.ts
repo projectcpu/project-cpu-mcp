@@ -208,7 +208,7 @@ export class CraftService {
             ...projection.progress,
             startAt: process.startAt,
             durationSec: process.durationSec,
-            stalled: process.stalled,
+            stalled: projection.stalled,
             blockedResourceIds: projection.warehouseEffects
                 .filter((effect) => effect.blocked)
                 .map((effect) => effect.resourceId),

@@ -1,14 +1,7 @@
 import type { Address, Hash, Log } from 'viem';
 
 import type { PaidActionContext } from './paid-action.types.js';
-import type {
-    CatalogBuildingView,
-    IAllowanceService,
-    ICellClient,
-    ModeCostView,
-    ModeKey,
-    ModeSwitchCharge,
-} from './types.js';
+import type { CatalogBuildingView, IAllowanceService, ICellClient, ModeCostView, ModeSwitchCharge } from './types.js';
 import type { ILogger } from '../logger/types.js';
 
 export enum ModeOperation {
@@ -27,16 +20,33 @@ export interface ModeBaseQuote<T> {
     data: T;
 }
 
-export interface PrepareModeSwitchInput<T> {
+interface PrepareModeSwitchBase<T> {
     action: PaidActionContext;
     cell: Address;
     tokenId: bigint;
-    operation: ModeOperation;
-    target: ModeKey;
     mapBuilding: CatalogBuildingView | null;
-    mapMode: ModeKey | null;
     paymentPurpose: string;
     quote(building: CatalogBuildingView | null): ModeBaseQuote<T>;
+}
+
+interface PrepareMiningModeSwitch {
+    operation: ModeOperation.Mining;
+    target: number;
+    mapMode: number | null;
+}
+
+interface PrepareCraftModeSwitch {
+    operation: ModeOperation.Craft;
+    target: bigint;
+    mapMode: bigint | null;
+}
+
+export type PrepareModeSwitchInput<T> = PrepareModeSwitchBase<T> & (PrepareMiningModeSwitch | PrepareCraftModeSwitch);
+
+export interface ModePriceContext {
+    mode: number | bigint | null;
+    building: CatalogBuildingView | null;
+    exact: boolean;
 }
 
 export interface PreparedModeSwitch {

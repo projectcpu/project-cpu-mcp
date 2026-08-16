@@ -4,7 +4,7 @@ import type { ZodType } from 'zod';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerGetSyndicatePlayerContentTool } from '../player-content/get-syndicate-player-content.js';
-import { syndicatePlayerContentOutputSchema } from '../types.js';
+import { syndicatePlayerContentOutputSchema } from '../player-content/types.js';
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;

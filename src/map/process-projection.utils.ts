@@ -135,6 +135,7 @@ function progress(
     process: CellProcessView,
     batchSchedule: ProcessBatchSchedule,
     processSettlement: ProcessSettlement,
+    stalled: boolean,
 ): ProcessProgress {
     const isFinished = processSettlement.settledBatches >= batchSchedule.remainingBatches || processSettlement.depleted;
     return {
@@ -142,7 +143,7 @@ function progress(
         claimableBatches: processSettlement.settledBatches,
         isFinished,
         endsAtSec: batchSchedule.endsAtSec,
-        nextBatchAtSec: isFinished || process.stalled ? null : batchSchedule.nextBatchAtSec,
+        nextBatchAtSec: isFinished || stalled ? null : batchSchedule.nextBatchAtSec,
     };
 }
 
@@ -169,11 +170,13 @@ export function projectCellProcess(
     }
     const processOutputs = outputs(process, config);
     const effects = warehouseEffects(processOutputs, cell.resources);
+    const stalled = effects.some((effect) => effect.blocked);
     const batchSchedule = schedule(process, serverTime);
     const processSettlement = settlement(cell, batchSchedule.maturedBatches, effects, config);
     return {
+        stalled,
         warehouseEffects: effects,
-        progress: progress(process, batchSchedule, processSettlement),
+        progress: progress(process, batchSchedule, processSettlement, stalled),
         settlement: processSettlement,
     };
 }

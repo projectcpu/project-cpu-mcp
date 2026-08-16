@@ -103,7 +103,7 @@ export class MiningService {
             ...projection.progress,
             claimable: projection.settlement.minedUnits.toString(),
             depositRemaining: deposit,
-            stalled: process.stalled,
+            stalled: projection.stalled,
             warehouseUsed: storage?.used ?? null,
             warehouseCap: storage?.cap ?? null,
         };

@@ -2,8 +2,8 @@ import { formatDistanceStrict } from 'date-fns';
 
 import { BUILD_DESCRIPTION } from './constants.js';
 import { buildInputSchema } from './types.js';
-import { BuildingKind, type BuildingView } from '../../api/types.js';
-import type { AppConfig } from '../../services/types.js';
+import { BuildingKind } from '../../api/types.js';
+import type { AppConfig, CatalogBuildingView } from '../../services/types.js';
 import type { AppContext } from '../../types.js';
 import { resourceLabel } from '../../utils/format.utils.js';
 import type { ToolRegistrar } from '../types.js';
@@ -39,7 +39,7 @@ export function registerBuildTool(server: ToolRegistrar, context: AppContext): v
     );
 }
 
-function nextStep(view: BuildingView | null, config: AppConfig, tokenId: string): string {
+function nextStep(view: CatalogBuildingView | null, config: AppConfig, tokenId: string): string {
     if (view === null) {
         return `Inspect it with cpu_get_cell ${tokenId}.`;
     }
@@ -48,7 +48,7 @@ function nextStep(view: BuildingView | null, config: AppConfig, tokenId: string)
     return ready + action(view, config, tokenId);
 }
 
-function action(view: BuildingView, config: AppConfig, tokenId: string): string {
+function action(view: CatalogBuildingView, config: AppConfig, tokenId: string): string {
     if (view.kind === BuildingKind.Extractor) {
         const mines = view.minableResources.map((id) => resourceLabel(config.resources, id)).join(', ');
         return `once ready, start extraction with cpu_start_mining ${tokenId} (mines: ${mines}).`;

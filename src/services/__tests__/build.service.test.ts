@@ -156,7 +156,7 @@ describe('BuildService', () => {
 
     it('refuses when $CPU is not configured', async () => {
         const { service, contracts, allowance } = makeService({ config: makeConfig('') });
-        await expect(service.build(EXTRACTOR)).rejects.toThrow(/not configured/i);
+        await expect(service.build(EXTRACTOR)).rejects.toThrow(/not configured.*cannot pay for build/i);
         expect(contracts.sent).toHaveLength(0);
         expect(allowance.calls).toHaveLength(0);
     });
@@ -309,6 +309,15 @@ describe('BuildService', () => {
         expect(allowance.calls).toHaveLength(0);
     });
 
+    it('uses a demolish-specific error when $CPU is not configured', async () => {
+        const cell = occupiedCell();
+        const { service, contracts, allowance } = makeService({ cell, config: makeConfig('') });
+
+        await expect(service.demolish({ tokenId: '42' })).rejects.toThrow(/not configured.*cannot pay for demolish/i);
+        expect(contracts.sent).toHaveLength(0);
+        expect(allowance.calls).toHaveLength(0);
+    });
+
     it('refuses to demolish while a process is active', async () => {
         const cell = makeCell({
             tokenId: '42',
@@ -375,7 +384,7 @@ describe('BuildService', () => {
 function upgradeConfig(overrides: Partial<CatalogBuildingView> = {}) {
     const base = makeConfig();
     const mine = base.buildings.find((b) => b.type === BuildingType.Mine) as CatalogBuildingView;
-    const target: CatalogBuildingView = {
+    const target = {
         ...mine,
         type: 'mine_l2a' as CatalogBuildingView['type'],
         onChainId: 46,
@@ -384,7 +393,7 @@ function upgradeConfig(overrides: Partial<CatalogBuildingView> = {}) {
         buildInputs: [{ resourceId: 101, amount: 3 }],
         upgradeFrom: BuildingType.Mine,
         ...overrides,
-    };
+    } as CatalogBuildingView;
     return { ...base, buildings: [...base.buildings, target] };
 }
 
@@ -507,7 +516,7 @@ describe('BuildService upgrade', () => {
         const { service, contracts, allowance } = makeService({ cell: occupiedCell(), config });
 
         await expect(service.upgrade({ tokenId: '42', targetBuildingType: 'mine_l2a' })).rejects.toThrow(
-            /not configured/i,
+            /not configured.*cannot pay for upgrade/i,
         );
         expect(contracts.sent).toHaveLength(0);
         expect(allowance.calls).toHaveLength(0);

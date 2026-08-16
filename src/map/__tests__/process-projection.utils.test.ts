@@ -159,7 +159,12 @@ describe('process projection schedule and progress', () => {
             }),
         ]);
 
-        const result = projection(blocked, 9999);
+        const stale = {
+            ...blocked,
+            process: blocked.process === null ? null : { ...blocked.process, stalled: false },
+        };
+        const result = projection(stale, 9999);
+        expect(result.stalled).toBe(true);
         expect(result.progress).toMatchObject({
             completedBatches: 0,
             claimableBatches: 0,

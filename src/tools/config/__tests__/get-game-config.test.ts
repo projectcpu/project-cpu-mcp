@@ -237,6 +237,25 @@ describe('get_game_config tool', () => {
         expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
         expect(json.transport.moveFeeFloors).toEqual({ 5: '0.1' });
         expect(json.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });
+        expect(json.buildings[0]).toHaveProperty('modeSwitchCost', '1');
+    });
+
+    it('exposes an unknown switch cost only through its explicit tag', async () => {
+        const source = CONFIG.buildings[0];
+        if (source === undefined || !('modeSwitchCost' in source)) {
+            throw new Error('expected a building with a known switch cost');
+        }
+        const { modeSwitchCost, ...building } = source;
+        void modeSwitchCost;
+        const unknown: AppConfig = {
+            ...CONFIG,
+            buildings: [{ ...building, modeSwitch: { kind: ModeSwitchKind.Unknown } }],
+        };
+
+        const json = JSON.parse((await capture(unknown)({} as never)).content[1]?.text ?? '{}') as AppConfig;
+
+        expect(json.buildings[0]?.modeSwitch).toEqual({ kind: 'unknown' });
+        expect('modeSwitchCost' in (json.buildings[0] ?? {})).toBe(false);
     });
 
     it('tells a push network that the draw arrives on its own and fulfilment is not the agent’s job', async () => {
@@ -384,7 +403,7 @@ describe('get_game_config tool — upgrade graph against awkward configurations'
                     level: null,
                     branch: 'c',
                     ...overrides,
-                },
+                } as CatalogBuildingView,
             ],
         };
     }

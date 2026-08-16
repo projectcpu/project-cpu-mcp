@@ -256,6 +256,13 @@ const recipeConfigSchema = z
     })
     .passthrough();
 
+const modeSwitchCostConfigSchema = z.preprocess(
+    (value) => ({ known: value !== undefined, value: value ?? null }),
+    z.object({ known: z.boolean(), value: z.string().nullable() }).strict(),
+);
+
+export type ModeSwitchCostConfig = z.infer<typeof modeSwitchCostConfigSchema>;
+
 export const buildingEffectsSchema = z
     .object({
         cycleTimeBp: z.number(),
@@ -279,8 +286,7 @@ export const buildingConfigSchema = z
             .strict()
             .nullable()
             .default(null),
-        // Missing means an older catalog with an unknown price; null positively means switching is impossible.
-        modeSwitchCost: z.union([z.string(), z.null(), z.undefined()]),
+        modeSwitchCost: modeSwitchCostConfigSchema,
         minableResources: z.array(z.number()),
         recipes: z.array(z.nativeEnum(CraftRecipeId)),
         effects: buildingEffectsSchema,
@@ -292,6 +298,8 @@ export const buildingConfigSchema = z
         branch: z.string().nullable().default(null),
     })
     .passthrough();
+
+export type ParsedBuildingConfig = z.output<typeof buildingConfigSchema>;
 
 export const transportRoutingSchema = z
     .object({
@@ -361,8 +369,8 @@ export const appConfigResponseSchema = z
     })
     .passthrough();
 
-/** Parsed `GET /api/v1/config?network=` response. */
-export type AppConfigResponse = z.infer<typeof appConfigResponseSchema>;
+/** Untrusted `GET /api/v1/config?network=` input accepted by the parser. */
+export type AppConfigResponse = z.input<typeof appConfigResponseSchema>;
 
 export enum DeliveryTargetKind {
     Cell = 'cell',

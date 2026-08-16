@@ -29,7 +29,9 @@ class FakeApi {
     }
 }
 
-function makeResponse(overrides: Partial<AppConfigResponse> = {}): AppConfigResponse {
+type AppConfigFixture = Required<AppConfigResponse>;
+
+function makeResponse(overrides: Partial<AppConfigFixture> = {}): AppConfigFixture {
     return {
         network: Network.ROBINHOOD,
         chainId: 4663,
@@ -102,21 +104,23 @@ describe('AppConfigService mode switch cost', () => {
         const building = await loadBuilding(undefined);
 
         expect(building.modeSwitch).toEqual({ kind: 'unknown' });
+        expect('modeSwitchCost' in building).toBe(false);
     });
 
-    it('states "can never switch" positively and carries no price field at all for it', async () => {
+    it('states "can never switch" positively without a price in the authoritative tagged view', async () => {
         const building = await loadBuilding(null);
 
         expect(building.modeSwitch).toEqual({ kind: 'impossible' });
         expect('costCpu' in building.modeSwitch).toBe(false);
+        expect(building).toHaveProperty('modeSwitchCost', null);
         expect(JSON.stringify(building.modeSwitch)).not.toMatch(/costCpu/);
     });
 
-    it('carries the price inside the possible tag, keeping the raw field alongside it', async () => {
+    it('preserves the legacy price while making the possible tag authoritative', async () => {
         const building = await loadBuilding('2');
 
         expect(building.modeSwitch).toEqual({ kind: 'possible', costCpu: '2' });
-        expect(building.modeSwitchCost).toBe('2');
+        expect(building).toHaveProperty('modeSwitchCost', '2');
     });
 });
 

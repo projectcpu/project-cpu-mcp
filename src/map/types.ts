@@ -168,6 +168,7 @@ export interface ProcessWarehouseEffect {
 }
 
 export interface ProcessProjection {
+    stalled: boolean;
     warehouseEffects: Array<ProcessWarehouseEffect>;
     progress: ProcessProgress;
     settlement: ProcessSettlement;

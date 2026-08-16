@@ -5,13 +5,14 @@ import { decodeBurnedCpu, feeWeiOf } from './burn.utils.js';
 import {
     ModeOperation,
     type ModeSwitchCoordinatorOptions,
+    type ModePriceContext,
     type ModeSwitchReconciliation,
     type PreparedModeSwitchResult,
     type PrepareModeSwitchInput,
     type ReconcileModeSwitchInput,
 } from './mode-switch.types.js';
 import { AppContract } from './paid-action.types.js';
-import { type CatalogBuildingView, ModeCostKind, type ModeKey } from './types.js';
+import { ModeCostKind } from './types.js';
 import { modeCost } from '../map/mode.utils.js';
 import { cpuFromWei } from '../utils/format.utils.js';
 
@@ -59,9 +60,7 @@ export class ModeSwitchCoordinator {
         return { cost: prepared.cost, exact: prepared.exact, burnedCpu: cpuFromWei(burned.toString()) };
     }
 
-    private async priceContext(
-        input: PrepareModeSwitchInput<unknown>,
-    ): Promise<{ mode: ModeKey | null; building: CatalogBuildingView | null; exact: boolean }> {
+    private async priceContext(input: PrepareModeSwitchInput<unknown>): Promise<ModePriceContext> {
         try {
             const chain = await this.options.cellClient.readCellView(input.cell, input.tokenId);
             const building =

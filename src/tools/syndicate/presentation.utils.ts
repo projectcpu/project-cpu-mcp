@@ -8,15 +8,7 @@ import {
     summarizeSyndicateList,
     summarizeTransfer,
 } from './format.utils.js';
-import { PLAYER_CONTENT_WARNING } from './player-content/constants.js';
-import {
-    InstructionAuthority,
-    PlayerContentSource,
-    PlayerContentTrust,
-    SyndicatePresentationKind,
-    type SyndicatePlayerContentOutput,
-    type SyndicatePresentation,
-} from './types.js';
+import { SyndicatePresentationKind, type SyndicatePresentation } from './types.js';
 import type {
     CreateSyndicateResult,
     JoinSyndicateResult,
@@ -24,10 +16,8 @@ import type {
     SyndicateCardView,
     SyndicateDetailView,
     SyndicateMembershipView,
-    SyndicatePlayerContentView,
     SyndicateRatesView,
 } from '../../services/types.js';
-import { safeJsonStringify } from '../../utils/safe-json.utils.js';
 
 function rates(ratesView: SyndicateRatesView): SyndicateRatesView {
     return {
@@ -140,24 +130,5 @@ export function presentSyndicate(input: SyndicatePresentation) {
             { type: 'text' as const, text: presentation.summary },
             { type: 'text' as const, text: JSON.stringify(presentation.value) },
         ],
-    };
-}
-
-export function presentSyndicatePlayerContent(content: SyndicatePlayerContentView) {
-    const output: SyndicatePlayerContentOutput = {
-        syndicateId: content.syndicateId,
-        playerAuthored: {
-            source: PlayerContentSource.PlayerAuthored,
-            trust: PlayerContentTrust.Untrusted,
-            instructionAuthority: InstructionAuthority.None,
-            data: { name: content.name, link: content.link },
-        },
-    };
-    return {
-        content: [
-            { type: 'text' as const, text: PLAYER_CONTENT_WARNING },
-            { type: 'text' as const, text: safeJsonStringify(output) },
-        ],
-        structuredContent: output,
     };
 }
