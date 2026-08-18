@@ -15,7 +15,8 @@ export enum CellProcessKind {
 
 export const rawCellResourceStorageSchema = z.object({
     used: z.string(),
-    cap: z.string().nullable(),
+    cellCap: z.string().nullable(),
+    hubCap: z.string().nullable(),
     reserved: z.object({
         incomingTransport: z.string(),
         lots: z.string(),
@@ -102,7 +103,8 @@ export type RawCell = z.infer<typeof rawCellSchema>;
 export type CellBuildingView = z.infer<typeof cellBuildingViewSchema>;
 export type MapSnapshotResponse = z.infer<typeof mapSnapshotResponseSchema>;
 
-export interface CellResourceStorage extends RawCellResourceStorage {
+export interface CellResourceStorage extends Omit<RawCellResourceStorage, 'cellCap' | 'hubCap'> {
+    cap: string | null;
     full: boolean;
 }
 
@@ -137,10 +139,49 @@ export interface ProcessOutput {
     amount: number;
 }
 
-export interface CellProjectionConfig {
-    hubStorageMultiplier: number;
-    hubBuildingTypes: Set<string>;
+export interface ProcessProgress {
+    completedBatches: number;
+    claimableBatches: number;
+    isFinished: boolean;
+    endsAtSec: number;
+    nextBatchAtSec: number | null;
+}
+
+export interface ProcessBatchSchedule {
+    maturedBatches: number;
+    remainingBatches: number;
+    endsAtSec: number;
+    nextBatchAtSec: number | null;
+}
+
+export interface ProcessSettlement {
+    settledBatches: number;
+    minedUnits: bigint;
+    drainedUnits: bigint;
+    depleted: boolean;
+}
+
+export interface ProcessWarehouseEffect {
+    resourceId: number;
+    requiredPerBatch: bigint;
+    blocked: boolean;
+}
+
+export interface ProcessProjection {
+    stalled: boolean;
+    warehouseEffects: Array<ProcessWarehouseEffect>;
+    progress: ProcessProgress;
+    settlement: ProcessSettlement;
+}
+
+export interface ProcessProjectionConfig {
     craftOutputsByRecipe: Record<string, Array<ProcessOutput>>;
+    extractionShareBpByBuilding: Record<string, number>;
+}
+
+export interface CellProjectionConfig extends ProcessProjectionConfig {
+    hubBuildingTypes: Set<string>;
+    upgradeFromByBuildingType: Record<string, string | null>;
 }
 
 export interface ParsedSnapshot {

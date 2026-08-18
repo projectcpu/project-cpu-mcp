@@ -1,11 +1,12 @@
-import { encodeFunctionData, formatEther, isAddress, parseEther, zeroAddress, type Address, type Hash } from 'viem';
+import { encodeFunctionData, formatEther, parseEther, zeroAddress, type Address, type Hash } from 'viem';
 
+import { preparePaidAction } from './paid-action.js';
+import { AppContract, type PaidActionContext } from './paid-action.types.js';
 import { MAX_UINT160, MAX_UINT48, PERMIT2_ADDRESS, SWAP_DEADLINE_SECONDS } from './swap.constants.js';
 import { applySlippage, encodeV4ExactInSwap } from './swap.helpers.js';
 import {
     SwapDirection,
     SwapToken,
-    type AppConfig,
     type IAllowanceService,
     type IAppConfig,
     type PoolKeyView,
@@ -113,11 +114,10 @@ export class SwapService {
     }
 
     private async prepare(input: SwapInput): Promise<PreparedSwap> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config.chainId, wallet.getChainId());
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
 
-        const pool = await this.resolvePool(config, wallet);
+        const pool = await this.resolvePool(action);
         const route = this.route(input.sell, pool);
         const amountInWei = parseEther(input.amount);
         const amountOutWei = await this.quoteExactIn(wallet, config.chainId, pool, route.zeroForOne, amountInWei);
@@ -136,20 +136,19 @@ export class SwapService {
         };
     }
 
-    private async resolvePool(config: AppConfig, wallet: WalletManager): Promise<PoolKeyView> {
+    private async resolvePool(action: PaidActionContext): Promise<PoolKeyView> {
         if (this.cachedPool !== null) {
             return this.cachedPool;
         }
 
-        const hook = config.contracts.cpuHook;
-        if (!isAddress(hook, { strict: false })) {
-            throw new Error(`Uniswap v4 hook is not configured for network ${config.network}; cannot swap.`);
-        }
+        const { wallet } = action;
+        const hook = action.requireContract(AppContract.CpuHook, 'cannot swap');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot swap');
 
         let key: PoolKeyView;
         try {
             key = (await wallet.readContract({
-                address: hook as Address,
+                address: hook,
                 abi: CPU_HOOK_ABI,
                 functionName: 'poolKey',
                 args: [],
@@ -163,8 +162,7 @@ export class SwapService {
         if (key.currency0 !== zeroAddress) {
             throw new Error(`Unexpected pool currency0 ${key.currency0}; expected native ETH (the zero address).`);
         }
-        const cpuToken = config.contracts.cpuToken;
-        if (isAddress(cpuToken, { strict: false }) && key.currency1.toLowerCase() !== cpuToken.toLowerCase()) {
+        if (key.currency1.toLowerCase() !== cpuToken.toLowerCase()) {
             throw new Error(`Pool currency1 ${key.currency1} does not match the configured $CPU token ${cpuToken}.`);
         }
 
@@ -219,13 +217,5 @@ export class SwapService {
             throw new Error(`Permit2 approve reverted on-chain (tx ${hash}).`);
         }
         return hash;
-    }
-
-    private assertChain(configChainId: number, walletChainId: number): void {
-        if (configChainId !== walletChainId) {
-            throw new Error(
-                `Wallet chain ${walletChainId} does not match the configured network chain ${configChainId}.`,
-            );
-        }
     }
 }

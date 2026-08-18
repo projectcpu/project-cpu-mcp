@@ -29,10 +29,12 @@ class FakeApi {
     }
 }
 
-function makeResponse(overrides: Partial<AppConfigResponse> = {}): AppConfigResponse {
+type AppConfigFixture = Required<AppConfigResponse>;
+
+function makeResponse(overrides: Partial<AppConfigFixture> = {}): AppConfigFixture {
     return {
-        network: 'ethereum',
-        chainId: 1,
+        network: Network.ROBINHOOD,
+        chainId: 4663,
         contracts: {
             land: '0x3333333333333333333333333333333333333333',
             cpuToken: '0x2222222222222222222222222222222222222222',
@@ -73,7 +75,7 @@ function makeResponse(overrides: Partial<AppConfigResponse> = {}): AppConfigResp
         reveal: { ethContribution: '1000', cpuBurn: '2000' },
         transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
         trade: { saleBurnPercent: 1, maxSaleFeeBp: 5000 },
-        storage: { hubStorageMultiplier: 10 },
+        storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
         ...overrides,
     };
 }
@@ -81,7 +83,7 @@ function makeResponse(overrides: Partial<AppConfigResponse> = {}): AppConfigResp
 function makeService(api: FakeApi): AppConfigService {
     return new AppConfigService({
         api: api as unknown as ApiClient,
-        network: Network.ETHEREUM,
+        network: Network.ROBINHOOD,
         logger: new NoopLogger(),
     });
 }
@@ -102,21 +104,23 @@ describe('AppConfigService mode switch cost', () => {
         const building = await loadBuilding(undefined);
 
         expect(building.modeSwitch).toEqual({ kind: 'unknown' });
+        expect('modeSwitchCost' in building).toBe(false);
     });
 
-    it('states "can never switch" positively and carries no price field at all for it', async () => {
+    it('states "can never switch" positively without a price in the authoritative tagged view', async () => {
         const building = await loadBuilding(null);
 
         expect(building.modeSwitch).toEqual({ kind: 'impossible' });
         expect('costCpu' in building.modeSwitch).toBe(false);
+        expect(building).toHaveProperty('modeSwitchCost', null);
         expect(JSON.stringify(building.modeSwitch)).not.toMatch(/costCpu/);
     });
 
-    it('carries the price inside the possible tag, keeping the raw field alongside it', async () => {
+    it('preserves the legacy price while making the possible tag authoritative', async () => {
         const building = await loadBuilding('2');
 
         expect(building.modeSwitch).toEqual({ kind: 'possible', costCpu: '2' });
-        expect(building.modeSwitchCost).toBe('2');
+        expect(building).toHaveProperty('modeSwitchCost', '2');
     });
 });
 
@@ -201,15 +205,15 @@ describe('AppConfigService', () => {
         const first = await service.load();
         const second = await service.load();
 
-        expect(api.paths).toEqual(['/api/v1/config?network=ethereum']);
-        expect(first.chainId).toBe(1);
-        expect(first.network).toBe(Network.ETHEREUM);
+        expect(api.paths).toEqual(['/api/v1/config?network=robinhood']);
+        expect(first.chainId).toBe(4663);
+        expect(first.network).toBe(Network.ROBINHOOD);
         expect(first.contracts.cell).toBe(CELL);
         expect(first.contracts.cpuHook).toBe(CPU_HOOK);
         expect(first.resources[5]).toBe('Iron');
         expect(first.transport.moveFeeFloors).toEqual({ 5: '0.1' });
         expect(first.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
-        expect(first.storage).toEqual({ hubStorageMultiplier: 10 });
+        expect(first.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });
         expect(second).toBe(first);
     });
 
@@ -246,13 +250,13 @@ describe('AppConfigService', () => {
             new FakeApi({
                 status: 200,
                 data: {
-                    network: 'ethereum',
-                    chainId: 1,
+                    network: 'robinhood',
+                    chainId: 4663,
                     contracts: { land: '', cpuToken: '', cpuHook: '', cell: '' },
                     randomness: { kind: RandomnessKind.ENTROPY, adapter: '' },
                     resources: {},
                     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0' } },
-                    storage: { hubStorageMultiplier: 10 },
+                    storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
                 },
             }),
         ).load();
@@ -305,13 +309,13 @@ describe('AppConfigService', () => {
             new FakeApi({
                 status: 200,
                 data: {
-                    network: 'ethereum',
-                    chainId: 1,
+                    network: 'robinhood',
+                    chainId: 4663,
                     contracts: { land: '', cpuToken: '', cpuHook: '', cell: '' },
                     randomness: { kind: RandomnessKind.ENTROPY, adapter: '' },
                     resources: {},
                     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0' } },
-                    storage: { hubStorageMultiplier: 10 },
+                    storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
                 },
             }),
         ).load();
@@ -352,10 +356,73 @@ describe('AppConfigService', () => {
         await expect(makeService(api).load()).rejects.toThrow(/Failed to load chain config/i);
     });
 
-    it('has no client-side default for the storage multiplier and fails loudly when the API omits it', async () => {
+    it('has no client-side default for storage shelves and fails loudly when the API omits them', async () => {
         const { storage: _storage, ...withoutStorage } = makeResponse();
         const api = new FakeApi({ status: 200, data: withoutStorage });
         await expect(makeService(api).load()).rejects.toThrow();
+    });
+
+    it('rejects the retired storage multiplier shape', async () => {
+        const stale = { ...makeResponse(), storage: { hubStorageMultiplier: 10 } };
+        await expect(makeService(new FakeApi({ status: 200, data: stale })).load()).rejects.toThrow();
+    });
+
+    it('rejects duplicate or unsorted storage cap rows', async () => {
+        const duplicate = makeResponse({
+            storage: {
+                caps: [
+                    { resourceId: 5, cellCap: 100, hubCap: 1000 },
+                    { resourceId: 5, cellCap: 200, hubCap: 2000 },
+                ],
+            },
+        });
+        const unsorted = makeResponse({
+            storage: {
+                caps: [
+                    { resourceId: 6, cellCap: 100, hubCap: 1000 },
+                    { resourceId: 5, cellCap: 200, hubCap: 2000 },
+                ],
+            },
+        });
+
+        await expect(makeService(new FakeApi({ status: 200, data: duplicate })).load()).rejects.toThrow(
+            /strictly ascending/i,
+        );
+        await expect(makeService(new FakeApi({ status: 200, data: unsorted })).load()).rejects.toThrow(
+            /strictly ascending/i,
+        );
+    });
+
+    it('preserves zero storage shelves as the config representation of unlimited', async () => {
+        const config = await makeService(
+            new FakeApi({
+                status: 200,
+                data: makeResponse({ storage: { caps: [{ resourceId: 1, cellCap: 0, hubCap: 0 }] } }),
+            }),
+        ).load();
+
+        expect(config.storage.caps).toEqual([{ resourceId: 1, cellCap: 0, hubCap: 0 }]);
+    });
+
+    it('rejects negative storage shelf capacities', async () => {
+        const negativeCell = makeResponse({
+            storage: { caps: [{ resourceId: 1, cellCap: -1, hubCap: 1000 }] },
+        });
+        const negativeHub = makeResponse({
+            storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: -1 }] },
+        });
+
+        await expect(makeService(new FakeApi({ status: 200, data: negativeCell })).load()).rejects.toThrow();
+        await expect(makeService(new FakeApi({ status: 200, data: negativeHub })).load()).rejects.toThrow();
+    });
+
+    it('rejects a config that identifies a different network or chain', async () => {
+        await expect(
+            makeService(new FakeApi({ status: 200, data: { ...makeResponse(), network: 'ethereum' } })).load(),
+        ).rejects.toThrow();
+        await expect(
+            makeService(new FakeApi({ status: 200, data: { ...makeResponse(), chainId: 1 } })).load(),
+        ).rejects.toThrow();
     });
 
     it('rejects a pre-rename config whose building effects lack the required extraction share', async () => {
@@ -399,6 +466,24 @@ describe('AppConfigService', () => {
         expect(config.buildings[0]?.branch).toBeNull();
     });
 
+    it('accepts dynamic upgrade types that are not part of the base building enum', async () => {
+        const base = makeResponse();
+        const [mine] = base.buildings;
+        const upgraded = {
+            ...(mine as BuildingView),
+            type: 'mine_l2a',
+            onChainId: 46,
+            upgradeFrom: BuildingType.Mine,
+        };
+
+        const config = await makeService(
+            new FakeApi({ status: 200, data: { ...base, buildings: [...base.buildings, upgraded] } }),
+        ).load();
+
+        expect(config.buildings.at(-1)?.type).toBe('mine_l2a');
+        expect(config.buildings.at(-1)?.upgradeFrom).toBe(BuildingType.Mine);
+    });
+
     it('defaults a catalog entry from an API that predates the upgrade graph to no upgrade participation', async () => {
         const base = makeResponse();
         const [mine] = base.buildings;
@@ -435,10 +520,10 @@ describe('AppConfigService load() racing a concurrent replace()', () => {
 
         const pending = service.load();
 
-        const freshConfig = await makeService(new FakeApi({ status: 200, data: makeResponse({ chainId: 2 }) })).load();
+        const freshConfig = await makeService(new FakeApi({ status: 200, data: makeResponse() })).load();
         service.replace(freshConfig);
 
-        resolveFetch({ status: 200, data: makeResponse({ chainId: 1 }) });
+        resolveFetch({ status: 200, data: makeResponse() });
 
         expect(await pending).toBe(freshConfig);
         expect(await service.load()).toBe(freshConfig);

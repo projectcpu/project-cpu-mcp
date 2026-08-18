@@ -42,7 +42,9 @@ export function registerGetGameConfigTool(server: ToolRegistrar, context: AppCon
             const transit =
                 `every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override wins over it) — ` +
                 `${transitFeeFloors}`;
-            const storage = `an active hub multiplies a cell's storage cap by ${config.storage.hubStorageMultiplier}x`;
+            const storage =
+                'storage caps are explicit per-resource cell/hub shelf pairs (`0` means unlimited); map reads ' +
+                'label the shelf currently in force as each resource storage `cap`';
             const randomness = describeRandomnessMode(config.randomness);
             const header =
                 `Network ${config.network} (chainId ${config.chainId}). ${config.recipes.length} recipe(s) ` +

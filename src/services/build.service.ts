@@ -1,7 +1,10 @@
-import { isAddress, parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
+import { parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
 
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
 import type {
     AppConfig,
+    CatalogBuildingView,
     BuildInput,
     BuildPlacement,
     BuildResult,
@@ -17,13 +20,12 @@ import type {
 import { withUpgradeRevertPhrase } from './upgrade-revert.utils.js';
 import { assertWarehouseHas } from './warehouse.utils.js';
 import { BuildingKind } from '../api/types.js';
-import type { BuildingView } from '../api/types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
 import { activeDemolition } from '../map/map.utils.js';
 import type { Cell, CellBuildingView, RevealCellReader } from '../map/types.js';
 import { formatUnixSeconds } from '../utils/format.utils.js';
-import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
+import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class BuildService {
     private readonly wallet: WalletProvider;
@@ -45,12 +47,10 @@ export class BuildService {
     }
 
     async build(input: BuildInput): Promise<BuildResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
-
-        const cell = this.requireCell(config);
-        const cpuToken = this.requireCpuToken(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot build');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay for build');
         const tokenId = BigInt(input.tokenId);
 
         // Paid action — pull a fresh snapshot so the pre-checks below gate on current on-chain state, not a
@@ -75,12 +75,10 @@ export class BuildService {
     }
 
     async demolish(input: DemolishInput): Promise<DemolishResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
-
-        const cell = this.requireCell(config);
-        const cpuToken = this.requireCpuToken(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot demolish');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay for demolish');
         const tokenId = BigInt(input.tokenId);
 
         await this.mapReader.refresh();
@@ -131,12 +129,10 @@ export class BuildService {
     }
 
     async upgrade(input: UpgradeInput): Promise<UpgradeResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
-
-        const cell = this.requireCell(config);
-        const cpuToken = this.requireCpuToken(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot upgrade');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay for upgrade');
         const tokenId = BigInt(input.tokenId);
         const target = this.resolveUpgradeTarget(config, input.targetBuildingType);
 
@@ -190,7 +186,7 @@ export class BuildService {
         };
     }
 
-    private upgradeNoop(input: UpgradeInput, target: BuildingView, building: CellBuildingView): UpgradeResult {
+    private upgradeNoop(input: UpgradeInput, target: CatalogBuildingView, building: CellBuildingView): UpgradeResult {
         const upgrading = building.buildFinishAt !== null && this.mapReader.getServerTime() < building.buildFinishAt;
         this.logger.info('upgrade no-op: target already installed', {
             tokenId: input.tokenId,
@@ -238,7 +234,7 @@ export class BuildService {
         return Number(finishAt);
     }
 
-    private resolveUpgradeTarget(config: AppConfig, targetBuildingType: string): BuildingView {
+    private resolveUpgradeTarget(config: AppConfig, targetBuildingType: string): CatalogBuildingView {
         const view = this.buildingView(config, targetBuildingType);
         if (view.upgradeFrom === null) {
             throw new Error(
@@ -298,7 +294,7 @@ export class BuildService {
 
     // A hub anchoring open trade lots (reserved.lots > 0) reverts on-chain with CellBusy. Catch that common case
     // here; the chain still guards in-flight routes, which aren't visible in the local snapshot.
-    private assertHubIdle(tokenId: string, view: BuildingView, state: Cell | null): void {
+    private assertHubIdle(tokenId: string, view: CatalogBuildingView, state: Cell | null): void {
         if (view.kind !== BuildingKind.Hub || state === null) {
             return;
         }
@@ -340,31 +336,7 @@ export class BuildService {
         return { buildTxHash, approveTxHash, buildCost: view.buildCost };
     }
 
-    private assertChain(config: AppConfig, wallet: WalletManager): void {
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
-    }
-
-    private requireCell(config: AppConfig): Address {
-        const cell = config.contracts.cell;
-        if (!isAddress(cell, { strict: false })) {
-            throw new Error(`Cell contract is not configured for network ${config.network}; cannot build.`);
-        }
-        return cell;
-    }
-
-    private requireCpuToken(config: AppConfig): Address {
-        const cpuToken = config.contracts.cpuToken;
-        if (!isAddress(cpuToken, { strict: false })) {
-            throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay for build.`);
-        }
-        return cpuToken;
-    }
-
-    private buildingView(config: AppConfig, buildingType: string): BuildingView {
+    private buildingView(config: AppConfig, buildingType: string): CatalogBuildingView {
         const view = config.buildings.find((b) => b.type === buildingType);
         if (view === undefined) {
             throw new Error(`No catalog entry for a ${buildingType} on network ${config.network}.`);

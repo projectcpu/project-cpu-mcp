@@ -1,7 +1,9 @@
-import { isAddress, parseEther, parseEventLogs, type Address, type Hash } from 'viem';
+import { parseEther, parseEventLogs, type Address, type Hash } from 'viem';
 import { z } from 'zod';
 
 import { decodeDeliveryScheduled, settleTransitFees } from './delivery.helpers.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract, type PaidActionContext } from './paid-action.types.js';
 import { toFillView } from './trade-fill.helpers.js';
 import {
     enrichBuyQuoteRevert,
@@ -13,7 +15,6 @@ import {
 } from './trade.helpers.js';
 import { TRANSPORT_MAX_FEE_BUFFER_PERCENT } from './transport.constants.js';
 import {
-    type AppConfig,
     type BuyLotInput,
     type BuyLotResult,
     type BuyQuoteResult,
@@ -59,7 +60,7 @@ import { TRADE_ABI } from '../contracts/trade.abi.js';
 import type { ILogger } from '../logger/types.js';
 import { bpToPercent, cpuFromWei, percentToBp } from '../utils/format.utils.js';
 import { buildQuery } from '../utils/query.utils.js';
-import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
+import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
 /**
  * The lot marketplace. The three writes (create / buy / cancel) go straight to the Trade contract;
@@ -94,9 +95,10 @@ export class TradeService {
     // ---- Writes ----
 
     async createLot(input: CreateLotInput): Promise<CreateLotResult> {
-        const { config, wallet } = await this.ready();
-        const trade = this.resolveTrade(config);
-        const transport = this.resolveTransport(config);
+        const action = await this.ready();
+        const { config, wallet } = action;
+        const trade = action.requireContract(AppContract.Trade, 'cannot trade');
+        const transport = action.requireContract(AppContract.Transport, 'cannot route goods');
 
         const tokenIds = input.chain.map((tokenId) => BigInt(tokenId));
         const hub = tokenIds[tokenIds.length - 1] as bigint;
@@ -123,7 +125,7 @@ export class TradeService {
             res: input.resourceId,
             amount: value,
         });
-        const approveTxHash = await this.approveTransit(config, transport, maxFee);
+        const approveTxHash = await this.approveTransit(action, transport, maxFee);
 
         let txHash: Hash;
         try {
@@ -176,8 +178,9 @@ export class TradeService {
     }
 
     async setSaleFee(input: SetSaleFeeInput): Promise<SetSaleFeeResult> {
-        const { config } = await this.ready();
-        const trade = this.resolveTrade(config);
+        const action = await this.ready();
+        const { config } = action;
+        const trade = action.requireContract(AppContract.Trade, 'cannot trade');
 
         const feeBp = percentToBp(input.feePercent);
 
@@ -213,10 +216,11 @@ export class TradeService {
     }
 
     async buyLot(input: BuyLotInput): Promise<BuyLotResult> {
-        const { config, wallet } = await this.ready();
-        const trade = this.resolveTrade(config);
-        const transport = this.resolveTransport(config);
-        const cpuToken = this.resolveCpuToken(config);
+        const action = await this.ready();
+        const { config, wallet } = action;
+        const trade = action.requireContract(AppContract.Trade, 'cannot trade');
+        const transport = action.requireContract(AppContract.Transport, 'cannot route goods');
+        const cpuToken = action.requireContract(AppContract.CpuToken, 'cannot pay for trade');
 
         const lot = await this.getLot(input.lotId);
         const value = BigInt(input.value);
@@ -288,9 +292,10 @@ export class TradeService {
     }
 
     async cancelLot(input: CancelLotInput): Promise<CancelLotResult> {
-        const { config, wallet } = await this.ready();
-        const trade = this.resolveTrade(config);
-        const transport = this.resolveTransport(config);
+        const action = await this.ready();
+        const { config, wallet } = action;
+        const trade = action.requireContract(AppContract.Trade, 'cannot trade');
+        const transport = action.requireContract(AppContract.Transport, 'cannot route goods');
 
         const lot = await this.getLot(input.lotId);
         const remaining = BigInt(lot.remaining);
@@ -306,7 +311,7 @@ export class TradeService {
             res: lot.resourceId,
             amount: remaining,
         });
-        const approveTxHash = await this.approveTransit(config, transport, maxFee);
+        const approveTxHash = await this.approveTransit(action, transport, maxFee);
 
         const txHash = await this.tradeClient.cancel({ trade, lotId: BigInt(input.lotId), returnTokenIds, maxFee });
         const confirmed = await this.contracts.confirm(txHash, `Cancel lot ${input.lotId}`);
@@ -336,8 +341,9 @@ export class TradeService {
     }
 
     async quoteBuy(input: QuoteBuyInput): Promise<TradeQuote> {
-        const { config, wallet } = await this.ready();
-        const trade = this.resolveTrade(config);
+        const action = await this.ready();
+        const { wallet } = action;
+        const trade = action.requireContract(AppContract.Trade, 'cannot trade');
         const lot = await this.getLot(input.lotId);
         const lotId = BigInt(input.lotId);
         const value = BigInt(input.value);
@@ -485,11 +491,15 @@ export class TradeService {
         return { feeWei: quote.totalFee, maxFee };
     }
 
-    private async approveTransit(config: AppConfig, transport: Address, maxFee: bigint): Promise<Hash | null> {
+    private async approveTransit(action: PaidActionContext, transport: Address, maxFee: bigint): Promise<Hash | null> {
         if (maxFee === 0n) {
             return null;
         }
-        return this.allowance.ensureAllowance(this.resolveCpuToken(config), transport, maxFee);
+        return this.allowance.ensureAllowance(
+            action.requireContract(AppContract.CpuToken, 'cannot pay for trade'),
+            transport,
+            maxFee,
+        );
     }
 
     private firstFrom<T extends { address: string }>(events: Array<T>, trade: Address, label: string): T {
@@ -500,39 +510,7 @@ export class TradeService {
         return event;
     }
 
-    private resolveTrade(config: AppConfig): Address {
-        const trade = config.contracts.trade;
-        if (!isAddress(trade, { strict: false })) {
-            throw new Error(`Trade contract is not configured for network ${config.network}; cannot trade.`);
-        }
-        return trade;
-    }
-
-    private resolveTransport(config: AppConfig): Address {
-        const transport = config.contracts.transport;
-        if (!isAddress(transport, { strict: false })) {
-            throw new Error(`Transport contract is not configured for network ${config.network}; cannot route goods.`);
-        }
-        return transport;
-    }
-
-    private resolveCpuToken(config: AppConfig): Address {
-        const cpuToken = config.contracts.cpuToken;
-        if (!isAddress(cpuToken, { strict: false })) {
-            throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay for trade.`);
-        }
-        return cpuToken;
-    }
-
-    private async ready(): Promise<{ config: AppConfig; wallet: WalletManager }> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ` +
-                    `${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
-        return { config, wallet };
+    private async ready(): Promise<PaidActionContext> {
+        return preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
     }
 }

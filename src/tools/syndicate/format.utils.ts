@@ -20,7 +20,7 @@ function summarizeRates(rates: SyndicateRatesView): string {
 
 function summarizeCardLine(card: SyndicateCardView): string {
     return (
-        `Syndicate ${card.id} "${card.name}" · ${card.memberCount} member(s) · manager ${card.manager} · ` +
+        `Syndicate ${card.id} · ${card.memberCount} member(s) · manager ${card.manager} · ` +
         `${summarizeRates(card.rates)} · created ${formatUnixSeconds(card.createdAt)}`
     );
 }
@@ -34,7 +34,7 @@ export function summarizeSyndicateList(cards: Array<SyndicateCardView>): string 
 
 export function summarizeSyndicateDetail(detail: SyndicateDetailView): string {
     const { card, members } = detail;
-    const header = `${summarizeCardLine(card)}${card.link !== '' ? ` · ${card.link}` : ''}`;
+    const header = summarizeCardLine(card);
     if (members.length === 0) {
         return `${header}\nNo members on this page.`;
     }
@@ -46,30 +46,28 @@ export function summarizeSyndicateDetail(detail: SyndicateDetailView): string {
 
 export function summarizeJoin(result: JoinSyndicateResult): string {
     const leaveClause = `You may leave from ${formatUnixSeconds(result.leaveAvailableAt)} (unix ${result.leaveAvailableAt}).`;
-    if (result.name === null || result.rates === null) {
+    if (result.rates === null) {
         return (
             `Joined syndicate ${result.syndicateId} · joined ${formatUnixSeconds(result.joinedAt)}. ${leaveClause} ` +
-            "Its name and fee rates couldn't be read yet (the projection may lag) — re-check with cpu_get_syndicate."
+            "Its fee rates couldn't be read yet (the projection may lag) — re-check with cpu_get_syndicate."
         );
     }
     return (
-        `Joined syndicate ${result.syndicateId} "${result.name}" · joined ${formatUnixSeconds(result.joinedAt)} · ` +
+        `Joined syndicate ${result.syndicateId} · joined ${formatUnixSeconds(result.joinedAt)} · ` +
         `${summarizeRates(result.rates)}. ${leaveClause}`
     );
 }
 
 export function summarizeCreate(result: CreateSyndicateResult): string {
-    const linkClause = result.link !== '' ? ` · ${result.link}` : '';
     return (
-        `Created syndicate ${result.syndicateId} "${result.name}"${linkClause} · manager ${result.manager} · ` +
+        `Created syndicate ${result.syndicateId} · manager ${result.manager} · ` +
         `${summarizeRates(result.rates)}. You auto-joined at ${formatUnixSeconds(result.joinedAt)}; ` +
         `you may leave from ${formatUnixSeconds(result.leaveAvailableAt)} (unix ${result.leaveAvailableAt}).`
     );
 }
 
 export function summarizeSetParams(result: SetSyndicateParamsResult): string {
-    const linkClause = result.link !== '' ? ` · ${result.link}` : '';
-    return `Updated syndicate ${result.syndicateId} "${result.name}"${linkClause} · ${summarizeRates(result.rates)}.`;
+    return `Updated syndicate ${result.syndicateId} · ${summarizeRates(result.rates)}.`;
 }
 
 export function summarizeTransfer(result: TransferSyndicateManagerResult): string {

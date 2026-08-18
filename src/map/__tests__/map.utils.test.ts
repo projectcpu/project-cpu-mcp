@@ -193,7 +193,11 @@ describe('summarizeMap', () => {
                 revealCount: 1,
                 process: makeMiningProcess({ resource: 1, startAt: 1 }),
                 resources: [
-                    makeResource({ resourceId: 1, deposit: '1000', storage: makeStorage({ used: '50', cap: '50' }) }),
+                    makeResource({
+                        resourceId: 1,
+                        deposit: '1000',
+                        storage: makeStorage({ used: '50', cellCap: '50', hubCap: '50' }),
+                    }),
                 ],
             }),
             makeCell({

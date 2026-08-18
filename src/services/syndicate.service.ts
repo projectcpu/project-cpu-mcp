@@ -1,6 +1,9 @@
-import { isAddress, parseEventLogs, type Address, type Log } from 'viem';
+import { parseEventLogs, type Address, type Log } from 'viem';
 import { z } from 'zod';
 
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
+import { SYNDICATE_CREATE_FAILED_MESSAGE, SYNDICATE_UPDATE_FAILED_MESSAGE } from './syndicate.constants.js';
 import { ratesToRegistry, requireRegistryEvent, toError, toSyndicateCardView } from './syndicate.helpers.js';
 import type {
     AppConfig,
@@ -20,13 +23,13 @@ import type {
     SyndicateDetailView,
     SyndicateMemberView,
     SyndicateMembershipView,
+    SyndicatePlayerContentView,
     SyndicateServiceOptions,
     TransferSyndicateManagerInput,
     TransferSyndicateManagerResult,
     IAppConfig,
 } from './types.js';
 import type { ApiClient } from '../api/client.js';
-import { describeApiError } from '../api/response.utils.js';
 import {
     type ApiSyndicateCard,
     type ApiSyndicateMembership,
@@ -41,7 +44,7 @@ import type { ILogger } from '../logger/types.js';
 import { formatUnixSeconds } from '../utils/format.utils.js';
 import { buildQuery } from '../utils/query.utils.js';
 import { describeRevert } from '../wallet/revert.utils.js';
-import type { WalletManager, WalletProvider } from '../wallet/types.js';
+import type { WalletProvider } from '../wallet/types.js';
 
 export class SyndicateService {
     private readonly api: ApiClient;
@@ -78,7 +81,6 @@ export class SyndicateService {
             syndicateId: input.id,
             joinedAt,
             leaveAvailableAt: joinedAt + cooldownSec,
-            name: card?.name ?? null,
             rates: card?.rates ?? null,
         };
     }
@@ -118,8 +120,6 @@ export class SyndicateService {
         return {
             syndicateId,
             manager,
-            name: input.name,
-            link: input.link,
             rates: input.rates,
             joinedAt,
             leaveAvailableAt: joinedAt + cooldownSec,
@@ -135,7 +135,7 @@ export class SyndicateService {
         this.logger.info('updating syndicate params', { id: input.id, network: config.network });
         await this.sendSetParams(registry, { id, name: input.name, link: input.link, rates });
 
-        return { syndicateId: input.id, name: input.name, link: input.link, rates: input.rates };
+        return { syndicateId: input.id, rates: input.rates };
     }
 
     async transferManager(input: TransferSyndicateManagerInput): Promise<TransferSyndicateManagerResult> {
@@ -162,7 +162,7 @@ export class SyndicateService {
         });
         const response = await this.api.request<Array<ApiSyndicateCard>>(`/api/v1/syndicates${qs}`);
         if (response.status !== HttpStatus.Ok) {
-            throw new Error(`Failed to list syndicates (HTTP ${response.status}): ${describeApiError(response.data)}`);
+            throw new Error(`Failed to list syndicates (HTTP ${response.status}).`);
         }
         z.array(apiSyndicateCardSchema).parse(response.data);
         return response.data.map(toSyndicateCardView);
@@ -174,6 +174,11 @@ export class SyndicateService {
         return { card, members };
     }
 
+    async getPlayerContent(id: string): Promise<SyndicatePlayerContentView> {
+        const card = await this.getRawCard(id);
+        return { syndicateId: card.id, name: card.name, link: card.link };
+    }
+
     async getMembership(input: GetMembershipInput): Promise<SyndicateMembershipView> {
         const address = input.address ?? this.wallet.get().getAddress();
         this.logger.info('reading syndicate membership', { address });
@@ -182,10 +187,7 @@ export class SyndicateService {
             `/api/v1/syndicates/player/${encodeURIComponent(address)}`,
         );
         if (response.status !== HttpStatus.Ok) {
-            throw new Error(
-                `Failed to read syndicate membership for ${address} (HTTP ${response.status}): ` +
-                    describeApiError(response.data),
-            );
+            throw new Error(`Failed to read syndicate membership for ${address} (HTTP ${response.status}).`);
         }
         if (response.data === null) {
             return {
@@ -211,17 +213,18 @@ export class SyndicateService {
     }
 
     private async getCard(id: string): Promise<SyndicateCardView> {
+        return toSyndicateCardView(await this.getRawCard(id));
+    }
+
+    private async getRawCard(id: string): Promise<ApiSyndicateCard> {
         const response = await this.api.request<ApiSyndicateCard>(`/api/v1/syndicates/${encodeURIComponent(id)}`);
         if (response.status === HttpStatus.NotFound) {
             throw new Error(`No syndicate with id ${id} — check the id from cpu_list_syndicates.`);
         }
         if (response.status !== HttpStatus.Ok) {
-            throw new Error(
-                `Failed to load syndicate ${id} (HTTP ${response.status}): ${describeApiError(response.data)}`,
-            );
+            throw new Error(`Failed to load syndicate ${id} (HTTP ${response.status}).`);
         }
-        apiSyndicateCardSchema.parse(response.data);
-        return toSyndicateCardView(response.data);
+        return apiSyndicateCardSchema.parse(response.data);
     }
 
     private async listMembers(
@@ -234,9 +237,7 @@ export class SyndicateService {
             `/api/v1/syndicates/${encodeURIComponent(id)}/members${qs}`,
         );
         if (response.status !== HttpStatus.Ok) {
-            throw new Error(
-                `Failed to list members of syndicate ${id} (HTTP ${response.status}): ${describeApiError(response.data)}`,
-            );
+            throw new Error(`Failed to list members of syndicate ${id} (HTTP ${response.status}).`);
         }
         z.array(apiSyndicateMemberViewSchema).parse(response.data);
         return response.data.map((member) => ({ address: member.address, joinedAt: member.joinedAt }));
@@ -294,7 +295,8 @@ export class SyndicateService {
     private async explainCreateError(error: unknown): Promise<Error> {
         const revert = describeRevert(error, SYNDICATE_ABI);
         if (revert === null) {
-            return toError(error);
+            this.logger.error('syndicate creation failed before a contract error could be decoded', { error });
+            return new Error(SYNDICATE_CREATE_FAILED_MESSAGE);
         }
         if (revert.startsWith('AlreadyInSyndicate')) {
             return new Error(await this.alreadyInMessage());
@@ -306,7 +308,8 @@ export class SyndicateService {
     private explainManagerWriteError(error: unknown, zeroAddressMessage: string): Error {
         const revert = describeRevert(error, SYNDICATE_ABI);
         if (revert === null) {
-            return toError(error);
+            this.logger.error('syndicate update failed before a contract error could be decoded', { error });
+            return new Error(SYNDICATE_UPDATE_FAILED_MESSAGE);
         }
         const mapped = this.mapParamsRevert(revert, zeroAddressMessage);
         return mapped ?? new Error(`Execution reverted: ${revert}`);
@@ -366,8 +369,7 @@ export class SyndicateService {
         try {
             const membership = await this.getMembership({ address: null });
             if (membership.member && membership.syndicateId !== null) {
-                const named = membership.syndicate !== null ? ` "${membership.syndicate.name}"` : '';
-                return `You are already in syndicate ${membership.syndicateId}${named}. Leave it before joining another.`;
+                return `You are already in syndicate ${membership.syndicateId}. Leave it before joining another.`;
             }
         } catch (enrichError) {
             this.logger.warn('could not resolve current membership for the error message', { error: enrichError });
@@ -431,26 +433,13 @@ export class SyndicateService {
     }
 
     private async resolveRegistry(): Promise<{ config: AppConfig; registry: Address }> {
-        const config = await this.appConfig.load();
-        this.assertChain(config, this.wallet.get());
-        return { config, registry: this.requireRegistry(config) };
-    }
-
-    private requireRegistry(config: AppConfig): Address {
-        const registry = config.contracts.syndicate;
-        if (registry === null || !isAddress(registry, { strict: false })) {
-            throw new Error(
-                `The syndicate registry is not deployed on network ${config.network}, so syndicate actions are unavailable here.`,
-            );
-        }
-        return registry;
-    }
-
-    private assertChain(config: AppConfig, wallet: WalletManager): void {
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        return {
+            config: action.config,
+            registry: action.requireContract(
+                AppContract.Syndicate,
+                'it is not deployed, so syndicate actions are unavailable here',
+            ),
+        };
     }
 }

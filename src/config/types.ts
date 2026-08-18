@@ -1,16 +1,9 @@
 import { z } from 'zod';
 
+import { LAUNCH_NETWORK } from './constants.js';
 import { WalletMode } from '../types.js';
 
-// Networks the game ships on. The value strings are the exact `network` values the game API expects in
-// requests (e.g. `GET /api/v1/config?network=`, `POST /api/v1/reveal`).
-export enum Network {
-    ETHEREUM = 'ethereum',
-    ETHEREUM_SEPOLIA = 'ethereum_sepolia',
-    BASE = 'base',
-    BASE_SEPOLIA = 'base_sepolia',
-    ROBINHOOD = 'robinhood',
-}
+export { Network } from './network.types.js';
 
 export const envSchema = z
     .object({
@@ -22,7 +15,7 @@ export const envSchema = z
             .nullable(),
         API_URL: z.string().url().nullable(),
         RPC_URL: z.string().url().nullable(),
-        NETWORK: z.nativeEnum(Network).default(Network.ROBINHOOD),
+        NETWORK: z.literal(LAUNCH_NETWORK).default(LAUNCH_NETWORK),
     })
     .refine((data) => data.WALLET_MODE !== WalletMode.EVM || data.PRIVATE_KEY !== null, {
         message: 'PRIVATE_KEY is required when WALLET_MODE=evm',

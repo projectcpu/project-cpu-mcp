@@ -68,6 +68,13 @@ export const CELL_ABI = [
         stateMutability: 'view',
     },
     {
+        type: 'function',
+        name: 'getHubStorageCap',
+        inputs: [{ name: 'res', type: 'uint16', internalType: 'uint16' }],
+        outputs: [{ name: '', type: 'uint64', internalType: 'uint64' }],
+        stateMutability: 'view',
+    },
+    {
         type: 'event',
         name: 'RevealRequested',
         inputs: [

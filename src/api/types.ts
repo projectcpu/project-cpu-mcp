@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { LAUNCH_CHAIN_ID, LAUNCH_NETWORK } from '../config/constants.js';
 import type { ILogger } from '../logger/types.js';
 import type { SessionManager } from '../session/manager.js';
 
@@ -70,18 +71,6 @@ export interface ServerHealthView {
 
 export const backendVersionResponseSchema = z.object({ versionSha: z.string().min(1) }).passthrough();
 
-/** `GET /api/v1/config?network=` contract addresses. */
-export interface AppContractsConfig {
-    land: string;
-    cpuToken: string;
-    cpuHook: string;
-    cell: string;
-    cellLens: string;
-    transport: string;
-    trade: string;
-    syndicate: string | null;
-}
-
 /** Must match the game's recipe catalog — never rename or reuse a value. */
 export enum CraftRecipeId {
     GenerateEnergyOil = 'generate_energy_oil',
@@ -126,6 +115,32 @@ export enum BuildingKind {
     Hub = 'hub',
 }
 
+/** The building types a cell can hold — 6 tier-1 extractors, tier-2..5 crafters, and the Hub. */
+export enum BuildingType {
+    PumpStation = 'pump_station',
+    Quarry = 'quarry',
+    Derrick = 'derrick',
+    Mine = 'mine',
+    TungstenDrill = 'tungsten_drill',
+    LeachField = 'leach_field',
+    OilPowerPlant = 'oil_power_plant',
+    EnrichmentPlant = 'enrichment_plant',
+    Reactor = 'reactor',
+    ConcretePlant = 'concrete_plant',
+    SteelMill = 'steel_mill',
+    CopperSmelter = 'copper_smelter',
+    HeatsinkPlant = 'heatsink_plant',
+    ChemicalPlant = 'chemical_plant',
+    CompoundsPlant = 'compounds_plant',
+    SiliconPlant = 'silicon_plant',
+    WaferFab = 'wafer_fab',
+    CoolingPlant = 'cooling_plant',
+    AcceleratorFab = 'accelerator_fab',
+    NetworkAssembly = 'network_assembly',
+    Datacenter = 'datacenter',
+    Hub = 'hub',
+}
+
 /** Cost to demolish a building: `cpu` $CPU burned + `inputs` consumed from the cell's warehouse (no refund). */
 export interface DemolishCostView {
     /** $CPU burned to tear it down, human-readable decimal. */
@@ -142,7 +157,7 @@ export interface BuildingEffectsView {
 
 /** Per-building catalog entry from `GET /api/v1/config`. */
 export interface BuildingView {
-    type: BuildingType;
+    type: string;
     /** `uint8` id the on-chain `place(tokenId, type)` consumes — stable and append-only. */
     onChainId: number;
     name: string;
@@ -188,13 +203,14 @@ export interface TransportRoutingView {
     moveFeeFloors: Record<number, string>;
 }
 
-export interface TradeFeeView {
-    saleBurnPercent: number;
-    maxSaleFeeBp: number;
+export interface ResourceStorageCapsView {
+    resourceId: number;
+    cellCap: number;
+    hubCap: number;
 }
 
 export interface StorageConfigView {
-    hubStorageMultiplier: number;
+    caps: Array<ResourceStorageCapsView>;
 }
 
 export enum RandomnessKind {
@@ -226,23 +242,26 @@ export type DrandRandomnessDescriptor = z.infer<typeof drandRandomnessSchema>;
 
 export type RandomnessDescriptor = z.infer<typeof randomnessDescriptorSchema>;
 
-/** `GET /api/v1/config?network=` response — chainId + contract addresses for one network. */
-export interface AppConfigResponse {
-    network: string;
-    chainId: number;
-    contracts: AppContractsConfig;
-    randomness: RandomnessDescriptor;
-    /** Resource id → display name (e.g. `{ 5: 'Iron' }`). */
-    resources: Record<number, string>;
-    recipes: Array<RecipeView>;
-    /** Per-building catalog — on-chain id, kind, costs, and mine/craft bindings. */
-    buildings: Array<BuildingView>;
-    /** The two gameplay legs every reveal is charged. */
-    reveal: RevealPaymentView;
-    transport: TransportRoutingView;
-    trade: TradeFeeView;
-    storage: StorageConfigView;
-}
+const craftStackSchema = z.object({ resourceId: z.number(), amount: z.number() }).strict();
+
+const recipeConfigSchema = z
+    .object({
+        id: z.nativeEnum(CraftRecipeId),
+        name: z.string(),
+        tier: z.number(),
+        inputs: z.array(craftStackSchema),
+        outputs: z.array(craftStackSchema),
+        durationSec: z.number(),
+        costCpu: z.string(),
+    })
+    .passthrough();
+
+const modeSwitchCostConfigSchema = z.preprocess(
+    (value) => ({ known: value !== undefined, value: value ?? null }),
+    z.object({ known: z.boolean(), value: z.string().nullable() }).strict(),
+);
+
+export type ModeSwitchCostConfig = z.infer<typeof modeSwitchCostConfigSchema>;
 
 export const buildingEffectsSchema = z
     .object({
@@ -254,13 +273,39 @@ export const buildingEffectsSchema = z
 
 export const buildingConfigSchema = z
     .object({
+        type: z.string().min(1),
+        onChainId: z.number(),
+        name: z.string(),
+        kind: z.nativeEnum(BuildingKind),
+        tier: z.number(),
+        buildCost: z.string(),
+        buildTimeSec: z.number(),
+        buildInputs: z.array(craftStackSchema),
+        demolishCost: z
+            .object({ cpu: z.string(), inputs: z.array(craftStackSchema) })
+            .strict()
+            .nullable()
+            .default(null),
+        modeSwitchCost: modeSwitchCostConfigSchema,
+        minableResources: z.array(z.number()),
+        recipes: z.array(z.nativeEnum(CraftRecipeId)),
         effects: buildingEffectsSchema,
-        recipeOpexCpu: z.record(z.string(), z.string()).nullable().optional(),
+        recipeOpexCpu: z.record(z.string(), z.string()).nullable().default(null),
+        upgradeFrom: z.string().nullable().default(null),
+        upgradeTo: z.array(z.string()).default([]),
+        family: z.string().nullable().default(null),
+        level: z.number().nullable().default(null),
+        branch: z.string().nullable().default(null),
     })
     .passthrough();
 
+export type ParsedBuildingConfig = z.output<typeof buildingConfigSchema>;
+
 export const transportRoutingSchema = z
     .object({
+        moveRadius: z.number(),
+        hubRadius: z.number(),
+        moveTimePerCellSec: z.number(),
         moveFeeFloors: z.record(z.string(), z.string()).refine((floors) => Object.keys(floors).length > 0, {
             message:
                 'transport.moveFeeFloors must carry a per-resource transit-fee floor for every resource; the ' +
@@ -269,45 +314,63 @@ export const transportRoutingSchema = z
     })
     .passthrough();
 
+const resourceStorageCapsSchema = z
+    .object({
+        resourceId: z.number().int().nonnegative(),
+        cellCap: z.number().int().nonnegative(),
+        hubCap: z.number().int().nonnegative(),
+    })
+    .strict();
+
+export const storageConfigSchema = z
+    .object({ caps: z.array(resourceStorageCapsSchema) })
+    .strict()
+    .superRefine((storage, context) => {
+        for (let index = 1; index < storage.caps.length; index += 1) {
+            const previous = storage.caps[index - 1];
+            const current = storage.caps[index];
+            if (previous !== undefined && current !== undefined && current.resourceId <= previous.resourceId) {
+                context.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['caps', index, 'resourceId'],
+                    message: 'storage caps must be strictly ascending by resourceId',
+                });
+            }
+        }
+    });
+
 export const appConfigResponseSchema = z
     .object({
-        chainId: z.number(),
-        contracts: z.object({}).passthrough(),
-        storage: z.object({ hubStorageMultiplier: z.number() }).passthrough(),
-        resources: z.record(z.string(), z.string()).optional(),
-        recipes: z.array(z.object({}).passthrough()).optional(),
-        buildings: z.array(buildingConfigSchema).optional(),
-        reveal: z.object({}).passthrough().optional(),
+        network: z.literal(LAUNCH_NETWORK),
+        chainId: z.literal(LAUNCH_CHAIN_ID),
+        contracts: z
+            .object({
+                land: z.string().default(''),
+                cpuToken: z.string().default(''),
+                cpuHook: z.string().default(''),
+                cell: z.string().default(''),
+                cellLens: z.string().default(''),
+                transport: z.string().default(''),
+                trade: z.string().default(''),
+                syndicate: z.string().nullable().default(null),
+            })
+            .passthrough(),
+        randomness: z.unknown().nullable().default(null),
+        storage: storageConfigSchema,
+        resources: z.record(z.string(), z.string()).default({}),
+        recipes: z.array(recipeConfigSchema).default([]),
+        buildings: z.array(buildingConfigSchema).default([]),
+        reveal: z.unknown().nullable().default(null),
         transport: transportRoutingSchema,
-        trade: z.object({}).passthrough().optional(),
+        trade: z
+            .object({ saleBurnPercent: z.number().default(0), maxSaleFeeBp: z.number().default(0) })
+            .passthrough()
+            .default({}),
     })
     .passthrough();
 
-/** The building types a cell can hold — 6 tier-1 extractors, tier-2..5 crafters, and the Hub. */
-export enum BuildingType {
-    PumpStation = 'pump_station',
-    Quarry = 'quarry',
-    Derrick = 'derrick',
-    Mine = 'mine',
-    TungstenDrill = 'tungsten_drill',
-    LeachField = 'leach_field',
-    OilPowerPlant = 'oil_power_plant',
-    EnrichmentPlant = 'enrichment_plant',
-    Reactor = 'reactor',
-    ConcretePlant = 'concrete_plant',
-    SteelMill = 'steel_mill',
-    CopperSmelter = 'copper_smelter',
-    HeatsinkPlant = 'heatsink_plant',
-    ChemicalPlant = 'chemical_plant',
-    CompoundsPlant = 'compounds_plant',
-    SiliconPlant = 'silicon_plant',
-    WaferFab = 'wafer_fab',
-    CoolingPlant = 'cooling_plant',
-    AcceleratorFab = 'accelerator_fab',
-    NetworkAssembly = 'network_assembly',
-    Datacenter = 'datacenter',
-    Hub = 'hub',
-}
+/** Untrusted `GET /api/v1/config?network=` input accepted by the parser. */
+export type AppConfigResponse = z.input<typeof appConfigResponseSchema>;
 
 export enum DeliveryTargetKind {
     Cell = 'cell',

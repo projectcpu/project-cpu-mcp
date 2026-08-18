@@ -42,7 +42,12 @@ describe('modeCost', () => {
     });
 
     it('discloses an unknown price as unknown rather than as free or as impossible', () => {
-        const unknown: CatalogBuildingView = { ...MINE, modeSwitch: { kind: ModeSwitchKind.Unknown } };
+        if (!('modeSwitchCost' in MINE)) {
+            throw new Error('expected a building with a known switch cost');
+        }
+        const { modeSwitchCost, ...building } = MINE;
+        void modeSwitchCost;
+        const unknown: CatalogBuildingView = { ...building, modeSwitch: { kind: ModeSwitchKind.Unknown } };
 
         expect(modeCost(unknown, 5, 6)).toEqual({ kind: 'unknown' });
     });

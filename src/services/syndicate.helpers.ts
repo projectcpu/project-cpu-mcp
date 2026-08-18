@@ -24,8 +24,6 @@ export function toSyndicateCardView(card: ApiSyndicateCard): SyndicateCardView {
     return {
         id: card.id,
         manager: card.manager,
-        name: card.name,
-        link: card.link,
         rates: {
             tradeDiscountPercent: bpToPercent(card.rates.tradeDiscountBp),
             transportDiscountPercent: bpToPercent(card.rates.transportDiscountBp),

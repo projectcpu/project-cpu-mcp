@@ -29,7 +29,7 @@ function hubCell(tokenId: string, owner: string, buildFinishAt: number | null): 
         updated: 50,
         revealCount: 1,
         building: { type: BuildingType.Hub, buildFinishAt, modeResource: null, modeRecipeId: null },
-        resources: [makeResource({ resourceId: 1, deposit: '1000', storage: makeStorage({ used: '0', cap: '100' }) })],
+        resources: [makeResource({ resourceId: 1, deposit: '1000', storage: makeStorage({ used: '0' }) })],
     });
 }
 
@@ -140,7 +140,7 @@ describe('MapReader', () => {
 });
 
 describe('MapReader projection', () => {
-    it('multiplies the storage cap of a cell carrying an active hub', async () => {
+    it('selects the hub storage shelf for a cell carrying an active hub', async () => {
         const { reader } = makeReader([hubCell('72', '0xme', 500)]);
 
         const cell = await reader.readRevealCell('72');
@@ -191,7 +191,11 @@ describe('MapReader projection', () => {
                 building: { type: BuildingType.Mine, buildFinishAt: 500, modeResource: null, modeRecipeId: null },
                 process: makeMiningProcess({ resource: 1 }),
                 resources: [
-                    makeResource({ resourceId: 1, deposit: '1000', storage: makeStorage({ used: '100', cap: '100' }) }),
+                    makeResource({
+                        resourceId: 1,
+                        deposit: '1000',
+                        storage: makeStorage({ used: '100', cellCap: '100', hubCap: '100' }),
+                    }),
                 ],
             }),
         ]);

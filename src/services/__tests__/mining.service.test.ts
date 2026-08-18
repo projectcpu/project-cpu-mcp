@@ -15,7 +15,7 @@ import { makeCell, makeMiningProcess, makeResource, makeStorage } from '../../ma
 import type { RawCell, RawCellProcessMiningView } from '../../map/types.js';
 import { MAX_APPROVE_AMOUNT } from '../allowance.constants.js';
 import { MiningService } from '../mining.service.js';
-import { type AppConfig, ModeSwitchKind } from '../types.js';
+import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from '../types.js';
 import {
     CELL,
     CPU_TOKEN,
@@ -153,7 +153,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '95',
-                storage: makeStorage({ used: '95', cap: '100' }),
+                storage: makeStorage({ used: '95', cellCap: '100', hubCap: '100' }),
             }),
         ]);
         const { service } = makeService({ cell });
@@ -170,7 +170,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '75',
-                storage: makeStorage({ used: '75', cap: '100' }),
+                storage: makeStorage({ used: '75', cellCap: '100', hubCap: '100' }),
             }),
         ]);
         const { service } = makeService({ cell });
@@ -188,7 +188,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '50',
-                storage: makeStorage({ used: '50', cap: '50' }),
+                storage: makeStorage({ used: '50', cellCap: '50', hubCap: '50' }),
             }),
         ]);
         const { service } = makeService({ cell, serverTime: nowSec });
@@ -208,7 +208,7 @@ describe('MiningService.getStatus', () => {
                 resourceId: 3,
                 deposit: '500',
                 balance: '50',
-                storage: makeStorage({ used: '50', cap: '50' }),
+                storage: makeStorage({ used: '50', cellCap: '50', hubCap: '50' }),
             }),
         ]);
         const { service } = makeService({ cell });
@@ -447,6 +447,7 @@ describe('MiningService.startMining mode switch cost', () => {
                 ...mine,
                 type: BuildingType.TungstenDrill,
                 onChainId: 35,
+                modeSwitchCost: '9',
                 modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: '9' },
             },
         ];
@@ -512,9 +513,14 @@ describe('MiningService.startMining mode switch cost', () => {
 
     it('discloses an unknown price as unknown and still covers the burn with an allowance', async () => {
         const config = makeConfig();
-        config.buildings = config.buildings.map((b) =>
-            b.type === BuildingType.Mine ? { ...b, modeSwitch: { kind: ModeSwitchKind.Unknown } } : b,
-        );
+        config.buildings = config.buildings.map((b) => {
+            if (b.type !== BuildingType.Mine) {
+                return b;
+            }
+            const { modeSwitchCost, ...building } = b as CatalogBuildingView & { modeSwitchCost: string | null };
+            void modeSwitchCost;
+            return { ...building, modeSwitch: { kind: ModeSwitchKind.Unknown } };
+        });
         const { service, allowance } = makeService({
             cell: mineCell(),
             config,

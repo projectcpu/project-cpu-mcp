@@ -56,7 +56,7 @@ function sameAddress(a: string, b: string): boolean {
 }
 
 export function classifyNeighbors(
-    cell: RawCell,
+    cell: Pick<RawCell, 'tokenId'>,
     getByTokenId: (tokenId: string) => RawCell | null,
     ownerAddress: string | null,
 ): Array<NeighborRef> {
@@ -131,14 +131,17 @@ export function filterCells(cells: Iterable<RawCell>, query: MapQuery): Array<Ra
 }
 
 // A cell counts as depleted only after a reveal — an unrevealed cell has no deposits yet.
-export function isDepleted(cell: RawCell): boolean {
+export function isDepleted(cell: { revealCount: number; resources: Array<{ deposit: string }> }): boolean {
     return cell.revealCount > 0 && cell.resources.length > 0 && cell.resources.every((r) => r.deposit === '0');
 }
 
 // A just-demolished cell is empty (building === null) but locked from rebuilding until demolishFinishAt — the
 // single place that "still locked" rule lives. `startAt` is never reconstructed as finish-minus-configured-length:
 // that length can be changed mid-demolition, so the arithmetic would produce a confident lie.
-export function activeDemolition(cell: RawCell, serverTime: number): ActiveDemolition | null {
+export function activeDemolition(
+    cell: Pick<RawCell, 'demolishFinishAt' | 'demolishStartAt' | 'demolishingType'>,
+    serverTime: number,
+): ActiveDemolition | null {
     if (cell.demolishFinishAt === null || cell.demolishFinishAt <= serverTime) {
         return null;
     }
@@ -149,7 +152,7 @@ export function activeDemolition(cell: RawCell, serverTime: number): ActiveDemol
     };
 }
 
-function countStatuses(cells: Array<RawCell>): MapCellStatusCounts {
+function countStatuses(cells: Array<Cell>): MapCellStatusCounts {
     let idle = 0;
     let mining = 0;
     let crafting = 0;

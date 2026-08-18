@@ -1,6 +1,8 @@
-import { encodeFunctionData, formatEther, isAddress, zeroAddress, type Address } from 'viem';
+import { encodeFunctionData, formatEther, zeroAddress, type Address } from 'viem';
 
 import { SEADROP_ADDRESS } from './mint.constants.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
 import {
     type IAppConfig,
     type IMintService,
@@ -78,17 +80,12 @@ export class MintService implements IMintService {
     }
 
     private async prepare(input: MintInput): Promise<PreparedMint> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config.chainId, wallet.getChainId());
-
-        const land = config.contracts.land;
-        if (!isAddress(land, { strict: false })) {
-            throw new Error(`Land contract is not configured for network ${config.network}; cannot mint.`);
-        }
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const land = action.requireContract(AppContract.Land, 'cannot mint');
 
         const quantity = Number(input.quantity);
-        const drop = await this.readPublicDrop(wallet, land as Address);
+        const drop = await this.readPublicDrop(wallet, land);
 
         const now = Math.floor(Date.now() / 1000);
         if (now < drop.startTime) {
@@ -109,7 +106,7 @@ export class MintService implements IMintService {
         }
 
         const totalWei = BigInt(quantity) * drop.mintPrice;
-        return { config, wallet, land: land as Address, drop, quantity, totalWei };
+        return { config, wallet, land, drop, quantity, totalWei };
     }
 
     private async readPublicDrop(wallet: WalletManager, land: Address): Promise<PublicDropView> {
@@ -142,13 +139,5 @@ export class MintService implements IMintService {
             throw new Error('The land public drop has no allowed fee recipient configured; cannot mint.');
         }
         return feeRecipient;
-    }
-
-    private assertChain(configChainId: number, walletChainId: number): void {
-        if (configChainId !== walletChainId) {
-            throw new Error(
-                `Wallet chain ${walletChainId} does not match the configured network chain ${configChainId}.`,
-            );
-        }
     }
 }

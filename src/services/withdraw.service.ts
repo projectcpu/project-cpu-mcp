@@ -1,17 +1,12 @@
-import { isAddress, parseEther, parseEventLogs, type Address, type Log } from 'viem';
+import { parseEther, parseEventLogs, type Address, type Log } from 'viem';
 
-import type {
-    AppConfig,
-    IAppConfig,
-    ICellClient,
-    WithdrawInput,
-    WithdrawResult,
-    WithdrawServiceOptions,
-} from './types.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
+import type { IAppConfig, ICellClient, WithdrawInput, WithdrawResult, WithdrawServiceOptions } from './types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
 import type { Cell, RevealCellReader } from '../map/types.js';
-import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
+import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class WithdrawService {
     private readonly wallet: WalletProvider;
@@ -31,11 +26,9 @@ export class WithdrawService {
     }
 
     async withdraw(input: WithdrawInput): Promise<WithdrawResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
-
-        const cell = this.requireCell(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config, wallet } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot withdraw');
         const tokenId = BigInt(input.tokenId);
         const requestedUnits = BigInt(input.amount);
         const amount = parseEther(input.amount);
@@ -74,22 +67,6 @@ export class WithdrawService {
         const events = parseEventLogs({ abi: CELL_ABI, eventName: 'CpuWithdrawn', logs });
         const event = events.find((e) => e.address.toLowerCase() === cell.toLowerCase());
         return event === undefined ? null : event.args.amount;
-    }
-
-    private assertChain(config: AppConfig, wallet: WalletManager): void {
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
-    }
-
-    private requireCell(config: AppConfig): Address {
-        const cell = config.contracts.cell;
-        if (!isAddress(cell, { strict: false })) {
-            throw new Error(`Cell contract is not configured for network ${config.network}; cannot withdraw.`);
-        }
-        return cell;
     }
 
     private assertOwner(tokenId: string, state: Cell | null, address: string): void {

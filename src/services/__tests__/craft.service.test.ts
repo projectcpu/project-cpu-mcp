@@ -32,14 +32,17 @@ const FORGE: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.ForgeWcpu, ba
 const FORGE_X2: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.ForgeWcpu, batches: 2 };
 const STEEL: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.SmeltSteel, batches: 2 };
 
-function opexConfig(opexByType: Partial<Record<BuildingType, Record<string, string>>>) {
+function opexConfig(opexByType: Partial<Record<string, Record<string, string>>>) {
     const config = makeConfig();
     config.buildings = config.buildings.map((b) => ({ ...b, recipeOpexCpu: opexByType[b.type] ?? b.recipeOpexCpu }));
     return config;
 }
 
 function makeService(opts: Parameters<typeof makeCellHarness>[1] = {}) {
-    return makeCellHarness((deps) => new CraftService(deps), opts);
+    return makeCellHarness((deps) => new CraftService(deps), {
+        reads: { getCell: chainCellView({ buildingType: 17 }) },
+        ...opts,
+    });
 }
 
 function claimedLog(recipeId: bigint, batches: number, outResources: Array<number>, outAmounts: Array<bigint>): Log {
@@ -137,6 +140,83 @@ describe('CraftService.craft', () => {
         expect(contracts.sent).toHaveLength(0);
         expect(allowance.calls).toHaveLength(0);
     });
+
+    it('floors an efficient input per batch before multiplying by batches', async () => {
+        const config = makeConfig();
+        config.recipes = config.recipes.map((recipe) =>
+            recipe.id === CraftRecipeId.SmeltSteel ? { ...recipe, inputs: [{ resourceId: 5, amount: 3 }] } : recipe,
+        );
+        config.buildings = config.buildings.map((building) =>
+            building.type === BuildingType.WaferFab
+                ? {
+                      ...building,
+                      effects: { ...building.effects, inputEfficiency: [{ resourceId: 5, percent: 50 }] },
+                  }
+                : building,
+        );
+        const cell = fabCell();
+        cell.resources = [makeResource({ resourceId: 5, balance: '2' })];
+        const { service, contracts } = makeService({ config, cell });
+
+        await expect(service.craft(STEEL)).resolves.toMatchObject({ batches: 2 });
+        expect(contracts.sent).toHaveLength(1);
+    });
+
+    it('uses map building efficiency when the on-chain building read falls back', async () => {
+        const config = makeConfig();
+        config.recipes = config.recipes.map((recipe) =>
+            recipe.id === CraftRecipeId.SmeltSteel ? { ...recipe, inputs: [{ resourceId: 5, amount: 3 }] } : recipe,
+        );
+        config.buildings = config.buildings.map((building) =>
+            building.type === BuildingType.WaferFab
+                ? {
+                      ...building,
+                      effects: { ...building.effects, inputEfficiency: [{ resourceId: 5, percent: 50 }] },
+                  }
+                : building,
+        );
+        const cell = fabCell();
+        cell.resources = [makeResource({ resourceId: 5, balance: '2' })];
+        const { service, contracts } = makeService({
+            config,
+            cell,
+            reads: { getCell: new Error('rpc is down') },
+        });
+
+        await expect(service.craft(STEEL)).resolves.toMatchObject({ batches: 2 });
+        expect(contracts.sent).toHaveLength(1);
+    });
+
+    it('refuses a recipe the current building does not support before approval or send', async () => {
+        const { service, contracts, allowance } = makeService({
+            reads: { getCell: chainCellView({ buildingType: 11 }) },
+        });
+
+        await expect(service.craft(FORGE)).rejects.toThrow(/does not support recipe forge_wcpu/i);
+        expect(allowance.calls).toHaveLength(0);
+        expect(contracts.sent).toHaveLength(0);
+    });
+
+    it('refuses to invent an input quote when neither chain nor map identifies the building', async () => {
+        const { service, contracts, allowance } = makeService({ reads: { getCell: new Error('rpc is down') } });
+
+        await expect(service.craft(FORGE)).rejects.toThrow(/cannot determine the current building/i);
+        expect(allowance.calls).toHaveLength(0);
+        expect(contracts.sent).toHaveLength(0);
+    });
+
+    it('keeps recipe CPU arithmetic exact at 18 decimals and the maximum batch count', async () => {
+        const config = makeConfig();
+        config.recipes = config.recipes.map((recipe) =>
+            recipe.id === CraftRecipeId.ForgeWcpu ? { ...recipe, costCpu: '0.123456789012345678' } : recipe,
+        );
+        const input = { ...FORGE, batches: 1000 };
+        const { service, allowance } = makeService({ config, approve: APPROVE_HASH });
+
+        await service.craft(input);
+
+        expect(allowance.calls[0]?.needed).toBe(parseEther('0.123456789012345678') * 1000n);
+    });
 });
 
 describe('CraftService.getStatus', () => {
@@ -190,7 +270,7 @@ describe('CraftService.getStatus', () => {
                     deposit: '0',
                     balance: '60',
                     strength: null,
-                    storage: makeStorage({ used: '60', cap: '60' }),
+                    storage: makeStorage({ used: '60', cellCap: '60', hubCap: '60' }),
                 },
             ],
         });
@@ -227,7 +307,7 @@ describe('CraftService.getStatus', () => {
                     deposit: '0',
                     balance: '57',
                     strength: null,
-                    storage: makeStorage({ used: '57', cap: '60' }),
+                    storage: makeStorage({ used: '57', cellCap: '60', hubCap: '60' }),
                 },
             ],
         });

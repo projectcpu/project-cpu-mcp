@@ -1,10 +1,12 @@
-import { isAddress, parseEther, parseEventLogs, type Address, type Hash, type Log } from 'viem';
+import { parseEther, parseEventLogs, type Address, type Log } from 'viem';
 
-import { MAX_APPROVE_AMOUNT } from './allowance.constants.js';
-import { decodeBurnedCpu, feeWeiOf } from './burn.utils.js';
 import { recipeNameFromUint64, recipeNameToUint64 } from './cell.utils.js';
+import { effectiveCraftInputs } from './craft-quote.utils.js';
+import { ModeSwitchCoordinator } from './mode-switch.js';
+import { ModeOperation } from './mode-switch.types.js';
+import { preparePaidAction } from './paid-action.js';
+import { AppContract } from './paid-action.types.js';
 import {
-    type AppConfig,
     type CatalogBuildingView,
     type CraftClaimResult,
     type CraftInput,
@@ -13,72 +15,87 @@ import {
     type CraftServiceOptions,
     type CraftStartResult,
     type CraftStatusResult,
-    type ModeCostView,
-    type ModeSwitchCharge,
-    type IAllowanceService,
     type IAppConfig,
     type ICellClient,
-    ModeCostKind,
 } from './types.js';
 import { assertWarehouseHas } from './warehouse.utils.js';
 import type { CraftRecipeId } from '../api/types.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import type { ILogger } from '../logger/types.js';
-import { modeCost } from '../map/mode.utils.js';
-import { processOutputs } from '../map/process.utils.js';
-import { toSettleConfig } from '../map/reader.utils.js';
-import { cellProcessProgress } from '../map/settle.utils.js';
-import { blockedResourceIds } from '../map/storage.utils.js';
+import { projectCellProcess } from '../map/process-projection.utils.js';
+import { toProjectionConfig } from '../map/reader.utils.js';
 import { CellProcessKind, type RevealCellReader } from '../map/types.js';
 import { cpuFromWei } from '../utils/format.utils.js';
-import type { IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
+import type { IContractClient, WalletProvider } from '../wallet/types.js';
 
 export class CraftService {
     private readonly wallet: WalletProvider;
     private readonly appConfig: IAppConfig;
-    private readonly allowance: IAllowanceService;
     private readonly cellClient: ICellClient;
     private readonly contracts: IContractClient;
     private readonly mapReader: RevealCellReader;
     private readonly logger: ILogger;
+    private readonly modeSwitch: ModeSwitchCoordinator;
 
     constructor(options: CraftServiceOptions) {
         this.wallet = options.wallet;
         this.appConfig = options.appConfig;
-        this.allowance = options.allowance;
         this.cellClient = options.cellClient;
         this.contracts = options.contracts;
         this.mapReader = options.mapReader;
         this.logger = options.logger;
+        this.modeSwitch = new ModeSwitchCoordinator({
+            allowance: options.allowance,
+            cellClient: options.cellClient,
+            logger: options.logger,
+        });
     }
 
     async craft(input: CraftInput): Promise<CraftStartResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
-
-        const cell = this.requireCell(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const { config } = action;
+        const cell = action.requireContract(AppContract.Cell, 'cannot craft');
         const recipe = config.recipes.find((r) => r.id === input.recipeId);
         if (recipe === undefined) {
             throw new Error(`Recipe ${input.recipeId} is not available on network ${config.network}.`);
         }
 
-        // Paid action — refresh, then verify the warehouse holds the per-batch inputs × batches before spending
-        // gas, instead of letting startCraft revert InsufficientLiquid after the $CPU approve.
+        // Paid action — resolve the current building before trusting either its recipe set or its input effects.
         await this.mapReader.refresh();
         const state = await this.mapReader.readRevealCell(input.tokenId);
-        const required = recipe.inputs.map((i) => ({ resourceId: i.resourceId, amount: i.amount * input.batches }));
-        assertWarehouseHas(config.resources, state, required, input.tokenId, 'craft');
-
-        const recipeCostWei = parseEther(recipe.costCpu) * BigInt(input.batches);
         const tokenId = BigInt(input.tokenId);
         const targetRecipe = recipeNameToUint64(input.recipeId);
         const mapView = config.buildings.find((b) => b.type === state?.building?.type) ?? null;
-        const priced = await this.priceContext(config, cell, tokenId, mapView, state?.building?.modeRecipeId ?? null);
-        const opex = this.opexOf(priced.view, input.recipeId, input.batches);
-        const expectedBaseWei = recipeCostWei + opex.wei;
-        const cost = modeCost(priced.view, priced.mode, targetRecipe);
-        const approveTxHash = await this.approve(config, cell, expectedBaseWei, cost);
+        const prepared = await this.modeSwitch.prepare({
+            action,
+            cell,
+            tokenId,
+            operation: ModeOperation.Craft,
+            target: targetRecipe,
+            mapBuilding: mapView,
+            mapMode:
+                state?.building?.modeRecipeId === null || state?.building?.modeRecipeId === undefined
+                    ? null
+                    : recipeNameToUint64(state.building.modeRecipeId as CraftRecipeId),
+            paymentPurpose: 'cannot pay for craft',
+            quote: (building) => {
+                if (building === null) {
+                    throw new Error(
+                        `Cannot determine the current building for cell ${input.tokenId}; cannot quote craft inputs.`,
+                    );
+                }
+                if (!building.recipes.includes(input.recipeId)) {
+                    throw new Error(`Building ${building.type} does not support recipe ${input.recipeId}.`);
+                }
+                const required = effectiveCraftInputs(recipe, building, input.batches);
+                assertWarehouseHas(config.resources, state, required, input.tokenId, 'craft');
+                const recipeCostWei = parseEther(recipe.costCpu) * BigInt(input.batches);
+                const opex = this.opexOf(building, input.recipeId, input.batches);
+                return { baseCostWei: recipeCostWei + opex.wei, data: { recipeCostWei, opex } };
+            },
+        });
+        const { recipeCostWei, opex } = prepared.data;
+        const expectedBaseWei = prepared.charge.baseCostWei;
 
         this.logger.info('starting craft', {
             tokenId: input.tokenId,
@@ -87,8 +104,8 @@ export class CraftService {
             costCpu: cpuFromWei(recipeCostWei.toString()),
             opexCpu: opex.charge.costCpu,
             opexServed: opex.charge.served,
-            switchCost: cost,
-            switchCostExact: priced.exact,
+            switchCost: prepared.charge.cost,
+            switchCostExact: prepared.charge.exact,
         });
         const txHash = await this.cellClient.startCraft({
             cell,
@@ -105,8 +122,8 @@ export class CraftService {
             costCpu: cpuFromWei(recipeCostWei.toString()),
             opex: opex.charge,
             totalCpu: cpuFromWei(expectedBaseWei.toString()),
-            modeSwitch: this.chargeOf(config, cost, priced.exact, confirmed.logs, expectedBaseWei),
-            approveTxHash,
+            modeSwitch: this.modeSwitch.reconcile({ prepared: prepared.charge, logs: confirmed.logs }),
+            approveTxHash: prepared.charge.approveTxHash,
             txHash: confirmed.txHash,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
@@ -126,63 +143,9 @@ export class CraftService {
         return { wei, charge: { served: true, costCpu: cpuFromWei(wei.toString()) } };
     }
 
-    private async priceContext(
-        config: AppConfig,
-        cell: Address,
-        tokenId: bigint,
-        mapView: CatalogBuildingView | null,
-        mapMode: string | null,
-    ): Promise<{ mode: bigint | null; view: CatalogBuildingView | null; exact: boolean }> {
-        try {
-            const chain = await this.cellClient.readCellView(cell, tokenId);
-            const view = config.buildings.find((b) => b.onChainId === chain.buildingType) ?? null;
-            return { mode: chain.modeRecipeId === 0n ? null : chain.modeRecipeId, view, exact: true };
-        } catch (error) {
-            this.logger.warn('could not read the cell mode on-chain — pricing the switch off the map', {
-                tokenId: tokenId.toString(),
-                error,
-            });
-            const mode = mapMode === null ? null : recipeNameToUint64(mapMode as CraftRecipeId);
-            return { mode, view: mapView, exact: false };
-        }
-    }
-
-    private async approve(
-        config: AppConfig,
-        cell: Address,
-        expectedBaseWei: bigint,
-        cost: ModeCostView,
-    ): Promise<Hash | null> {
-        const totalWei = expectedBaseWei + feeWeiOf(cost);
-        if (totalWei === 0n && cost.kind !== ModeCostKind.Unknown) {
-            return null;
-        }
-        const cpuToken = this.requireCpuToken(config);
-        const needed = cost.kind === ModeCostKind.Unknown ? MAX_APPROVE_AMOUNT : totalWei;
-        return this.allowance.ensureAllowance(cpuToken, cell, needed);
-    }
-
-    private chargeOf(
-        config: AppConfig,
-        cost: ModeCostView,
-        exact: boolean,
-        logs: Array<Log>,
-        expectedBaseWei: bigint,
-    ): ModeSwitchCharge {
-        const cpuToken = config.contracts.cpuToken;
-        if (!isAddress(cpuToken, { strict: false })) {
-            return { cost, exact, burnedCpu: null };
-        }
-        const burned = decodeBurnedCpu(logs, cpuToken, this.wallet.get().getAddress());
-        return { cost, exact, burnedCpu: cpuFromWei((burned - expectedBaseWei).toString()) };
-    }
-
     async claim(tokenId: string): Promise<CraftClaimResult> {
-        const config = await this.appConfig.load();
-        const wallet = this.wallet.get();
-        this.assertChain(config, wallet);
-
-        const cell = this.requireCell(config);
+        const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
+        const cell = action.requireContract(AppContract.Cell, 'cannot craft');
         this.logger.info('claiming craft outputs', { tokenId });
         const txHash = await this.cellClient.claim({ cell, tokenId: BigInt(tokenId) });
         const confirmed = await this.contracts.confirm(txHash, 'Craft claim');
@@ -230,9 +193,10 @@ export class CraftService {
 
         const serverTime = this.mapReader.getServerTime();
         const config = await this.appConfig.load();
-        const settleConfig = toSettleConfig(config);
-        const { progress } = cellProcessProgress(state, process, serverTime, settleConfig);
-        const outputs = processOutputs(process, settleConfig.craftOutputsByRecipe);
+        const projection = projectCellProcess(state, serverTime, toProjectionConfig(config));
+        if (projection === null) {
+            throw new Error(`Cell ${tokenId} lost its craft process while its status was being projected.`);
+        }
 
         return {
             tokenId,
@@ -241,11 +205,13 @@ export class CraftService {
             recipeId: process.recipeId,
             batches: process.batches,
             claimedBatches: process.claimedBatches,
-            ...progress,
+            ...projection.progress,
             startAt: process.startAt,
             durationSec: process.durationSec,
-            stalled: process.stalled,
-            blockedResourceIds: blockedResourceIds(outputs, state.resources),
+            stalled: projection.stalled,
+            blockedResourceIds: projection.warehouseEffects
+                .filter((effect) => effect.blocked)
+                .map((effect) => effect.resourceId),
         };
     }
 
@@ -268,29 +234,5 @@ export class CraftService {
             claimedBatches: event.args.claimedBatches,
             outputs,
         };
-    }
-
-    private assertChain(config: AppConfig, wallet: WalletManager): void {
-        if (config.chainId !== wallet.getChainId()) {
-            throw new Error(
-                `Chain mismatch: the chain config is chainId ${config.chainId} but the wallet is on ${wallet.getChainId()}. Check NETWORK.`,
-            );
-        }
-    }
-
-    private requireCell(config: AppConfig): Address {
-        const cell = config.contracts.cell;
-        if (!isAddress(cell, { strict: false })) {
-            throw new Error(`Cell contract is not configured for network ${config.network}; cannot craft.`);
-        }
-        return cell;
-    }
-
-    private requireCpuToken(config: AppConfig): Address {
-        const cpuToken = config.contracts.cpuToken;
-        if (!isAddress(cpuToken, { strict: false })) {
-            throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay for craft.`);
-        }
-        return cpuToken;
     }
 }
