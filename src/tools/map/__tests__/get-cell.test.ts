@@ -63,6 +63,7 @@ const inspection: CellInspection = {
             resource: 3,
             durationSec: 180,
             yieldPerCycle: 77,
+            processDrawPerCycle: 77,
             batches: 10,
             claimedBatches: 0,
             startAt: 1700,

@@ -2,6 +2,7 @@ import {
     decodeFunctionData,
     encodeAbiParameters,
     encodeEventTopics,
+    parseAbiItem,
     parseEther,
     type Address,
     type Hex,
@@ -28,6 +29,11 @@ import {
     WALLET_ADDRESS,
 } from './service-fakes.js';
 
+const CRAFT_CLAIMED_EVENT = parseAbiItem(
+    'event CraftClaimed(uint256 indexed tokenId, address indexed owner, uint64 recipeId, uint32 batches, ' +
+        'uint16[] outputResources, uint64[] outputAmounts, uint64 startAt, uint32 claimedBatches, uint64 claimedAt)',
+);
+
 const FORGE: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.ForgeWcpu, batches: 1 };
 const FORGE_X2: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.ForgeWcpu, batches: 2 };
 const STEEL: CraftInput = { tokenId: '42', recipeId: CraftRecipeId.SmeltSteel, batches: 2 };
@@ -46,7 +52,11 @@ function makeService(opts: Parameters<typeof makeCellHarness>[1] = {}) {
 }
 
 function claimedLog(recipeId: bigint, batches: number, outResources: Array<number>, outAmounts: Array<bigint>): Log {
-    const topics = encodeEventTopics({ abi: CELL_ABI, eventName: 'CraftClaimed', args: { tokenId: 42n } });
+    const topics = encodeEventTopics({
+        abi: [CRAFT_CLAIMED_EVENT],
+        eventName: 'CraftClaimed',
+        args: { tokenId: 42n, owner: WALLET_ADDRESS },
+    });
     const data = encodeAbiParameters(
         [
             { type: 'uint64' },
@@ -55,8 +65,9 @@ function claimedLog(recipeId: bigint, batches: number, outResources: Array<numbe
             { type: 'uint64[]' },
             { type: 'uint64' },
             { type: 'uint32' },
+            { type: 'uint64' },
         ],
-        [recipeId, batches, outResources, outAmounts, 0n, batches],
+        [recipeId, batches, outResources, outAmounts, 0n, batches, 1_700_000_000n],
     );
     return {
         address: CELL as Address,
@@ -318,6 +329,85 @@ describe('CraftService.getStatus', () => {
         expect(status.stalled).toBe(true);
         expect(status.blockedResourceIds).toEqual([102]);
         expect(status.claimableBatches).toBe(0);
+    });
+
+    it('uses the configured Cell shelf when the craft output has no resource row yet', async () => {
+        const config = makeConfig();
+        config.storage.caps.push({ resourceId: 102, cellCap: 5, hubCap: 100 });
+        config.recipes = config.recipes.map((recipe) =>
+            recipe.id === CraftRecipeId.SmeltSteel ? { ...recipe, outputs: [{ resourceId: 102, amount: 10 }] } : recipe,
+        );
+        const cell = makeCell({
+            tokenId: '42',
+            process: {
+                kind: CellProcessKind.Craft,
+                recipeId: CraftRecipeId.SmeltSteel,
+                batches: 2,
+                claimedBatches: 0,
+                durationSec: 60,
+                startAt: 1,
+            },
+        });
+        const { service } = makeService({ cell, config });
+
+        const status = await service.getStatus('42');
+
+        expect(status.stalled).toBe(true);
+        expect(status.blockedResourceIds).toEqual([102]);
+        expect(status.claimableBatches).toBe(0);
+    });
+
+    it('uses the configured Hub shelf for an absent craft output row', async () => {
+        const config = makeConfig();
+        config.storage.caps.push({ resourceId: 102, cellCap: 5, hubCap: 100 });
+        config.recipes = config.recipes.map((recipe) =>
+            recipe.id === CraftRecipeId.SmeltSteel ? { ...recipe, outputs: [{ resourceId: 102, amount: 10 }] } : recipe,
+        );
+        const cell = makeCell({
+            tokenId: '42',
+            building: { type: BuildingType.Hub, buildFinishAt: null, modeResource: null, modeRecipeId: null },
+            process: {
+                kind: CellProcessKind.Craft,
+                recipeId: CraftRecipeId.SmeltSteel,
+                batches: 2,
+                claimedBatches: 0,
+                durationSec: 60,
+                startAt: 1,
+            },
+        });
+        const { service } = makeService({ cell, config });
+
+        const status = await service.getStatus('42');
+
+        expect(status.stalled).toBe(false);
+        expect(status.blockedResourceIds).toEqual([]);
+        expect(status.claimableBatches).toBe(2);
+    });
+
+    it('does not expose blocked outputs after the craft schedule is complete', async () => {
+        const config = makeConfig();
+        config.storage.caps.push({ resourceId: 102, cellCap: 5, hubCap: 100 });
+        config.recipes = config.recipes.map((recipe) =>
+            recipe.id === CraftRecipeId.SmeltSteel ? { ...recipe, outputs: [{ resourceId: 102, amount: 10 }] } : recipe,
+        );
+        const cell = makeCell({
+            tokenId: '42',
+            process: {
+                kind: CellProcessKind.Craft,
+                recipeId: CraftRecipeId.SmeltSteel,
+                batches: 2,
+                claimedBatches: 2,
+                durationSec: 60,
+                startAt: 1,
+            },
+        });
+        const { service } = makeService({ cell, config });
+
+        const status = await service.getStatus('42');
+
+        expect(status.isFinished).toBe(true);
+        expect(status.stalled).toBe(false);
+        expect(status.blockedResourceIds).toEqual([]);
     });
 });
 

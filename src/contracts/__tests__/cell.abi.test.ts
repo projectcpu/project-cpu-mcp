@@ -4,6 +4,7 @@ import {
     encodeAbiParameters,
     encodeEventTopics,
     encodeFunctionData,
+    encodeFunctionResult,
     type Address,
     type Hex,
 } from 'viem';
@@ -127,5 +128,43 @@ describe('CELL_ABI storage surface', () => {
 
         expect(names).not.toContain('getHubStorageMultiplier');
         expect(names).not.toContain('StorageCapOverflow');
+    });
+});
+
+describe('CELL_ABI process snapshot surface', () => {
+    it('decodes the trailing snapshotted Take from CellView', () => {
+        const encoded = encodeFunctionResult({
+            abi: CELL_ABI,
+            functionName: 'getCell',
+            result: {
+                revealed: true,
+                revealCount: 1,
+                depositResource: [5, 0, 0],
+                depositAmount: [500n, 0n, 0n],
+                depositStrength: [3, 0, 0],
+                buildingType: 4,
+                buildFinishAt: 0n,
+                demolishFinishAt: 0n,
+                process: {
+                    kind: 1,
+                    startAt: 1_700_000_000n,
+                    resource: 5,
+                    yieldPerCycle: 100n,
+                    recipeId: 0n,
+                    durationSec: 60,
+                    batches: 10,
+                    claimedBatches: 2,
+                },
+                owner: SOURCE,
+                revealPending: false,
+                modeResource: 5,
+                modeRecipeId: 0n,
+                processDrawPerCycle: 125n,
+            },
+        });
+
+        const decoded = decodeFunctionResult({ abi: CELL_ABI, functionName: 'getCell', data: encoded });
+
+        expect(decoded.processDrawPerCycle).toBe(125n);
     });
 });

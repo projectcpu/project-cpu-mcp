@@ -1,9 +1,17 @@
-import { type Abi, type Address, encodeAbiParameters, encodeEventTopics, type Hash, type Log, parseEther } from 'viem';
+import {
+    type Abi,
+    type Address,
+    encodeAbiParameters,
+    encodeEventTopics,
+    type Hash,
+    type Log,
+    parseAbiItem,
+    parseEther,
+} from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import type { ApiClient } from '../../api/client.js';
 import { DeliveryTargetKind, type DeliveryResponse } from '../../api/types.js';
-import { TRANSPORT_ABI } from '../../contracts/transport.abi.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import {
     type ConfirmedTx,
@@ -36,6 +44,11 @@ import {
 } from './service-fakes.js';
 
 const FOREIGN_OWNER = '0x00000000000000000000000000000000000000f1' as Address;
+const DELIVERY_SCHEDULED_EVENT = parseAbiItem(
+    'event DeliveryScheduled(uint256 indexed deliveryId, address indexed payer, uint256 sourceId, ' +
+        'address receiver, uint256 targetId, uint16 resource, uint64 amount, uint64 arrivalAt, ' +
+        'uint256[] waypoints, uint64 scheduledAt)',
+);
 
 const MOVE_HASH = `0x${'1'.repeat(64)}` as Hash;
 const FINALIZE_HASH = `0x${'2'.repeat(64)}` as Hash;
@@ -48,7 +61,7 @@ const INPUT = {
 
 function scheduledLog(args: { deliveryId: bigint; sourceId: bigint; targetId: bigint; arrivalAt: bigint }): Log {
     const topics = encodeEventTopics({
-        abi: TRANSPORT_ABI,
+        abi: [DELIVERY_SCHEDULED_EVENT],
         eventName: 'DeliveryScheduled',
         args: { deliveryId: args.deliveryId, payer: WALLET_ADDRESS },
     });
@@ -60,8 +73,19 @@ function scheduledLog(args: { deliveryId: bigint; sourceId: bigint; targetId: bi
             { name: 'resource', type: 'uint16' },
             { name: 'amount', type: 'uint64' },
             { name: 'arrivalAt', type: 'uint64' },
+            { name: 'waypoints', type: 'uint256[]' },
+            { name: 'scheduledAt', type: 'uint64' },
         ],
-        [args.sourceId, WALLET_ADDRESS, args.targetId, 3, 100n, args.arrivalAt],
+        [
+            args.sourceId,
+            WALLET_ADDRESS,
+            args.targetId,
+            3,
+            100n,
+            args.arrivalAt,
+            [args.sourceId, args.targetId],
+            1_700_000_000n,
+        ],
     );
     return {
         address: TRANSPORT,

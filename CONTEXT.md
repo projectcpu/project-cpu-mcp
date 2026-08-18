@@ -52,11 +52,12 @@ produces past it. Mining and crafting differ in what they consume, not in how th
 - **Take** — the full per-cycle deposit draw of an extractor: everything one mining Cycle removes from the
   deposit, before the Extraction share splits it. Equal to Warehouse credit on a base extractor; larger on
   an upgraded one, whose Extraction share credits only part of what it takes — so those deposits drain
-  faster than Warehouse credit alone suggests. Not itself surfaced on the map; reconstructed from
-  Warehouse credit and Extraction share.
+  faster than Warehouse credit alone suggests. Snapshotted when Mining starts and surfaced on its Process
+  as `processDrawPerCycle`; a `0` from a legacy snapshot means Take equals Warehouse credit.
 - **Extraction share** — the basis-point fraction of the Take credited to the warehouse as Warehouse
   credit; the rest returns to the reservoir rather than being lost. A building property
   (`effects.extractionShareBp` in `cpu_get_game_config`), lower on an upgraded extractor than on a base one.
+  It determines a newly started Process but never rewrites the Take already snapshotted onto a running one.
 - **Stall** — a Process whose matured Cycles cannot settle because the room holds less than one whole
   Cycle's output. Claims settle in whole Cycles, so a partial cycle's worth of room banks nothing. Stalled
   time is discarded — the cursor resets to the moment of the settle and the remaining Batches start

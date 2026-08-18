@@ -2,6 +2,7 @@ import {
     decodeFunctionData,
     encodeAbiParameters,
     encodeEventTopics,
+    parseAbiItem,
     parseEther,
     type Address,
     type Hex,
@@ -27,24 +28,55 @@ import {
     WALLET_ADDRESS,
 } from './service-fakes.js';
 
+const RESOURCE_MINED_EVENT = parseAbiItem(
+    'event ResourceMined(uint256 indexed tokenId, address indexed owner, uint16 resource, uint64 amount, ' +
+        'uint64 drained, uint64 startAt, uint32 claimedBatches, uint64 claimedAt)',
+);
+const MINING_STARTED_EVENT = parseAbiItem(
+    'event MiningStarted(uint256 indexed tokenId, uint16 resource, uint32 durationSec, uint64 yieldPerCycle, ' +
+        'uint32 batches, uint64 startAt, uint64 drawPerCycle)',
+);
+
 function makeService(opts: Parameters<typeof makeCellHarness>[1] = {}) {
     return makeCellHarness((deps) => new MiningService(deps), opts);
 }
 
 function minedLog(resource: number, amount: bigint): Log {
-    const topics = encodeEventTopics({ abi: CELL_ABI, eventName: 'ResourceMined', args: { tokenId: 42n } });
+    const topics = encodeEventTopics({
+        abi: [RESOURCE_MINED_EVENT],
+        eventName: 'ResourceMined',
+        args: { tokenId: 42n, owner: WALLET_ADDRESS },
+    });
     const data = encodeAbiParameters(
-        [{ type: 'uint16' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint64' }, { type: 'uint32' }],
-        [resource, amount, amount, 0n, 1],
+        [
+            { type: 'uint16' },
+            { type: 'uint64' },
+            { type: 'uint64' },
+            { type: 'uint64' },
+            { type: 'uint32' },
+            { type: 'uint64' },
+        ],
+        [resource, amount, amount, 0n, 1, 1_700_000_000n],
     );
     return { address: CELL as Address, topics, data, ...LOG_META } as unknown as Log;
 }
 
 function startedLog(resource: number, durationSec: number, yieldPerCycle: bigint, batches = 10): Log {
-    const topics = encodeEventTopics({ abi: CELL_ABI, eventName: 'MiningStarted', args: { tokenId: 42n } });
+    const topics = encodeEventTopics({
+        abi: [MINING_STARTED_EVENT],
+        eventName: 'MiningStarted',
+        args: { tokenId: 42n },
+    });
     const data = encodeAbiParameters(
-        [{ type: 'uint16' }, { type: 'uint32' }, { type: 'uint64' }, { type: 'uint32' }, { type: 'uint64' }],
-        [resource, durationSec, yieldPerCycle, batches, 0n],
+        [
+            { type: 'uint16' },
+            { type: 'uint32' },
+            { type: 'uint64' },
+            { type: 'uint32' },
+            { type: 'uint64' },
+            { type: 'uint64' },
+        ],
+        [resource, durationSec, yieldPerCycle, batches, 0n, yieldPerCycle],
     );
     return { address: CELL as Address, topics, data, ...LOG_META } as unknown as Log;
 }
@@ -131,13 +163,16 @@ describe('MiningService.getStatus', () => {
     });
 
     it('drains more from the deposit than it credits on a partial-share extractor', async () => {
-        const cell = miningCell({ durationSec: 10, yieldPerCycle: 100, batches: 1000, startAt: 1 }, uncapped('750'));
+        const cell = miningCell(
+            { durationSec: 10, yieldPerCycle: 100, processDrawPerCycle: 125, batches: 1000, startAt: 1 },
+            uncapped('750'),
+        );
         const config = makeConfig();
         const mine = config.buildings.find((b) => b.type === BuildingType.Mine);
         if (mine === undefined) {
             throw new Error('expected a Mine in the fake config');
         }
-        mine.effects = { ...mine.effects, extractionShareBp: 8000 };
+        mine.effects = { ...mine.effects, extractionShareBp: 5000 };
         const { service } = makeService({ cell, config });
 
         const status = await service.getStatus('42');
@@ -219,6 +254,43 @@ describe('MiningService.getStatus', () => {
         expect(status.claimable).toBe('0');
         expect(status.warehouseUsed).toBe('50');
         expect(status.warehouseCap).toBe('50');
+    });
+
+    it('uses the Hub shelf selected by the shared map projection', async () => {
+        const cell = miningCell({ durationSec: 10, yieldPerCycle: 10, batches: 2, startAt: 1 }, [
+            makeResource({
+                resourceId: 3,
+                deposit: '500',
+                storage: makeStorage({ used: '50', cellCap: '50', hubCap: '100' }),
+            }),
+        ]);
+        cell.building = { type: BuildingType.Hub, buildFinishAt: null, modeResource: null, modeRecipeId: null };
+        const { service } = makeService({ cell });
+
+        const status = await service.getStatus('42');
+
+        expect(status.warehouseUsed).toBe('50');
+        expect(status.warehouseCap).toBe('100');
+        expect(status.stalled).toBe(false);
+        expect(status.claimableBatches).toBe(2);
+    });
+
+    it('reports depleted Mining as finished instead of stalled even when its output shelf is full', async () => {
+        const cell = miningCell({ durationSec: 10, yieldPerCycle: 10, batches: 100, startAt: 1 }, [
+            makeResource({
+                resourceId: 3,
+                deposit: '0',
+                balance: '50',
+                storage: makeStorage({ used: '50', cellCap: '50', hubCap: '50' }),
+            }),
+        ]);
+        const { service } = makeService({ cell });
+
+        const status = await service.getStatus('42');
+
+        expect(status.isFinished).toBe(true);
+        expect(status.stalled).toBe(false);
+        expect(status.claimableBatches).toBe(0);
     });
 
     it('retires a job predating bounded mining without crediting anything', async () => {

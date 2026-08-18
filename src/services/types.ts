@@ -222,6 +222,7 @@ export interface CellViewResult {
     buildingType: number;
     modeResource: number;
     modeRecipeId: bigint;
+    processDrawPerCycle: bigint;
 }
 
 export interface ICellClient {

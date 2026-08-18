@@ -70,6 +70,8 @@ export const TRANSPORT_ABI = [
             { name: 'resource', type: 'uint16', indexed: false, internalType: 'uint16' },
             { name: 'amount', type: 'uint64', indexed: false, internalType: 'uint64' },
             { name: 'arrivalAt', type: 'uint64', indexed: false, internalType: 'uint64' },
+            { name: 'waypoints', type: 'uint256[]', indexed: false, internalType: 'uint256[]' },
+            { name: 'scheduledAt', type: 'uint64', indexed: false, internalType: 'uint64' },
         ],
         anonymous: false,
     },

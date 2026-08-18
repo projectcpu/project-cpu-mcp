@@ -172,6 +172,7 @@ export const TRADE_ABI = [
             { name: 'buyerSyndicateId', type: 'uint256', indexed: false, internalType: 'uint256' },
             { name: 'ownerSyndicateId', type: 'uint256', indexed: false, internalType: 'uint256' },
             { name: 'taxTo', type: 'address', indexed: false, internalType: 'address' },
+            { name: 'hubOwner', type: 'address', indexed: false, internalType: 'address' },
             { name: 'settledAt', type: 'uint64', indexed: false, internalType: 'uint64' },
         ],
         anonymous: false,

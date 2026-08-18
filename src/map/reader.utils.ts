@@ -1,4 +1,4 @@
-import type { CellProjectionConfig, ProcessOutput } from './types.js';
+import type { CellProjectionConfig, ProcessOutput, ResourceStorageCaps } from './types.js';
 import { BuildingKind } from '../api/types.js';
 import type { AppConfig } from '../services/types.js';
 
@@ -10,8 +10,16 @@ export function craftOutputsByRecipe(config: AppConfig): Record<string, Array<Pr
     return Object.fromEntries(config.recipes.map((r): [string, Array<ProcessOutput>] => [r.id, r.outputs]));
 }
 
-export function extractionShareBpByBuilding(config: AppConfig): Record<string, number> {
-    return Object.fromEntries(config.buildings.map((b): [string, number] => [b.type, b.effects.extractionShareBp]));
+export function storageCapsByResource(config: AppConfig): Record<number, ResourceStorageCaps> {
+    return Object.fromEntries(
+        config.storage.caps.map((caps): [number, ResourceStorageCaps] => [
+            caps.resourceId,
+            {
+                cellCap: caps.cellCap === 0 ? null : BigInt(caps.cellCap),
+                hubCap: caps.hubCap === 0 ? null : BigInt(caps.hubCap),
+            },
+        ]),
+    );
 }
 
 export function toProjectionConfig(config: AppConfig): CellProjectionConfig {
@@ -21,6 +29,6 @@ export function toProjectionConfig(config: AppConfig): CellProjectionConfig {
             config.buildings.map((building) => [building.type, building.upgradeFrom]),
         ),
         craftOutputsByRecipe: craftOutputsByRecipe(config),
-        extractionShareBpByBuilding: extractionShareBpByBuilding(config),
+        storageCapsByResource: storageCapsByResource(config),
     };
 }

@@ -43,6 +43,7 @@ export const rawCellProcessMiningViewSchema = z.object({
     resource: z.number(),
     durationSec: z.number(),
     yieldPerCycle: z.number(),
+    processDrawPerCycle: z.number().int().nonnegative().default(0),
     batches: z.number(),
     claimedBatches: z.number(),
     startAt: z.number(),
@@ -167,6 +168,11 @@ export interface ProcessWarehouseEffect {
     blocked: boolean;
 }
 
+export interface ResourceStorageCaps {
+    cellCap: bigint | null;
+    hubCap: bigint | null;
+}
+
 export interface ProcessProjection {
     stalled: boolean;
     warehouseEffects: Array<ProcessWarehouseEffect>;
@@ -176,7 +182,7 @@ export interface ProcessProjection {
 
 export interface ProcessProjectionConfig {
     craftOutputsByRecipe: Record<string, Array<ProcessOutput>>;
-    extractionShareBpByBuilding: Record<string, number>;
+    storageCapsByResource: Record<number, ResourceStorageCaps>;
 }
 
 export interface CellProjectionConfig extends ProcessProjectionConfig {

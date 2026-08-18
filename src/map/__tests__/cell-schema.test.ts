@@ -151,7 +151,32 @@ describe('rawCellSchema wire shape', () => {
         ).toBeNull();
     });
 
-    it('parses a process that carries no stall flag', () => {
+    it('parses a mining process with its snapshotted Take and no stall flag', () => {
+        const cell = parseCell(
+            rawCell({
+                process: {
+                    kind: 'mining',
+                    resource: 1,
+                    durationSec: 180,
+                    yieldPerCycle: 77,
+                    processDrawPerCycle: 96,
+                    batches: 10,
+                    claimedBatches: 3,
+                    startAt: 1,
+                },
+            }),
+        );
+
+        expect(cell?.process).toMatchObject({
+            resource: 1,
+            yieldPerCycle: 77,
+            processDrawPerCycle: 96,
+            batches: 10,
+            claimedBatches: 3,
+        });
+    });
+
+    it('normalizes a mining snapshot from before Take was surfaced to zero', () => {
         const cell = parseCell(
             rawCell({
                 process: {
@@ -166,7 +191,7 @@ describe('rawCellSchema wire shape', () => {
             }),
         );
 
-        expect(cell?.process).toMatchObject({ resource: 1, yieldPerCycle: 77, batches: 10, claimedBatches: 3 });
+        expect(cell?.process).toMatchObject({ processDrawPerCycle: 0 });
     });
 
     it('drops a mining process still carrying the pre-bounded-job shape', () => {
