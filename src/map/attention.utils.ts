@@ -6,6 +6,7 @@ import {
 } from './constants.js';
 import { activeDemolition, isDepleted } from './map.utils.js';
 import { projectCellProcess } from './process-projection.utils.js';
+import { configuredStorageCap, usesHubShelf } from './storage.utils.js';
 import {
     type AttentionItem,
     AttentionReason,
@@ -13,8 +14,8 @@ import {
     AttentionSeverity,
     type CellResource,
     type Cell,
+    type CellProjectionConfig,
     CellProcessKind,
-    type ProcessProjectionConfig,
     type RevealAttentionInput,
 } from './types.js';
 import type { OpenRevealRequestView } from '../api/types.js';
@@ -41,7 +42,7 @@ const REASON_SEVERITY: Record<AttentionReason, AttentionSeverity> = {
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = { [Critical]: 0, [Warning]: 1, [Info]: 2 };
 
-export interface BuildAttentionInput extends ProcessProjectionConfig {
+export interface BuildAttentionInput extends CellProjectionConfig {
     ownedCells: Array<Cell> | null;
     version: number;
     serverTime: number;
@@ -94,6 +95,17 @@ function storageFields(resource: CellResource): Partial<AttentionItem> {
     };
 }
 
+function emptyStorageFields(cell: Cell, resourceId: number, input: BuildAttentionInput): Partial<AttentionItem> {
+    const cap = configuredStorageCap(resourceId, usesHubShelf(cell.building, cell.ready, input), input);
+    return {
+        resourceId,
+        used: '0',
+        cap: cap?.toString() ?? null,
+        fillPct: cap === null ? null : 0,
+        breakdown: { liquid: '0', incomingTransport: '0', lots: '0' },
+    };
+}
+
 function isOperationalExtractor(cell: Cell, extractorTypes: Set<string>): boolean {
     const building = cell.building;
     return building !== null && extractorTypes.has(building.type) && cell.ready === true;
@@ -117,7 +129,7 @@ function cellItems(cell: Cell, input: BuildAttentionInput): Array<AttentionItem>
         if (!s || s.cap === null || effect === undefined || effect.requiredPerBatch === 0n) {
             continue;
         }
-        if (effect.blocked) {
+        if (projection?.stalled === true && effect.blocked) {
             items.push(
                 attentionItem(
                     cell,
@@ -125,8 +137,27 @@ function cellItems(cell: Cell, input: BuildAttentionInput): Array<AttentionItem>
                     storageFields(resource),
                 ),
             );
-        } else if (BigInt(s.used) * 100n >= BigInt(s.cap) * BigInt(input.nearFullPct)) {
+        } else if (
+            projection?.progress.isFinished === false &&
+            !effect.blocked &&
+            BigInt(s.used) * 100n >= BigInt(s.cap) * BigInt(input.nearFullPct)
+        ) {
             items.push(attentionItem(cell, AttentionReason.WarehouseNearFull, storageFields(resource)));
+        }
+    }
+
+    if (projection?.stalled === true) {
+        for (const effect of projection.warehouseEffects) {
+            if (!effect.blocked || cell.resources.some((resource) => resource.resourceId === effect.resourceId)) {
+                continue;
+            }
+            items.push(
+                attentionItem(
+                    cell,
+                    isCraft ? AttentionReason.StalledCraft : AttentionReason.StalledMining,
+                    emptyStorageFields(cell, effect.resourceId, input),
+                ),
+            );
         }
     }
 

@@ -2,6 +2,7 @@ import {
     encodeAbiParameters,
     encodeEventTopics,
     formatEther,
+    parseAbiItem,
     parseEther,
     zeroAddress,
     type Address,
@@ -20,7 +21,6 @@ import {
     LotState,
 } from '../../api/types.js';
 import { TRADE_ABI } from '../../contracts/trade.abi.js';
-import { TRANSPORT_ABI } from '../../contracts/transport.abi.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import {
     type ConfirmedTx,
@@ -62,6 +62,16 @@ import {
 } from './service-fakes.js';
 
 const FOREIGN_OWNER = '0x00000000000000000000000000000000000000f1' as Address;
+const LOT_BOUGHT_EVENT = parseAbiItem(
+    'event LotBought(uint256 indexed lotId, address indexed buyer, uint128 value, uint128 remaining, ' +
+        'uint256 sale, uint256 hubFee, uint256 burn, uint256 discount, uint256 tax, uint256 ownerNet, ' +
+        'uint256 buyerSyndicateId, uint256 ownerSyndicateId, address taxTo, address hubOwner, uint64 settledAt)',
+);
+const DELIVERY_SCHEDULED_EVENT = parseAbiItem(
+    'event DeliveryScheduled(uint256 indexed deliveryId, address indexed payer, uint256 sourceId, ' +
+        'address receiver, uint256 targetId, uint16 resource, uint64 amount, uint64 arrivalAt, ' +
+        'uint256[] waypoints, uint64 scheduledAt)',
+);
 
 const CREATE_HASH = `0x${'1'.repeat(64)}` as Hash;
 const BUY_HASH = `0x${'2'.repeat(64)}` as Hash;
@@ -209,7 +219,7 @@ function boughtLog(args: {
     settledAt: bigint;
 }): Log {
     const topics = encodeEventTopics({
-        abi: TRADE_ABI,
+        abi: [LOT_BOUGHT_EVENT],
         eventName: 'LotBought',
         args: { lotId: args.lotId, buyer: WALLET_ADDRESS },
     });
@@ -226,6 +236,7 @@ function boughtLog(args: {
             { name: 'buyerSyndicateId', type: 'uint256' },
             { name: 'ownerSyndicateId', type: 'uint256' },
             { name: 'taxTo', type: 'address' },
+            { name: 'hubOwner', type: 'address' },
             { name: 'settledAt', type: 'uint64' },
         ],
         [
@@ -240,6 +251,7 @@ function boughtLog(args: {
             args.buyerSyndicateId,
             args.ownerSyndicateId,
             args.taxTo,
+            FOREIGN_OWNER,
             args.settledAt,
         ],
     );
@@ -268,7 +280,7 @@ function saleFeeChangedLog(args: { hub: bigint; resource: number; feeBp: number 
 
 function scheduledLog(deliveryId: bigint, arrivalAt: bigint): Log {
     const topics = encodeEventTopics({
-        abi: TRANSPORT_ABI,
+        abi: [DELIVERY_SCHEDULED_EVENT],
         eventName: 'DeliveryScheduled',
         args: { deliveryId, payer: WALLET_ADDRESS },
     });
@@ -280,8 +292,10 @@ function scheduledLog(deliveryId: bigint, arrivalAt: bigint): Log {
             { name: 'resource', type: 'uint16' },
             { name: 'amount', type: 'uint64' },
             { name: 'arrivalAt', type: 'uint64' },
+            { name: 'waypoints', type: 'uint256[]' },
+            { name: 'scheduledAt', type: 'uint64' },
         ],
-        [10n, WALLET_ADDRESS, 20n, 3, 100n, arrivalAt],
+        [10n, WALLET_ADDRESS, 20n, 3, 100n, arrivalAt, [10n, 20n], 1_700_000_000n],
     );
     return {
         address: TRANSPORT,

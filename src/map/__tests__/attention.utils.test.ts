@@ -25,8 +25,7 @@ const BASE = {
     version: 100,
     serverTime: 10,
     nearFullPct: 90,
-    craftOutputsByRecipe: {},
-    extractionShareBpByBuilding: { [BuildingType.Mine]: 10000 },
+    ...makeProjectionConfig(),
     extractorBuildingTypes: new Set<string>([BuildingType.Mine]),
 };
 
@@ -34,7 +33,7 @@ function report(cells: Array<Parameters<typeof makeCell>[0]>, craftOutputsByReci
     const config = makeProjectionConfig({ craftOutputsByRecipe });
     return buildAttentionReport({
         ...BASE,
-        craftOutputsByRecipe,
+        ...config,
         ownedCells: cells.map((o) => toCell(makeCell(o), BASE.serverTime, config)),
     });
 }
@@ -116,6 +115,66 @@ describe('buildAttentionReport', () => {
         const stalled = r.items.filter((i) => i.reason === AttentionReason.StalledCraft);
         expect(stalled.map((i) => i.resourceId).sort()).toEqual([10, 11]);
         expect(r.counts.critical).toBe(2);
+    });
+
+    it('flags a stalled craft output that has no resource row yet', () => {
+        const projectionConfig = makeProjectionConfig({
+            craftOutputsByRecipe: { recipe: [{ resourceId: 10, amount: 40 }] },
+            storageCapsByResource: { 10: { cellCap: 20n, hubCap: 200n } },
+        });
+        const cell = toCell(
+            makeCell({
+                tokenId: '1',
+                process: makeCraftProcess({ recipeId: 'recipe', batches: 5, claimedBatches: 0 }),
+                resources: [],
+            }),
+            BASE.serverTime,
+            projectionConfig,
+        );
+
+        const result = buildAttentionReport({
+            ...BASE,
+            ...projectionConfig,
+            ownedCells: [cell],
+        });
+
+        expect(result.items).toContainEqual(
+            expect.objectContaining({
+                reason: AttentionReason.StalledCraft,
+                resourceId: 10,
+                used: '0',
+                cap: '20',
+            }),
+        );
+    });
+
+    it('does not report a blocked shelf as Stall after the Process is terminal', () => {
+        const projectionConfig = makeProjectionConfig({
+            craftOutputsByRecipe: { recipe: [{ resourceId: 10, amount: 40 }] },
+        });
+        const cell = toCell(
+            makeCell({
+                tokenId: '1',
+                process: makeCraftProcess({ recipeId: 'recipe', batches: 1, claimedBatches: 1 }),
+                resources: [
+                    makeResource({
+                        resourceId: 10,
+                        storage: makeStorage({ used: '20', cellCap: '20', hubCap: '200' }),
+                    }),
+                ],
+            }),
+            BASE.serverTime,
+            projectionConfig,
+        );
+
+        const result = buildAttentionReport({
+            ...BASE,
+            ...projectionConfig,
+            ownedCells: [cell],
+        });
+
+        expect(result.items.map((item) => item.reason)).not.toContain(AttentionReason.StalledCraft);
+        expect(result.items.map((item) => item.reason)).toContain(AttentionReason.ProcessFinished);
     });
 
     it('flags near-full only for actively produced resources', () => {
@@ -204,7 +263,6 @@ describe('buildAttentionReport', () => {
         );
         const r = buildAttentionReport({
             ...BASE,
-            extractionShareBpByBuilding: { mine_l2a: 10000 },
             extractorBuildingTypes: new Set<string>(['mine_l2a']),
             ownedCells: [cell],
         });

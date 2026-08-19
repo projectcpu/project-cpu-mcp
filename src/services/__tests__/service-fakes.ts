@@ -409,7 +409,7 @@ export class FakeContractClient implements IContractClient {
 
 // The chain's `getCell`, whose mode fields use 0 for "no output picked yet".
 export function chainCellView(overrides: Partial<CellViewResult> = {}): CellViewResult {
-    return { buildingType: 4, modeResource: 0, modeRecipeId: 0n, ...overrides };
+    return { buildingType: 4, modeResource: 0, modeRecipeId: 0n, processDrawPerCycle: 0n, ...overrides };
 }
 
 export function cpuBurnLog(from: Address, amountWei: bigint): Log {

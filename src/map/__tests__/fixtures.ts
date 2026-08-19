@@ -42,6 +42,7 @@ export function makeMiningProcess(overrides: Partial<RawCellProcessMiningView> =
         resource: 1,
         durationSec: 180,
         yieldPerCycle: 77,
+        processDrawPerCycle: 77,
         batches: 10,
         claimedBatches: 0,
         startAt: 0,
@@ -94,7 +95,7 @@ export function makeProjectionConfig(overrides: Partial<CellProjectionConfig> = 
         hubBuildingTypes: new Set<string>([BuildingType.Hub]),
         upgradeFromByBuildingType: { [BuildingType.Hub]: null },
         craftOutputsByRecipe: {},
-        extractionShareBpByBuilding: {},
+        storageCapsByResource: {},
         ...overrides,
     };
 }

@@ -3,6 +3,7 @@ import {
     encodeAbiParameters,
     encodeErrorResult,
     encodeEventTopics,
+    parseAbiItem,
     type Address,
     type Hex,
     type Log,
@@ -15,6 +16,10 @@ import { describeRevert } from '../../wallet/revert.utils.js';
 import { TxStatus } from '../../wallet/types.js';
 import { WithdrawService } from '../withdraw.service.js';
 import { CELL, makeCellHarness, makeConfig, WALLET_ADDRESS } from './service-fakes.js';
+
+const CPU_WITHDRAWN_EVENT = parseAbiItem(
+    'event CpuWithdrawn(uint256 indexed tokenId, address indexed to, uint64 amount, uint256 cpuMinted, uint64 withdrawnAt)',
+);
 
 const WEI_PER_UNIT = 10n ** 18n;
 
@@ -29,11 +34,14 @@ const LOG_META = {
 
 function withdrawnLog(units: bigint): Log {
     const topics = encodeEventTopics({
-        abi: CELL_ABI,
+        abi: [CPU_WITHDRAWN_EVENT],
         eventName: 'CpuWithdrawn',
         args: { tokenId: 42n, to: WALLET_ADDRESS },
     });
-    const data = encodeAbiParameters([{ type: 'uint64' }, { type: 'uint256' }], [units, units * WEI_PER_UNIT]);
+    const data = encodeAbiParameters(
+        [{ type: 'uint64' }, { type: 'uint256' }, { type: 'uint64' }],
+        [units, units * WEI_PER_UNIT, 1_700_000_000n],
+    );
     return { address: CELL as Address, topics, data, ...LOG_META } as unknown as Log;
 }
 

@@ -1,4 +1,5 @@
 import { deriveCellProcess } from './process-projection.utils.js';
+import { usesHubShelf } from './storage.utils.js';
 import {
     type Cell,
     type CellProjectionConfig,
@@ -38,11 +39,15 @@ export function toCell(raw: UnderivedCell, serverTime: number, config: CellProje
     const ready = cellReady(raw, serverTime);
     const buildingType = raw.building?.type ?? null;
     const isHub = buildingType !== null && config.hubBuildingTypes.has(buildingType);
-    const upgradeFrom = buildingType === null ? null : (config.upgradeFromByBuildingType[buildingType] ?? null);
-    const upgradesFromHub = upgradeFrom !== null && config.hubBuildingTypes.has(upgradeFrom);
     const activeHub = ready === true && isHub;
-    const useHubShelf = isHub && (ready === true || upgradesFromHub);
+    const useHubShelf = usesHubShelf(raw.building, ready, config);
     const resources = raw.resources.map((resource) => deriveResource(resource, useHubShelf));
 
-    return { ...raw, resources, process: deriveCellProcess(raw.process, resources, config), ready, activeHub };
+    return {
+        ...raw,
+        resources,
+        process: deriveCellProcess(raw.process, resources, config, useHubShelf),
+        ready,
+        activeHub,
+    };
 }

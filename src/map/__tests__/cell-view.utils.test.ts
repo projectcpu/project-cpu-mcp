@@ -30,7 +30,11 @@ function config(overrides: Partial<CellProjectionConfig> = {}): CellProjectionCo
                 { resourceId: 6, amount: CRAFT_OUTPUT_PER_CYCLE },
             ],
         },
-        extractionShareBpByBuilding: {},
+        storageCapsByResource: {
+            1: { cellCap: BigInt(BASE_CAP), hubCap: BigInt(HUB_CAP) },
+            5: { cellCap: BigInt(BASE_CAP), hubCap: BigInt(HUB_CAP) },
+            6: { cellCap: BigInt(BASE_CAP), hubCap: BigInt(HUB_CAP) },
+        },
         ...overrides,
     };
 }
@@ -55,6 +59,7 @@ function mining(resourceId: number): RawCellProcessView {
         resource: resourceId,
         durationSec: 180,
         yieldPerCycle: YIELD_PER_CYCLE,
+        processDrawPerCycle: YIELD_PER_CYCLE,
         batches: 10,
         claimedBatches: 0,
         startAt: 0,
@@ -210,13 +215,19 @@ describe('toCell full', () => {
 
 describe('toCell process stall', () => {
     it('stalls a mining process when its mined resource is full', () => {
-        const cell = rawCell({ resources: [resource({ storage: storage({ used: BASE_CAP }) })], process: mining(1) });
+        const cell = rawCell({
+            resources: [resource({ deposit: '1000', storage: storage({ used: BASE_CAP }) })],
+            process: mining(1),
+        });
         expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(true);
     });
 
     it('stalls a miner whose room holds less than one whole cycle, before the box reads full', () => {
         const used = String(Number(BASE_CAP) - YIELD_PER_CYCLE + 1);
-        const cell = rawCell({ resources: [resource({ storage: storage({ used }) })], process: mining(1) });
+        const cell = rawCell({
+            resources: [resource({ deposit: '1000', storage: storage({ used }) })],
+            process: mining(1),
+        });
         const derived = toCell(cell, FINISH_AT, config());
         expect(derived.resources[0]?.storage?.full).toBe(false);
         expect(derived.process?.stalled).toBe(true);
@@ -224,7 +235,10 @@ describe('toCell process stall', () => {
 
     it('keeps a miner running while the room still admits exactly one whole cycle', () => {
         const used = String(Number(BASE_CAP) - YIELD_PER_CYCLE);
-        const cell = rawCell({ resources: [resource({ storage: storage({ used }) })], process: mining(1) });
+        const cell = rawCell({
+            resources: [resource({ deposit: '1000', storage: storage({ used }) })],
+            process: mining(1),
+        });
         expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(false);
     });
 
@@ -291,8 +305,46 @@ describe('toCell process stall', () => {
         expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(false);
     });
 
-    it('does not stall a craft on an output the cell does not hold', () => {
+    it('uses the configured shelf when the cell does not yet hold a craft output', () => {
         const cell = rawCell({ resources: [resource({ resourceId: 5 })], process: craft() });
+        const catalog = config({
+            storageCapsByResource: {
+                5: { cellCap: BigInt(BASE_CAP), hubCap: BigInt(HUB_CAP) },
+                6: { cellCap: 20n, hubCap: BigInt(HUB_CAP) },
+            },
+        });
+
+        expect(toCell(cell, FINISH_AT, catalog).process?.stalled).toBe(true);
+    });
+
+    it('selects the Hub shelf for an absent craft output once the hub is Ready', () => {
+        const cell = rawCell({ building: hub(), resources: [], process: craft() });
+        const catalog = config({
+            storageCapsByResource: {
+                5: { cellCap: 20n, hubCap: BigInt(HUB_CAP) },
+                6: { cellCap: 20n, hubCap: BigInt(HUB_CAP) },
+            },
+        });
+
+        expect(toCell(cell, FINISH_AT - 1, catalog).process?.stalled).toBe(true);
+        expect(toCell(cell, FINISH_AT, catalog).process?.stalled).toBe(false);
+    });
+
+    it('does not stall a process whose schedule is already spent', () => {
+        const cell = rawCell({
+            resources: [resource({ resourceId: 5, storage: storage({ used: BASE_CAP }) })],
+            process: { ...craft(), batches: 1, claimedBatches: 1 },
+        });
+
+        expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(false);
+    });
+
+    it('does not stall mining after the deposit is depleted', () => {
+        const cell = rawCell({
+            resources: [resource({ resourceId: 1, deposit: '0', storage: storage({ used: BASE_CAP }) })],
+            process: mining(1),
+        });
+
         expect(toCell(cell, FINISH_AT, config()).process?.stalled).toBe(false);
     });
 

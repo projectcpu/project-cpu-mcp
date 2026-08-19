@@ -87,7 +87,7 @@ class FakeCellClient implements ICellClient {
     public readonly quoted: Array<Address> = [];
     constructor(private readonly quote: RevealQuote | Error = DEFAULT_QUOTE) {}
     async readCellView(): Promise<CellViewResult> {
-        return { buildingType: 0, modeResource: 0, modeRecipeId: 0n };
+        return { buildingType: 0, modeResource: 0, modeRecipeId: 0n, processDrawPerCycle: 0n };
     }
     async quoteReveal(cell: Address): Promise<RevealQuote> {
         this.quoted.push(cell);

@@ -24,15 +24,17 @@ const REVEAL_NOT_CONFIGURED = encodeErrorResult({ abi: CELL_ABI, errorName: 'Rev
 
 class FakeContracts implements IContractClient {
     public readonly sent: Array<TransactionRequest> = [];
+    public readonly reads: Array<ReadContractParams> = [];
     public readonly estimates: Array<GasEstimateRequest> = [];
     constructor(
-        private readonly reads: Record<string, unknown>,
+        private readonly readResults: Record<string, unknown>,
         private readonly sendError: unknown = null,
         private readonly gasEstimate: bigint = 200_000n,
         private readonly estimateError: unknown = null,
     ) {}
     async read<T>(params: ReadContractParams): Promise<T> {
-        return this.reads[params.functionName] as T;
+        this.reads.push(params);
+        return this.readResults[params.functionName] as T;
     }
     async estimateGas(tx: GasEstimateRequest): Promise<bigint> {
         this.estimates.push(tx);
@@ -64,6 +66,20 @@ function makeClient(
 }
 
 describe('CellClient', () => {
+    it('reads the post-cutover CellView through the existing client seam', async () => {
+        const view = { buildingType: 4, modeResource: 5, modeRecipeId: 7n, processDrawPerCycle: 125n };
+        const { client, contracts } = makeClient({ getCell: view });
+
+        await expect(client.readCellView(CELL, 42n)).resolves.toEqual(view);
+        expect(contracts.reads).toHaveLength(1);
+        expect(contracts.reads[0]).toMatchObject({
+            address: CELL,
+            abi: CELL_ABI,
+            functionName: 'getCell',
+            args: [42n],
+        });
+    });
+
     it('encodes requestReveal and sends it with the fee value', async () => {
         const { client, contracts } = makeClient({});
         const hash = await client.requestReveal({ cell: CELL, tokenId: 42n, value: 5n });

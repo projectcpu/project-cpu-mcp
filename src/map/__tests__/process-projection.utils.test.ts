@@ -21,7 +21,6 @@ const OUTPUTS = { [RECIPE]: [{ resourceId: RESOURCE, amount: 100 }] };
 function config(overrides: Partial<CellProjectionConfig> = {}): CellProjectionConfig {
     return makeProjectionConfig({
         craftOutputsByRecipe: OUTPUTS,
-        extractionShareBpByBuilding: { [BuildingType.Mine]: 10000 },
         ...overrides,
     });
 }
@@ -34,7 +33,12 @@ function cell(
     return toCell(
         makeCell({
             building: { type: BuildingType.Mine, buildFinishAt: null, modeResource: null, modeRecipeId: null },
-            process: makeMiningProcess({ resource: RESOURCE, yieldPerCycle: 100, durationSec: 1 }),
+            process: makeMiningProcess({
+                resource: RESOURCE,
+                yieldPerCycle: 100,
+                processDrawPerCycle: 100,
+                durationSec: 1,
+            }),
             resources,
             ...overrides,
         }),
@@ -54,9 +58,17 @@ function projection(subject: Cell, serverTime: number, projectionConfig: CellPro
 const uncapped = (deposit: string) => [makeResource({ resourceId: RESOURCE, deposit, storage: null })];
 
 function drillCell(resources: Array<RawCellResource>): Cell {
-    const drillConfig = config({ extractionShareBpByBuilding: { [DRILL]: 8000 } });
+    const drillConfig = config();
     return cell(
-        { building: { type: DRILL, buildFinishAt: null, modeResource: null, modeRecipeId: null } },
+        {
+            building: { type: DRILL, buildFinishAt: null, modeResource: null, modeRecipeId: null },
+            process: makeMiningProcess({
+                resource: RESOURCE,
+                yieldPerCycle: 100,
+                processDrawPerCycle: 125,
+                durationSec: 1,
+            }),
+        },
         resources,
         drillConfig,
     );
@@ -185,8 +197,56 @@ describe('process projection mining settlement', () => {
         });
     });
 
-    it('reconstructs and rounds the deposit take from extraction share', () => {
-        const drillConfig = config({ extractionShareBpByBuilding: { [DRILL]: 8000 } });
+    it('uses the snapshotted Take even when the building extraction share later changes', () => {
+        const changedConfig = config();
+        const subject = cell(
+            {
+                building: { type: DRILL, buildFinishAt: null, modeResource: null, modeRecipeId: null },
+                process: makeMiningProcess({
+                    resource: RESOURCE,
+                    yieldPerCycle: 100,
+                    processDrawPerCycle: 125,
+                    durationSec: 1,
+                }),
+            },
+            uncapped('500'),
+            changedConfig,
+        );
+
+        expect(projection(subject, 5, changedConfig).settlement).toEqual({
+            settledBatches: 4,
+            minedUnits: 400n,
+            drainedUnits: 500n,
+            depleted: true,
+        });
+    });
+
+    it('falls back from a zero legacy Take to the snapshotted warehouse credit', () => {
+        const changedConfig = config();
+        const subject = cell(
+            {
+                building: { type: DRILL, buildFinishAt: null, modeResource: null, modeRecipeId: null },
+                process: makeMiningProcess({
+                    resource: RESOURCE,
+                    yieldPerCycle: 100,
+                    processDrawPerCycle: 0,
+                    durationSec: 1,
+                }),
+            },
+            uncapped('300'),
+            changedConfig,
+        );
+
+        expect(projection(subject, 5, changedConfig).settlement).toEqual({
+            settledBatches: 3,
+            minedUnits: 300n,
+            drainedUnits: 300n,
+            depleted: true,
+        });
+    });
+
+    it('uses the snapshotted Take for proportional final-cycle credit', () => {
+        const drillConfig = config();
         expect(projection(drillCell(uncapped('500')), 5, drillConfig).settlement).toEqual({
             settledBatches: 4,
             minedUnits: 400n,
@@ -202,7 +262,7 @@ describe('process projection mining settlement', () => {
     });
 
     it('binds warehouse room on the credit and deposit on the take', () => {
-        const drillConfig = config({ extractionShareBpByBuilding: { [DRILL]: 8000 } });
+        const drillConfig = config();
         const room = [
             makeResource({
                 resourceId: RESOURCE,
@@ -223,10 +283,10 @@ describe('process projection mining settlement', () => {
         });
     });
 
-    it('fails loudly when mining projection lacks its building configuration', () => {
+    it('does not need current building configuration to settle a snapshotted Process', () => {
         const subject = cell({}, uncapped('400'));
-        expect(() => projection(subject, 5, config({ extractionShareBpByBuilding: {} }))).toThrow(/extraction share/i);
-        expect(() => projection(cell({ building: null }, uncapped('400')), 5)).toThrow(/no building/i);
+        expect(projection(subject, 5, config()).settlement.drainedUnits).toBe(400n);
+        expect(projection(cell({ building: null }, uncapped('400')), 5).settlement.drainedUnits).toBe(400n);
     });
 
     it('settles no partial warehouse cycle and depletes an empty deposit', () => {
