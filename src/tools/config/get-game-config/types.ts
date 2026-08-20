@@ -12,7 +12,6 @@ export interface CatalogSizeView {
     recipeCount: number;
 }
 
-/** The tool that owns each kind of detail the entry point deliberately no longer carries. */
 export interface EntryPointLookupView {
     building: string;
     buildingSearch: string;

@@ -28,6 +28,13 @@ interface ToolResult {
 
 const SECTION_TITLES = [ROUTING_SECTION_TITLE, STATIC_SECTION_TITLE, BUILDING_INDEX_SECTION_TITLE];
 
+const RECIPE_ONLY_NUMBERS = {
+    durationSec: 4703,
+    costCpu: '5309',
+    inputAmount: 6113,
+    outputAmount: 7717,
+};
+
 const CONFIG: AppConfig = {
     network: Network.ROBINHOOD,
     chainId: 4663,
@@ -48,10 +55,10 @@ const CONFIG: AppConfig = {
             id: CraftRecipeId.SmeltSteel,
             name: 'Smelt Steel',
             tier: 2,
-            inputs: [{ resourceId: 5, amount: 4 }],
-            outputs: [{ resourceId: 102, amount: 2 }],
-            durationSec: 30,
-            costCpu: '0',
+            inputs: [{ resourceId: 5, amount: RECIPE_ONLY_NUMBERS.inputAmount }],
+            outputs: [{ resourceId: 102, amount: RECIPE_ONLY_NUMBERS.outputAmount }],
+            durationSec: RECIPE_ONLY_NUMBERS.durationSec,
+            costCpu: RECIPE_ONLY_NUMBERS.costCpu,
         },
     ],
     buildings: [
@@ -166,6 +173,39 @@ function sectionOf(text: string, title: string): string {
         .sort((a, b) => a - b);
     const next = following[0];
     return next === undefined ? rest : rest.slice(0, next);
+}
+
+function everyRecipeFact(config: AppConfig): Array<string> {
+    return config.recipes.flatMap((recipe) => [
+        recipe.id,
+        recipe.name,
+        `${recipe.durationSec}`,
+        recipe.costCpu,
+        ...[...recipe.inputs, ...recipe.outputs].map((stack) => `${stack.amount}`),
+    ]);
+}
+
+function namesToken(haystack: string, token: string): boolean {
+    return new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(haystack);
+}
+
+function indexRowFor(text: string, type: string): string {
+    const row = sectionOf(text, BUILDING_INDEX_SECTION_TITLE)
+        .split('\n')
+        .find((line) => line.startsWith(`${type} |`));
+    if (row === undefined) {
+        throw new Error(`the building index carries no row for ${type}`);
+    }
+    return row;
+}
+
+function upgradeRelationsOf(config: AppConfig): Array<{ type: string; related: Array<string> }> {
+    return config.buildings
+        .map((building) => ({
+            type: building.type,
+            related: [...(building.upgradeFrom === null ? [] : [building.upgradeFrom]), ...building.upgradeTo],
+        }))
+        .filter((entry) => entry.related.length > 0);
 }
 
 describe('get_game_config tool — reveal payment', () => {
@@ -405,6 +445,39 @@ describe('get_game_config tool — what it stopped carrying', () => {
         expect(raw).not.toContain('minableResources');
         expect(raw).not.toContain('recipeOpexCpu');
         expect(raw).not.toContain('durationSec');
+    });
+
+    it('carries no field of any configured recipe, whatever wording or key it is dressed in', async () => {
+        const result = await capture()({} as never);
+        const whole = result.content.map((block) => block.text).join('\n');
+        const facts = everyRecipeFact(CONFIG);
+
+        expect(facts.length).toBeGreaterThan(0);
+        for (const fact of facts) {
+            expect(whole).not.toContain(fact);
+        }
+    });
+
+    it('names no upgrade relation on the row of the building that carries it', async () => {
+        const text = await prose();
+        const relations = upgradeRelationsOf(CONFIG);
+
+        expect(relations.length).toBeGreaterThan(0);
+        for (const { type, related } of relations) {
+            const tail = indexRowFor(text, type).slice(type.length);
+            for (const other of related) {
+                expect(namesToken(tail, other)).toBe(false);
+            }
+        }
+    });
+
+    it('carries no catalog building type in the machine block, so no relation can hide under a key', async () => {
+        const raw = (await capture()({} as never)).content[1]?.text ?? '';
+
+        expect(CONFIG.buildings.length).toBeGreaterThan(0);
+        for (const building of CONFIG.buildings) {
+            expect(namesToken(raw, building.type)).toBe(false);
+        }
     });
 
     it('still says how much of each the catalog holds, so nothing looks lost', async () => {

@@ -13,6 +13,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
+import { BUILDING_INDEX_SECTION_TITLE } from '../get-game-config/constants.js';
 import { registerGetGameConfigTool } from '../get-game-config/get-game-config.js';
 
 interface ToolResult {
@@ -254,6 +255,19 @@ async function answerSize(config: AppConfig): Promise<number> {
     return result.content.reduce((total, block) => total + block.text.length, 0);
 }
 
+async function indexRows(config: AppConfig): Promise<Array<string>> {
+    const text = (await capture(config)({} as never)).content[0]?.text ?? '';
+    const heading = text.indexOf(BUILDING_INDEX_SECTION_TITLE);
+    if (heading < 0) {
+        throw new Error('the answer carries no building index');
+    }
+    return text
+        .slice(heading)
+        .split('\n')
+        .slice(1)
+        .filter((line) => line.length > 0);
+}
+
 describe('get_game_config tool — the size of the answer at catalog scale', () => {
     it('fits a budget that grows with the catalog by an index row, not by a card', async () => {
         const config = catalogScaleConfig();
@@ -270,6 +284,15 @@ describe('get_game_config tool — the size of the answer at catalog scale', () 
         const size = await answerSize(config);
 
         expect(size).toBeLessThan(JSON.stringify(config.buildings).length / CATALOG_DUMP_SHRINK_FACTOR);
+    });
+
+    it('indexes every building of the catalog, in catalog order, with nothing dropped', async () => {
+        const config = catalogScaleConfig();
+
+        const rows = await indexRows(config);
+
+        expect(rows).toHaveLength(config.buildings.length);
+        expect(rows.map((row) => row.split(' | ')[0])).toEqual(config.buildings.map((building) => building.type));
     });
 
     it('grows by roughly one index row per building added, not by a whole card', async () => {
