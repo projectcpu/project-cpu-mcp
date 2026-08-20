@@ -7,6 +7,7 @@ import { registerAuthenticateTool } from './tools/authenticate.js';
 import { registerBuildTool } from './tools/build/build.js';
 import { registerDemolishTool } from './tools/build/demolish.js';
 import { registerUpgradeTool } from './tools/build/upgrade.js';
+import { registerGetBuildingTool } from './tools/config/building-card/building-card.js';
 import { registerGetGameConfigTool } from './tools/config/get-game-config/get-game-config.js';
 import { registerClaimCraftTool } from './tools/craft/claim/claim-craft.js';
 import { registerCraftTool } from './tools/craft/craft.js';
@@ -83,6 +84,7 @@ export const SERVER_INSTRUCTIONS = [
 function registerTools(registrar: ToolRegistrar, context: AppContext): void {
     registerAuthenticateTool(registrar, context);
     registerGetGameConfigTool(registrar, context);
+    registerGetBuildingTool(registrar, context);
     registerGetMapTool(registrar, context);
     registerGetCellTool(registrar, context);
     registerGetChangesTool(registrar, context);
