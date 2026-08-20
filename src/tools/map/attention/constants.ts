@@ -20,3 +20,25 @@ export const GET_ATTENTION_DESCRIPTION = [
     '`minSeverity` filters by urgency. If the deliveries, lots or open-reveal-request lookup is down, the',
     'remaining items still return and a `note` says so.',
 ].join(' ');
+
+export const WAREHOUSE_PRESSURE_TITLE = 'WAREHOUSE PRESSURE';
+
+export const WAREHOUSE_PRESSURE_LABELS = {
+    scope: 'Scope',
+    owner: 'Owner',
+    map: 'Map',
+    shown: 'Shown',
+    critical: 'Critical',
+    warning: 'Warning',
+    info: 'Info',
+    nearFull: 'Near full',
+    peakFill: 'Peak fill',
+    stalled: 'Stalled',
+    note: 'Note',
+};
+
+export const WAREHOUSE_PRESSURE_SCOPE_SELF = 'self';
+export const WAREHOUSE_PRESSURE_SCOPE_SCOUTING = 'scouting';
+
+export const WAREHOUSE_PRESSURE_NO_OWNER_NOTE =
+    'Attention needs a wallet or an `owner` address — call authenticate or pass owner. Nothing to scope to.';

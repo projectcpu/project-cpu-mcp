@@ -1,4 +1,5 @@
 import { GET_ATTENTION_DESCRIPTION } from './constants.js';
+import { warehousePressurePanel } from './panel.utils.js';
 import { getAttentionInputSchema } from './types.js';
 import { LotState, type LotView } from '../../../api/types.js';
 import { attentionItem, meetsSeverity, revealAttentionItems, withExtraItems } from '../../../map/attention.utils.js';
@@ -112,15 +113,20 @@ export function registerGetAttentionTool(server: ToolRegistrar, context: AppCont
                     resourceName: item.resourceId === null ? null : resourceName(resources, item.resourceId),
                 }));
 
-            const scope = scouting ? `Scouting ${target}` : 'Attention';
-            const header = report.ownerKnown
-                ? `${scope}: ${report.counts.critical} critical · ${report.counts.warning} warning · ` +
-                  `${report.counts.info} info (map v${report.version}, ${items.length} shown).`
-                : 'Attention needs a wallet or an `owner` address — call authenticate or pass owner. Nothing to scope to.';
+            const panel = warehousePressurePanel({
+                scouting,
+                owner: target,
+                ownerKnown: report.ownerKnown,
+                version: report.version,
+                counts: report.counts,
+                items,
+                note: report.note,
+                resources,
+            });
 
             return {
                 content: [
-                    { type: 'text', text: header },
+                    { type: 'text', text: panel },
                     {
                         type: 'text',
                         text: JSON.stringify({ ...report, owner: target, scouting, items, resourceNames: resources }),

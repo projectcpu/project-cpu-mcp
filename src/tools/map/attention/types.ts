@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { AttentionSeverity } from '../../../map/types.js';
+import { type AttentionItem, AttentionSeverity } from '../../../map/types.js';
+import type { ResourceNames } from '../../../utils/format.utils.js';
 
 export const getAttentionInputSchema = {
     minSeverity: z
@@ -17,3 +18,14 @@ export const getAttentionInputSchema = {
                 'public). Omit to get your own to-do list. Deliveries are only surfaced for yourself.',
         ),
 };
+
+export interface WarehousePressureInput {
+    scouting: boolean;
+    owner: string | null;
+    ownerKnown: boolean;
+    version: number;
+    counts: Record<AttentionSeverity, number>;
+    items: ReadonlyArray<AttentionItem>;
+    note: string | null;
+    resources: ResourceNames;
+}

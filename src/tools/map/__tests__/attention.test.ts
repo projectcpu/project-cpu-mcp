@@ -172,6 +172,7 @@ interface HarnessOpts {
     lots: (() => Promise<Array<LotView>>) | null;
     selfService: boolean | null;
     revealRequests: FakeRevealRequests | null;
+    report: AttentionReport | null;
 }
 
 function harness(opts: Partial<HarnessOpts> = {}): Handler {
@@ -187,7 +188,7 @@ function harness(opts: Partial<HarnessOpts> = {}): Handler {
                       items: [],
                       note: null,
                   }
-                : mapReport(),
+                : (opts.report ?? mapReport()),
     };
     const wallet = { isReady: () => walletReady, get: () => ({ getAddress: () => '0xMe' }) };
     const appConfig = {
@@ -243,7 +244,7 @@ describe('get_attention tool', () => {
         const result = await handler({ minSeverity: null });
 
         const header = result.content[0]?.text ?? '';
-        expect(header).toMatch(/1 critical · 1 warning · 1 info/);
+        expect(header).toMatch(/Critical: 1 \| Warning: 1 \| Info: 1/);
 
         const payload = JSON.parse(result.content[1]?.text ?? '{}');
         const delivery = payload.items.find((i: { reason: string }) => i.reason === AttentionReason.DeliveryReady);
@@ -264,7 +265,8 @@ describe('get_attention tool', () => {
     it('scouts another owner, surfacing their cells and inbound deliveries as intel', async () => {
         const handler = harness({ deliveries: async () => [READY_DELIVERY] });
         const result = await handler({ minSeverity: null, owner: '0xNeighbor' });
-        expect(result.content[0]?.text).toMatch(/Scouting 0xNeighbor/);
+        expect(result.content[0]?.text).toMatch(/Scope: scouting/);
+        expect(result.content[0]?.text).toMatch(/Owner: 0xNeighbor/);
         const payload = JSON.parse(result.content[1]?.text ?? '{}');
         expect(payload.scouting).toBe(true);
         expect(payload.owner).toBe('0xNeighbor');
@@ -392,7 +394,7 @@ describe('get_attention tool', () => {
         expect(stuck.message).toContain('open for 300 seconds');
         expect(payload.note).toBeNull();
         expect(requests.owners).toEqual(['0xMe']);
-        expect(result.content[0]?.text).toMatch(/2 critical/);
+        expect(result.content[0]?.text).toMatch(/Critical: 2/);
     });
 
     it('leaves a reveal request younger than the two-minute mark off the list', async () => {
@@ -466,7 +468,7 @@ describe('get_attention tool', () => {
         );
         expect(payload.note).toBeNull();
         expect(requests.owners).toEqual([]);
-        expect(result.content[0]?.text).toMatch(/1 critical · 0 warning · 1 info/);
+        expect(result.content[0]?.text).toMatch(/Critical: 1 \| Warning: 0 \| Info: 1/);
     });
 
     it('degrades gracefully when the open reveal requests cannot be read', async () => {
@@ -528,5 +530,197 @@ describe('get_attention tool', () => {
             'tokenId',
             'used',
         ]);
+    });
+});
+
+const PANEL_MAX_WIDTH = 72;
+const PANEL_TITLE = 'WAREHOUSE PRESSURE';
+const PANEL_LABELS = [
+    'Scope',
+    'Owner',
+    'Map',
+    'Shown',
+    'Critical',
+    'Warning',
+    'Info',
+    'Near full',
+    'Peak fill',
+    'Stalled',
+    'Note',
+];
+const SCOUTED = '0x00000000000000000000000000000000000000c3';
+
+function panelOf(result: ToolResult): string {
+    return result.content[0]?.text ?? '';
+}
+
+function panelLabels(panel: string): Array<string> {
+    return panel
+        .split('\n')
+        .slice(1)
+        .flatMap((line) => line.trim().split(' | '))
+        .map((field) => field.split(': ')[0] ?? '')
+        .filter((label) => PANEL_LABELS.includes(label));
+}
+
+function pressureReport(over: Partial<AttentionReport> = {}): AttentionReport {
+    return {
+        ownerKnown: true,
+        version: 12,
+        serverTime: 1,
+        counts: { critical: 0, warning: 2, info: 0 },
+        items: [
+            {
+                tokenId: '4',
+                severity: AttentionSeverity.Warning,
+                reason: AttentionReason.WarehouseNearFull,
+                resourceId: 3,
+                used: '92',
+                cap: '100',
+                fillPct: 92,
+                breakdown: { liquid: '92', incomingTransport: '0', lots: '0' },
+                depositRemaining: null,
+                deliveryId: null,
+                arrivalAt: null,
+                demolishingType: null,
+                lotId: null,
+                requestId: null,
+                requestedAt: null,
+                message: null,
+            },
+            {
+                tokenId: '5',
+                severity: AttentionSeverity.Warning,
+                reason: AttentionReason.WarehouseNearFull,
+                resourceId: 101,
+                used: '99',
+                cap: '100',
+                fillPct: 99,
+                breakdown: { liquid: '99', incomingTransport: '0', lots: '0' },
+                depositRemaining: null,
+                deliveryId: null,
+                arrivalAt: null,
+                demolishingType: null,
+                lotId: null,
+                requestId: null,
+                requestedAt: null,
+                message: null,
+            },
+        ],
+        note: null,
+        ...over,
+    };
+}
+
+describe('get_attention panel', () => {
+    it('opens with the same title and the same fields in the same order on every call', async () => {
+        const results = [
+            await harness()({ minSeverity: null }),
+            await harness({ report: pressureReport() })({ minSeverity: null }),
+            await harness({ walletReady: false })({ minSeverity: null, owner: null }),
+            await harness()({ minSeverity: null, owner: SCOUTED }),
+            await harness({ report: pressureReport({ items: [], counts: { critical: 0, warning: 0, info: 0 } }) })({
+                minSeverity: null,
+            }),
+        ];
+
+        for (const result of results) {
+            const panel = panelOf(result);
+            expect(panel.split('\n')[0]).toBe(PANEL_TITLE);
+            expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+        }
+    });
+
+    it('keeps every line inside the panel width, whatever the values are', async () => {
+        const results = [
+            await harness({ report: pressureReport() })({ minSeverity: null }),
+            await harness()({ minSeverity: null, owner: SCOUTED }),
+            await harness({ walletReady: false })({ minSeverity: null, owner: null }),
+            await harness({
+                deliveries: async () => {
+                    throw new Error('server down');
+                },
+                lots: async () => {
+                    throw new Error('server down');
+                },
+            })({ minSeverity: null }),
+        ];
+
+        for (const result of results) {
+            for (const line of panelOf(result).split('\n')) {
+                expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+            }
+        }
+    });
+
+    it('separates fields the same way everywhere: one space after a colon, one space around a bar', async () => {
+        const panel = panelOf(await harness({ report: pressureReport() })({ minSeverity: null }));
+
+        for (const line of panel.split('\n')) {
+            expect(line).not.toMatch(/:(?! )/);
+            expect(line).not.toMatch(/: {2}/);
+            expect(line).not.toMatch(/\|\S|\S\|/);
+            expect(line).not.toMatch(/ {2}\||\| {2}/);
+            expect(line).not.toMatch(/\|\s*$/);
+            expect(line).toBe(line.trimEnd());
+        }
+    });
+
+    it('prints a missing value instead of dropping its field', async () => {
+        const panel = panelOf(await harness({ walletReady: false })({ minSeverity: null, owner: null }));
+
+        expect(panel).toMatch(/Owner: n\/a/);
+        expect(panel).toMatch(/Peak fill: n\/a/);
+        expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+    });
+
+    it('reports warehouse pressure: how many boxes are near full, the worst one, and what stalled', async () => {
+        const panel = panelOf(await harness({ report: pressureReport() })({ minSeverity: null }));
+
+        expect(panel).toMatch(/Near full: 2/);
+        expect(panel).toMatch(/Peak fill: 99% Power \(#101\)/);
+        expect(panel).toMatch(/Stalled: 0/);
+        expect(panel).toMatch(/Map: v12/);
+        expect(panel).toMatch(/Shown: 2/);
+    });
+
+    it('counts the stalled cells of the default report and names its fullest box', async () => {
+        const panel = panelOf(await harness()({ minSeverity: null }));
+
+        expect(panel).toMatch(/Stalled: 1/);
+        expect(panel).toMatch(/Peak fill: 100% Silica \(#3\)/);
+        expect(panel).toMatch(/Near full: 0/);
+    });
+
+    it('carries a degradation note in the panel instead of hiding it in the payload', async () => {
+        const result = await harness({
+            deliveries: async () => {
+                throw new Error('server down');
+            },
+        })({ minSeverity: null });
+
+        expect(panelOf(result)).toMatch(/Note: Deliveries could not be loaded/);
+        expect(JSON.parse(result.content[1]?.text ?? '{}').note).toMatch(/could not be loaded/i);
+    });
+
+    it('leaves the machine block untouched next to the panel', async () => {
+        const result = await harness({ report: pressureReport() })({ minSeverity: null });
+
+        expect(result.content).toHaveLength(2);
+        expect(result.content[1]?.type).toBe('text');
+        const payload = JSON.parse(result.content[1]?.text ?? '{}');
+        expect(Object.keys(payload).sort()).toEqual([
+            'counts',
+            'items',
+            'note',
+            'owner',
+            'ownerKnown',
+            'resourceNames',
+            'scouting',
+            'serverTime',
+            'version',
+        ]);
+        expect(payload.version).toBe(12);
+        expect(payload.items).toHaveLength(2);
     });
 });
