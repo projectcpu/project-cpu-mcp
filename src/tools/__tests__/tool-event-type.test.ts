@@ -40,6 +40,13 @@ describe('tool event type', () => {
         expect(new Set(WIRE.map(([, member]) => member)).size).toBe(WIRE.length);
     });
 
+    it('pins every enum member with a wire literal, so a new value cannot go unpinned', () => {
+        const members = Object.values(ToolEventType);
+        const pinned = WIRE.map(([, member]) => member);
+
+        expect(pinned.sort()).toEqual([...members].sort());
+    });
+
     it('names no failure: a failed action has no response body to carry it', () => {
         for (const [name, value] of Object.entries(ToolEventType)) {
             expect(name).not.toMatch(/fail|error|reject/iu);
