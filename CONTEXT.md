@@ -6,10 +6,9 @@ the trade/map endpoints), and the MCP tools — never against any backend intern
 
 ## Roles
 
-- **Operator** — the person a persona-equipped agent addresses and answers to. The same person is the
-  **owner** wherever tools and the game API name the holder of a cell, a lot, a syndicate, or any other
-  on-chain position. One person, two names: which one is used depends on whether the words are spoken
-  to them or read off a data field.
+- **Operator** — the person a persona-equipped agent addresses and answers to. That same person is
+  named **owner** wherever a tool or the game API reports the holder of a cell. One person, two names:
+  the persona's form of address, and the domain name of the cell holder in data.
 
 ## Readiness
 
@@ -61,11 +60,11 @@ produces past it. Mining and crafting differ in what they consume, not in how th
   an upgraded one, whose Extraction share credits only part of what it takes — so those deposits drain
   faster than Warehouse credit alone suggests. Snapshotted when Mining starts and surfaced on its Process
   as `processDrawPerCycle`; a `0` from a legacy snapshot means Take equals Warehouse credit.
-- **Extraction share** — the basis-point fraction of the Take credited to the warehouse as Warehouse
-  credit; the rest returns to the reservoir rather than being lost. A building property
-  (`operation.effects.extractionSharePercent` on a `cpu_get_building` card), lower on an upgraded
-  extractor than on a base one. It determines a newly started Process but never rewrites the Take
-  already snapshotted onto a running one.
+- **Extraction share** — the fraction of the Take credited to the warehouse as Warehouse credit; the
+  rest returns to the reservoir rather than being lost. A building property, lower on an upgraded
+  extractor than on a base one; surfaced as a percentage at
+  `operation.effects.extractionSharePercent` on a `cpu_get_building` card. It determines a newly
+  started Process but never rewrites the Take already snapshotted onto a running one.
 - **Stall** — a Process whose matured Cycles cannot settle because the room holds less than one whole
   Cycle's output. Claims settle in whole Cycles, so a partial cycle's worth of room banks nothing. Stalled
   time is discarded — the cursor resets to the moment of the settle and the remaining Batches start
@@ -124,7 +123,9 @@ terms themselves ever blurring together.
 - **Recipe output** — a resource a crafter's production cycle produces. The counterpart to Recipe input
   on the same recipe, never on the same building's construction.
 - **Minable resource** — a resource an extractor draws from the deposit of the cell it stands on. An
-  extractor has no inputs of its own kind: nothing feeds it, it only draws from what the cell holds.
+  extractor has no operating input of its own: nothing feeds a running cycle, it only draws from what
+  the cell holds — a Build input, spent once to erect it, is a separate commitment and does not change
+  that.
 
 ## Demolition
 
