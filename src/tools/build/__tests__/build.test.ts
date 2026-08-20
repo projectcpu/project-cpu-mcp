@@ -54,14 +54,31 @@ describe('build tool', () => {
     it('reports $CPU paid and a start-mining follow-up (with mine targets) for an extractor', async () => {
         const result = await harness(mineResult)({ tokenId: '42', buildingType: BuildingType.Mine });
 
-        const header = result.content[0]?.text ?? '';
-        expect(header).toMatch(/Mine/);
-        expect(header).toMatch(/approve tx 0xapprove/);
-        expect(header).toMatch(/5 \$CPU/);
-        expect(header).toMatch(/cpu_start_mining 42/);
+        const panel = result.content[0]?.text ?? '';
+        expect(panel).toMatch(/^BUILDING PLACEMENT\n/);
+        expect(panel).toMatch(/Cell: 42 \| Building: Mine/);
+        expect(panel).toMatch(/Approve tx: 0xapprove/);
+        expect(panel).toMatch(/5 \$CPU/);
+        expect(panel).toMatch(/cpu_start_mining 42/);
         // Mine mines Iron/Copper in the fixture.
-        expect(header).toMatch(/Iron \(#5\)/);
-        expect(header).not.toMatch(/mining started/);
+        expect(panel).toMatch(/Iron \(#5\)/);
+        expect(panel).not.toMatch(/mining started/);
+    });
+
+    it('leaves the machine-readable block as the plain service result', async () => {
+        const result = await harness(mineResult)({ tokenId: '42', buildingType: BuildingType.Mine });
+
+        expect(result.content[1]?.text).toBe(JSON.stringify(mineResult));
+        expect(result.content).toHaveLength(2);
+    });
+
+    it('says construction started rather than that the building is usable', async () => {
+        const result = await harness(mineResult)({ tokenId: '42', buildingType: BuildingType.Mine });
+
+        const panel = result.content[0]?.text ?? '';
+        expect(panel).toMatch(/construction started/);
+        expect(panel).toMatch(/does not work yet/);
+        expect(panel).not.toMatch(/\b(ready|complete|completed|completes|finished)\b/i);
     });
 
     it('reports a crafter with a cpu_craft follow-up listing its recipe', async () => {
@@ -77,7 +94,7 @@ describe('build tool', () => {
         expect(header).toMatch(/Smelt Steel \(smelt_steel\)/);
     });
 
-    it('reports a hub with no approve mention and a get_cell follow-up', async () => {
+    it('reports a hub with an absent approve transaction and a get_cell follow-up', async () => {
         const result = await harness({
             ...mineResult,
             buildingType: BuildingType.Hub,
@@ -89,10 +106,11 @@ describe('build tool', () => {
         expect(header).toMatch(/routes transport and trade/);
         expect(header).toMatch(/40 \$CPU/);
         expect(header).toMatch(/cpu_get_cell 42/);
-        expect(header).not.toMatch(/approve/i);
+        expect(header).toMatch(/Approve tx: n\/a/);
+        expect(header).not.toMatch(/0xapprove/);
     });
 
-    it('notes when the building was already in place', async () => {
+    it('prints the panel, not an empty line, when the building was already in place', async () => {
         const result = await harness({
             ...mineResult,
             approveTxHash: null,
@@ -101,9 +119,12 @@ describe('build tool', () => {
             alreadyBuilt: true,
         })({ tokenId: '42', buildingType: BuildingType.Mine });
 
-        const header = result.content[0]?.text ?? '';
-        expect(header).toMatch(/already in place/);
-        expect(header).toMatch(/cpu_start_mining 42/);
+        const panel = result.content[0]?.text ?? '';
+        expect(panel).toMatch(/^BUILDING PLACEMENT\n/);
+        expect(panel).toMatch(/no transaction sent/);
+        expect(panel).toMatch(/already stands on the cell/);
+        expect(panel).toMatch(/Build tx: n\/a/);
+        expect(panel).toMatch(/cpu_start_mining 42/);
     });
 
     it('propagates service errors', async () => {
