@@ -67,7 +67,7 @@ import type { ToolGate } from './version/types.js';
 
 export const SERVER_INSTRUCTIONS = [
     'MCP server for Project CPU (blockchain game on EVM).',
-    'Before you answer the operator, load your operating brief once with `cpu_get_persona` and work to it.',
+    'Before you answer the operator, load your operating brief once with `cpu_persona` and work to it.',
     'Authenticate first: `cpu_authenticate` opens a session — the default EVM mode signs in via SIWE',
     'locally, AGW mode starts a Device Authorization flow.',
     'Then read the entry point once: `cpu_get_game_config` carries the static rulebook — resources,',

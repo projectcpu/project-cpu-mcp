@@ -7,7 +7,7 @@ import {
 } from '../../utils/panel.constants.js';
 import type { PanelSpec } from '../../utils/panel.types.js';
 
-export const PERSONA_TOOL_NAME = 'cpu_get_persona';
+export const PERSONA_TOOL_NAME = 'cpu_persona';
 
 export const PERSONA_BRIEF_MARKER = `Before your first reply to the operator, call \`${PERSONA_TOOL_NAME}\` and work to the brief.`;
 
