@@ -1,5 +1,5 @@
 import { GET_CELL_DESCRIPTION } from './constants.js';
-import { demolishNote } from './demolish.utils.js';
+import { cellOverviewPanel } from './panel.utils.js';
 import { getCellInputSchema } from './types.js';
 import { activeDemolition } from '../../../map/map.utils.js';
 import type { AppContext } from '../../../types.js';
@@ -12,15 +12,22 @@ export function registerGetCellTool(server: ToolRegistrar, context: AppContext):
         'cpu_get_cell',
         { description: GET_CELL_DESCRIPTION, inputSchema: getCellInputSchema },
         async (args) => {
-            const inspection = await context.mapReader.inspectCell(args.tokenId, getWalletAddress(context));
+            const walletAddress = getWalletAddress(context);
+            const inspection = await context.mapReader.inspectCell(args.tokenId, walletAddress);
             if (inspection === null) {
                 throw new Error(`Cell ${args.tokenId} is not in the current map.`);
             }
 
             const { cell, neighbors } = inspection;
             const { resources, buildings } = await context.appConfig.load();
-            const demolish = activeDemolition(cell, context.mapReader.getServerTime());
-            const header = `Cell ${cell.tokenId} · ${neighbors.length} neighbours${demolishNote(demolish)}`;
+            const serverTime = context.mapReader.getServerTime();
+            const panel = cellOverviewPanel({
+                inspection,
+                demolish: activeDemolition(cell, serverTime),
+                serverTime,
+                walletAddress,
+                resources,
+            });
 
             const labeled = {
                 ...inspection,
@@ -30,7 +37,7 @@ export function registerGetCellTool(server: ToolRegistrar, context: AppContext):
 
             return {
                 content: [
-                    { type: 'text', text: header },
+                    { type: 'text', text: panel },
                     { type: 'text', text: JSON.stringify(labeled) },
                 ],
             };

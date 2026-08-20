@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import type { ServerHealthView } from '../../../api/types.js';
+import type { MapChanges } from '../../../map/types.js';
+
 export const getChangesInputSchema = {
     sinceVersion: z
         .number()
@@ -9,3 +12,9 @@ export const getChangesInputSchema = {
         .default(null)
         .describe('The "version" (epoch ms) from a previous map response. Omit or 0 to return every cell.'),
 };
+
+export interface ChangeFeedInput {
+    since: number;
+    changes: MapChanges;
+    health: ServerHealthView;
+}
