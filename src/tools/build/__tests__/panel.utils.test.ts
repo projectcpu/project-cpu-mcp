@@ -5,11 +5,21 @@ import { makeConfig } from '../../../services/__tests__/service-fakes.js';
 import type { AppConfig, BuildResult, UpgradeResult } from '../../../services/types.js';
 import { PANEL_FIELD_SEPARATOR, PANEL_LABEL_SEPARATOR, PANEL_MAX_WIDTH } from '../../../utils/panel.constants.js';
 import { TxStatus } from '../../../wallet/types.js';
-import { BUILD_PANEL_LABELS, UPGRADE_PANEL_LABELS } from '../constants.js';
 import { buildPanel, upgradePanel } from '../panel.utils.js';
 
-const BUILD_FIELDS = Object.values(BUILD_PANEL_LABELS);
-const UPGRADE_FIELDS = Object.values(UPGRADE_PANEL_LABELS);
+const BUILD_FIELDS = ['Cell', 'Building', 'Status', 'Finishes in', 'Paid', 'Approve tx', 'Build tx', 'Purpose', 'Next'];
+const UPGRADE_FIELDS = [
+    'Cell',
+    'From',
+    'To',
+    'Status',
+    'Finishes',
+    'Paid',
+    'Materials',
+    'Approve tx',
+    'Upgrade tx',
+    'Next',
+];
 const CLAIMS_USABLE = /\b(ready|complete|completed|completes|finished)\b/iu;
 
 function lines(panel: string): Array<string> {

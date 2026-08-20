@@ -61,28 +61,49 @@ function opensAsField(text: string, at: number): boolean {
     return PANEL_FIELD_HEAD.test(text.slice(at).trimStart());
 }
 
-function damages(text: string, at: number): boolean {
-    return splitsCharacter(text, at) || endsOnForbiddenTail(text, at) || opensAsField(text, at);
+function opensAsLabel(text: string, at: number, labels: ReadonlyArray<string>): boolean {
+    const head = text.slice(at).trimStart();
+    return labels.some((label) => head.startsWith(`${label}${PANEL_LABEL_SEPARATOR}`));
 }
 
-function cohesive(text: string, at: number, earliest: number): number {
+function damages(text: string, at: number, labels: ReadonlyArray<string>): boolean {
+    return (
+        splitsCharacter(text, at) ||
+        endsOnForbiddenTail(text, at) ||
+        opensAsField(text, at) ||
+        opensAsLabel(text, at, labels)
+    );
+}
+
+function backOff(at: number, earliest: number, harmful: (cut: number) => boolean): number | null {
     let cut = at;
-    while (cut > earliest && damages(text, cut)) {
+    while (harmful(cut)) {
+        if (cut <= earliest) {
+            return null;
+        }
         cut -= 1;
     }
-    return damages(text, cut) ? at : cut;
+    return cut;
 }
 
-function breakPoint(text: string, width: number, earliest: number): number {
+function cohesive(text: string, at: number, earliest: number, labels: ReadonlyArray<string>): number {
+    return (
+        backOff(at, earliest, (cut) => damages(text, cut, labels)) ??
+        backOff(at, earliest, (cut) => splitsCharacter(text, cut) || opensAsLabel(text, cut, labels)) ??
+        at
+    );
+}
+
+function breakPoint(text: string, width: number, earliest: number, labels: ReadonlyArray<string>): number {
     const space = text.slice(0, width + 1).lastIndexOf(' ');
-    return cohesive(text, space >= earliest ? space : width, earliest);
+    return cohesive(text, space >= earliest ? space : width, earliest, labels);
 }
 
-function wrapInto(lines: Array<string>, text: string, earliest: number): string {
+function wrapInto(lines: Array<string>, text: string, earliest: number, labels: ReadonlyArray<string>): string {
     let rest = text;
     let cut = earliest;
     while (rest.length > lineWidth(lines)) {
-        const at = breakPoint(rest, lineWidth(lines), cut);
+        const at = breakPoint(rest, lineWidth(lines), cut, labels);
         lines.push(rest.slice(0, at).trimEnd());
         rest = rest.slice(at).trimStart();
         cut = 1;
@@ -94,16 +115,16 @@ function indented(lines: ReadonlyArray<string>): Array<string> {
     return lines.map((line, index) => (index === 0 ? line : `${PANEL_CONTINUATION_INDENT}${line}`));
 }
 
-function renderTitle(title: string): Array<string> {
+function renderTitle(title: string, labels: ReadonlyArray<string>): Array<string> {
     const lines: Array<string> = [];
-    const tail = wrapInto(lines, sanitize(title), 1);
+    const tail = wrapInto(lines, sanitize(title), 1, labels);
     if (tail !== '' || lines.length === 0) {
         lines.push(tail);
     }
     return indented(lines);
 }
 
-function renderRow(row: PanelRow): Array<string> {
+function renderRow(row: PanelRow, labels: ReadonlyArray<string>): Array<string> {
     const lines: Array<string> = [];
     let current = '';
 
@@ -117,7 +138,7 @@ function renderRow(row: PanelRow): Array<string> {
         if (current !== '') {
             lines.push(current);
         }
-        current = wrapInto(lines, text, sanitize(field.label).length + PANEL_LABEL_SEPARATOR.length + 1);
+        current = wrapInto(lines, text, sanitize(field.label).length + PANEL_LABEL_SEPARATOR.length + 1, labels);
     }
     if (current !== '') {
         lines.push(current);
@@ -127,5 +148,6 @@ function renderRow(row: PanelRow): Array<string> {
 }
 
 export function renderPanel(panel: PanelSpec): string {
-    return [...renderTitle(panel.title), ...panel.rows.flatMap((row) => renderRow(row))].join('\n');
+    const labels = panel.rows.flat().map((field) => sanitize(field.label));
+    return [...renderTitle(panel.title, labels), ...panel.rows.flatMap((row) => renderRow(row, labels))].join('\n');
 }

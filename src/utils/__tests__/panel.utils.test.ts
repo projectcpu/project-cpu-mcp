@@ -179,6 +179,31 @@ describe('renderPanel', () => {
         expect(glued(panel).replace(/ /gu, '')).toContain(`Owner: ${value}`.replace(/ /gu, ''));
     });
 
+    it('lets no wrap put a label of the panel at the head of a continuation line', () => {
+        const guarded = ['Owner', 'Stalled', 'Near full'];
+
+        for (let padding = 40; padding <= 80; padding += 1) {
+            for (const tail of ['Stalled: 999', ' Stalled: 999', 'Near full: 3', ' Near full: 3']) {
+                const panel = renderPanel({
+                    title: 'PANEL',
+                    rows: [
+                        [{ label: 'Owner', value: `${'x'.repeat(padding)}${tail}` }],
+                        [
+                            { label: 'Stalled', value: '0' },
+                            { label: 'Near full', value: '0' },
+                        ],
+                    ],
+                });
+
+                for (const line of lines(panel).filter((text) => text.startsWith(PANEL_CONTINUATION_INDENT))) {
+                    for (const label of guarded) {
+                        expect(line.trim().startsWith(`${label}${PANEL_LABEL_SEPARATOR}`)).toBe(false);
+                    }
+                }
+            }
+        }
+    });
+
     it('never splits one character in two when it wraps a value', () => {
         const values = ['\u{1f600}'.repeat(60), 'e\u0301'.repeat(60), `0x${'\u{1f600}'.repeat(40)}`];
 

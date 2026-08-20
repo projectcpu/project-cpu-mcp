@@ -842,6 +842,7 @@ describe('get_attention panel, hostile and partial inputs', () => {
     it('does not let an owner address write a field of its own into the panel', async () => {
         const owners = [
             `0x${'a'.repeat(53)} Stalled: 999`,
+            `0x${'a'.repeat(61)}Stalled: 999 cells need you`,
             '0xcccccccccccccccccccc Iron Syndicate Stalled: 0 Near full: 0 Note: all clear',
         ];
 

@@ -220,6 +220,32 @@ describe('reveal tool', () => {
         expect(eventOf(paidAndOpen.content[1]?.text ?? '{}')).toBe(ToolEventType.CellRevealed);
     });
 
+    it('names the reveal when this call only settled a request it did not open', async () => {
+        const settledOnly: RevealResult = {
+            ...settledInline,
+            requestTxHash: null,
+            ethPaid: '0',
+            cpuBurn: '0',
+            fulfilled: false,
+        };
+        const result = await harness(settledOnly)({ tokenId: '42' });
+
+        expect(JSON.parse(result.content[1]?.text ?? '{}')).toHaveProperty('eventType', ToolEventType.CellRevealed);
+    });
+
+    it('names the reveal when the draw landed without this call sending either transaction', async () => {
+        const drawnElsewhere: RevealResult = {
+            ...settledInline,
+            requestTxHash: null,
+            fulfillTxHash: null,
+            ethPaid: '0',
+            cpuBurn: '0',
+        };
+        const result = await harness(drawnElsewhere)({ tokenId: '42' });
+
+        expect(JSON.parse(result.content[1]?.text ?? '{}')).toHaveProperty('eventType', ToolEventType.CellRevealed);
+    });
+
     it('claims no reveal on a cell that only carries a request this call neither sent nor settled', async () => {
         const carried: RevealResult = {
             ...fulfilledGenesis,
