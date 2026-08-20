@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import type { MiningClaimResult, MiningStatusResult } from '../../../services/types.js';
+import {
+    type MiningClaimResult,
+    type MiningStatusResult,
+    ModeCostKind,
+    ModeFreeReason,
+    type StartMiningResult,
+} from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerClaimMiningTool } from '../claim/claim-mining.js';
 import { registerGetMiningStatusTool } from '../get-status/get-mining-status.js';
+import { registerStartMiningTool } from '../start/start-mining.js';
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -43,6 +50,32 @@ function statusHarness(outcome: MiningStatusResult | Error): Handler {
     };
     const context = { mining, appConfig: appConfigStub, logger: new NoopLogger() } as unknown as AppContext;
     return capture(registerGetMiningStatusTool, context);
+}
+
+type StartArgs = { tokenId: string; targetResourceId: number | null; batches: number };
+type StartHandler = (args: StartArgs) => Promise<ToolResult>;
+
+const startResult: StartMiningResult = {
+    tokenId: '42',
+    targetResourceId: 3,
+    yieldPerCycle: 77,
+    batches: 10,
+    durationSec: 180,
+    modeSwitch: {
+        cost: { kind: ModeCostKind.Free, why: ModeFreeReason.FirstPick },
+        exact: true,
+        burnedCpu: '0',
+    },
+    approveTxHash: null,
+    txHash: '0xmine',
+    status: TxStatus.Success,
+    blockNumber: '100',
+};
+
+function startHarness(outcome: StartMiningResult): StartHandler {
+    const mining = { startMining: async (): Promise<StartMiningResult> => outcome };
+    const context = { mining, appConfig: appConfigStub, logger: new NoopLogger() } as unknown as AppContext;
+    return capture(registerStartMiningTool, context) as unknown as StartHandler;
 }
 
 function claimHarness(outcome: MiningClaimResult | Error): Handler {
@@ -93,6 +126,35 @@ describe('get_mining_status tool', () => {
         expect(parsed.targetResourceId).toBe(3);
     });
 
+    it('carries no event: a reading tool reports state, not something that happened', async () => {
+        const result = await statusHarness({
+            tokenId: '42',
+            active: true,
+            serverTime: 2000,
+            targetResourceId: 3,
+            yieldPerCycle: 77,
+            durationSec: 180,
+            startAt: 1700,
+            batches: 10,
+            claimedBatches: 0,
+            completedBatches: 2,
+            claimableBatches: 2,
+            isFinished: false,
+            endsAtSec: 3500,
+            nextBatchAtSec: 2030,
+            claimable: '120',
+            depositRemaining: '500',
+            stalled: false,
+            warehouseUsed: null,
+            warehouseCap: null,
+        })({ tokenId: '42' });
+
+        for (const block of result.content) {
+            expect(block.text).not.toMatch(/eventType/u);
+        }
+        expect(result).not.toHaveProperty('structuredContent');
+    });
+
     it('reports an inactive cell', async () => {
         const result = await statusHarness({
             tokenId: '42',
@@ -120,7 +182,39 @@ describe('get_mining_status tool', () => {
     });
 });
 
+describe('start_mining tool', () => {
+    it('tags the machine block with the mining start event and keeps the service result intact', async () => {
+        const result = await startHarness(startResult)({ tokenId: '42', targetResourceId: 3, batches: 10 });
+
+        expect(result.content[1]?.text).toBe(
+            JSON.stringify({ ...startResult, eventType: ToolEventType.MiningStarted }),
+        );
+        expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
+    });
+});
+
 describe('claim_mining tool', () => {
+    it('tags the machine block with the mining claim event, distinct from a start', async () => {
+        const claimed: MiningClaimResult = {
+            tokenId: '42',
+            resourceId: 3,
+            claimedBatches: 1,
+            claimedAmount: '120',
+            txHash: '0xmine',
+            status: TxStatus.Success,
+            blockNumber: '100',
+        };
+        const result = await claimHarness(claimed)({ tokenId: '42' });
+
+        expect(result.content[1]?.text).toBe(JSON.stringify({ ...claimed, eventType: ToolEventType.MiningClaimed }));
+        expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
+
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).not.toBe(ToolEventType.MiningStarted);
+    });
+
     it('reports the claimed amount', async () => {
         const result = await claimHarness({
             tokenId: '42',

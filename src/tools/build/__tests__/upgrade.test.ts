@@ -7,7 +7,7 @@ import { makeConfig } from '../../../services/__tests__/service-fakes.js';
 import type { UpgradeResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerUpgradeTool } from '../upgrade.js';
 
 interface ToolResult {
@@ -90,13 +90,44 @@ describe('upgrade tool', () => {
         expect(panel).toMatch(/Finishes: 2023-11-14/);
     });
 
-    it('leaves the machine-readable block as the plain service result', async () => {
+    it('leaves the machine-readable block as the service result tagged with the event type', async () => {
         const outcome = result();
         const { handler } = harness(outcome);
         const { content } = await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' });
 
-        expect(content[1]?.text).toBe(JSON.stringify(outcome));
+        expect(content[1]?.text).toBe(JSON.stringify({ ...outcome, eventType: ToolEventType.UpgradeStarted }));
         expect(content).toHaveLength(2);
+        expect(await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' })).not.toHaveProperty(
+            'structuredContent',
+        );
+    });
+
+    it('leaves the event out of the machine block when the target already stood and nothing was sent', async () => {
+        const standing = result({
+            noop: true,
+            upgrading: true,
+            buildCost: '0',
+            buildInputs: [],
+            approveTxHash: null,
+            txHash: null,
+            status: null,
+            blockNumber: null,
+        });
+        const { handler } = harness(standing);
+        const { content } = await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(content[1]?.text).toBe(JSON.stringify(standing));
+        expect(JSON.parse(content[1]?.text ?? '{}')).not.toHaveProperty('eventType');
+        expect(content).toHaveLength(2);
+    });
+
+    it('names its own event, distinct from a placement', async () => {
+        const { handler } = harness(result());
+        const { content } = await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        const parsed = JSON.parse(content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).toBe(ToolEventType.UpgradeStarted);
+        expect(parsed.eventType).not.toBe(ToolEventType.BuildStarted);
     });
 
     it('says construction started rather than that the building is usable', async () => {

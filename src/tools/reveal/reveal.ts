@@ -2,7 +2,7 @@ import { REVEAL_DESCRIPTION } from './constants.js';
 import { revealInputSchema } from './types.js';
 import type { RevealResult } from '../../services/types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 function requestLine(result: RevealResult): string {
     if (result.requestTxHash === null) {
@@ -67,7 +67,13 @@ export function registerRevealTool(server: ToolRegistrar, context: AppContext): 
             return {
                 content: [
                     { type: 'text', text: header },
-                    { type: 'text', text: JSON.stringify(result) },
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            ...result,
+                            ...(result.fulfilled ? { eventType: ToolEventType.CellRevealed } : {}),
+                        }),
+                    },
                 ],
             };
         },
