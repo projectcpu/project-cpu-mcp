@@ -21,3 +21,20 @@ describe('loadEnvConfig NETWORK', () => {
         },
     );
 });
+
+describe('loadEnvConfig OPERATOR_PERSONA', () => {
+    it('is on when the variable is absent', () => {
+        expect(loadEnvConfig({ PRIVATE_KEY }).OPERATOR_PERSONA).toBe(true);
+    });
+
+    it('is off on an explicit false, whatever the casing', () => {
+        expect(loadEnvConfig({ PRIVATE_KEY, OPERATOR_PERSONA: 'false' }).OPERATOR_PERSONA).toBe(false);
+        expect(loadEnvConfig({ PRIVATE_KEY, OPERATOR_PERSONA: '  FALSE ' }).OPERATOR_PERSONA).toBe(false);
+    });
+
+    it('stays on for true and for a value it cannot read', () => {
+        expect(loadEnvConfig({ PRIVATE_KEY, OPERATOR_PERSONA: 'true' }).OPERATOR_PERSONA).toBe(true);
+        expect(loadEnvConfig({ PRIVATE_KEY, OPERATOR_PERSONA: '0' }).OPERATOR_PERSONA).toBe(true);
+        expect(loadEnvConfig({ PRIVATE_KEY, OPERATOR_PERSONA: 'nope' }).OPERATOR_PERSONA).toBe(true);
+    });
+});

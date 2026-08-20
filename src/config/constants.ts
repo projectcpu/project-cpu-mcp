@@ -10,3 +10,4 @@ export const MAX_BATCHES_PER_PROCESS = 1000;
 export const BPS_DENOMINATOR = 10_000n;
 export const LAUNCH_CHAIN_ID = 4663;
 export const LAUNCH_NETWORK = Network.ROBINHOOD;
+export const OPERATOR_PERSONA_DEFAULT = true;
