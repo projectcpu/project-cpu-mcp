@@ -3,14 +3,30 @@ import { describe, expect, it } from 'vitest';
 import { BuildingKind, BuildingType, CraftRecipeId, RandomnessKind } from '../../../api/types.js';
 import { Network } from '../../../config/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
+import { type AppConfig, ModeSwitchKind } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
+import { renderBuildingIndexLine } from '../find-buildings/find-buildings.utils.js';
+import {
+    BUILDING_INDEX_SECTION_TITLE,
+    EMPTY_CATALOG_NOTE,
+    ENTRY_POINT_LOOKUP,
+    ROUTING_BUILDING_CARD_LINE,
+    ROUTING_FIND_BUILDINGS_LINE,
+    ROUTING_RECIPES_LINE,
+    ROUTING_RESOURCE_LENS_LINE,
+    ROUTING_SECTION_TITLE,
+    ROUTING_UNKNOWN_ID_LINE,
+    STATIC_SECTION_TITLE,
+} from '../get-game-config/constants.js';
 import { registerGetGameConfigTool } from '../get-game-config/get-game-config.js';
+import type { GameConfigReferenceView } from '../get-game-config/types.js';
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
 }
+
+const SECTION_TITLES = [ROUTING_SECTION_TITLE, STATIC_SECTION_TITLE, BUILDING_INDEX_SECTION_TITLE];
 
 const CONFIG: AppConfig = {
     network: Network.ROBINHOOD,
@@ -56,7 +72,7 @@ const CONFIG: AppConfig = {
             effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
             recipeOpexCpu: null,
             upgradeFrom: null,
-            upgradeTo: ['mine_branch_a_l2', 'mine_branch_b_l2'],
+            upgradeTo: ['mine_branch_a_l2'],
             family: 'mine',
             level: 1,
             branch: null,
@@ -69,7 +85,7 @@ const CONFIG: AppConfig = {
             tier: 2,
             buildCost: '20',
             buildTimeSec: 900,
-            buildInputs: [],
+            buildInputs: [{ resourceId: 101, amount: 3 }],
             demolishCost: { cpu: '10', inputs: [] },
             modeSwitchCost: null,
             modeSwitch: { kind: ModeSwitchKind.Impossible },
@@ -100,54 +116,10 @@ const CONFIG: AppConfig = {
             effects: { cycleTimeBp: 9000, extractionShareBp: 10000, inputEfficiency: [] },
             recipeOpexCpu: null,
             upgradeFrom: 'mine',
-            upgradeTo: ['mine_branch_a_l3'],
-            family: 'mine',
-            level: 2,
-            branch: 'a',
-        },
-        {
-            type: 'mine_branch_a_l3' as BuildingType,
-            onChainId: 47,
-            name: 'Mine Branch A L3',
-            kind: BuildingKind.Extractor,
-            tier: 3,
-            buildCost: '40',
-            buildTimeSec: 600,
-            buildInputs: [{ resourceId: 102, amount: 2 }],
-            demolishCost: { cpu: '20', inputs: [] },
-            modeSwitchCost: '1',
-            modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: '1' },
-            minableResources: [5, 6],
-            recipes: [],
-            effects: { cycleTimeBp: 8000, extractionShareBp: 10000, inputEfficiency: [] },
-            recipeOpexCpu: null,
-            upgradeFrom: 'mine_branch_a_l2',
-            upgradeTo: [],
-            family: 'mine',
-            level: 3,
-            branch: 'a',
-        },
-        {
-            type: 'mine_branch_b_l2' as BuildingType,
-            onChainId: 48,
-            name: 'Mine Branch B L2',
-            kind: BuildingKind.Extractor,
-            tier: 2,
-            buildCost: '18',
-            buildTimeSec: 360,
-            buildInputs: [],
-            demolishCost: { cpu: '9', inputs: [] },
-            modeSwitchCost: '1',
-            modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: '1' },
-            minableResources: [5, 6],
-            recipes: [],
-            effects: { cycleTimeBp: 11000, extractionShareBp: 12000, inputEfficiency: [] },
-            recipeOpexCpu: null,
-            upgradeFrom: 'mine',
             upgradeTo: [],
             family: 'mine',
             level: 2,
-            branch: 'b',
+            branch: 'a',
         },
     ],
     reveal: { ethContribution: '0.001', cpuBurn: '2' },
@@ -174,7 +146,29 @@ function capture(config: AppConfig = CONFIG): (args: never) => Promise<ToolResul
     return captured;
 }
 
-describe('get_game_config tool', () => {
+async function prose(config: AppConfig = CONFIG): Promise<string> {
+    return (await capture(config)({} as never)).content[0]?.text ?? '';
+}
+
+async function reference(config: AppConfig = CONFIG): Promise<GameConfigReferenceView> {
+    const raw = (await capture(config)({} as never)).content[1]?.text ?? '{}';
+    return JSON.parse(raw) as GameConfigReferenceView;
+}
+
+function sectionOf(text: string, title: string): string {
+    const start = text.indexOf(title);
+    if (start < 0) {
+        throw new Error(`the answer carries no section titled ${title}`);
+    }
+    const rest = text.slice(start + title.length);
+    const following = SECTION_TITLES.map((other) => rest.indexOf(other))
+        .filter((index) => index >= 0)
+        .sort((a, b) => a - b);
+    const next = following[0];
+    return next === undefined ? rest : rest.slice(0, next);
+}
+
+describe('get_game_config tool — reveal payment', () => {
     it('never offers a free reveal, whatever the legs are priced at', async () => {
         const profiles: Array<AppConfig['reveal']> = [
             { ethContribution: '0.001', cpuBurn: '2' },
@@ -184,91 +178,39 @@ describe('get_game_config tool', () => {
         ];
 
         for (const reveal of profiles) {
-            const header = (await capture({ ...CONFIG, reveal })({} as never)).content[0]?.text ?? '';
+            const text = await prose({ ...CONFIG, reveal });
 
-            expect(header).toContain('Reveal: every reveal');
-            expect(header).not.toMatch(/free reveal|reveal (is |)free|first reveal free|re-reveal/i);
+            expect(text).toContain('Reveal: every reveal');
+            expect(text).not.toMatch(/free reveal|reveal (is |)free|first reveal free|re-reveal/i);
         }
     });
 
     it('prints the reveal legs a live stand serves, without rescaling either of them', async () => {
-        const reveal = { ethContribution: '0.0001', cpuBurn: '1' };
+        const text = await prose({ ...CONFIG, reveal: { ethContribution: '0.0001', cpuBurn: '1' } });
 
-        const header = (await capture({ ...CONFIG, reveal })({} as never)).content[0]?.text ?? '';
-
-        expect(header).toContain('contributes 0.0001 ETH to the $CPU liquidity pool and burns 1 $CPU');
+        expect(text).toContain('contributes 0.0001 ETH to the $CPU liquidity pool and burns 1 $CPU');
     });
 
     it('says the amounts are unknown, not zero, when the network serves no reveal payment', async () => {
-        const header = (await capture({ ...CONFIG, reveal: null })({} as never)).content[0]?.text ?? '';
+        const text = await prose({ ...CONFIG, reveal: null });
 
-        expect(header).toContain('this network serves no price for it, so the amounts are unknown here');
-        expect(header).toContain('`cpu_reveal` reads the exact total off the chain and pays that');
+        expect(text).toContain('this network serves no price for it, so the amounts are unknown here');
+        expect(text).toContain('`cpu_reveal` reads the exact total off the chain and pays that');
     });
+});
 
-    it('summarizes the rulebook and returns the full config', async () => {
-        const result = await capture()({} as never);
-
-        const header = result.content[0]?.text ?? '';
-        expect(header).toMatch(/Network robinhood \(chainId 4663\)/);
-        expect(header).toMatch(/Mine \(extractor, build 5 \$CPU, demolish 2\.5 \$CPU\)/);
-        expect(header).toMatch(
-            /Steel Mill \(crafter, build 20 \$CPU, demolish 10 \$CPU, opex smelt_steel:2 \$CPU\/batch\)/,
-        );
-        expect(header).toContain(
-            'every reveal contributes 0.001 ETH to the $CPU liquidity pool and burns 2 $CPU, the first reveal ' +
-                'of a cell included',
-        );
-        expect(header).toMatch(/1 recipe\(s\)/);
-        expect(header).toMatch(/5:Iron/);
-        expect(header).toMatch(/cell 0x5555555555555555555555555555555555555555/);
-        expect(header).toContain('1% sale burn');
-        expect(header).toContain(
-            'sale fee up to 100% (the structural bound — a hub owner can set any rate up to this maximum)',
-        );
-        expect(header).toContain("every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override");
-        expect(header).toContain('5:0.1');
-        expect(header).toContain('storage caps are explicit per-resource cell/hub shelf pairs');
-        expect(header).toContain('`0` means unlimited');
-
-        const json = JSON.parse(result.content[1]?.text ?? '{}') as AppConfig;
-        expect(json.buildings[0]?.buildCost).toBe('5');
-        expect(json.reveal).toEqual({ ethContribution: '0.001', cpuBurn: '2' });
-        expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
-        expect(json.transport.moveFeeFloors).toEqual({ 5: '0.1' });
-        expect(json.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });
-        expect(json.buildings[0]).toHaveProperty('modeSwitchCost', '1');
-    });
-
-    it('exposes an unknown switch cost only through its explicit tag', async () => {
-        const source = CONFIG.buildings[0];
-        if (source === undefined || !('modeSwitchCost' in source)) {
-            throw new Error('expected a building with a known switch cost');
-        }
-        const { modeSwitchCost, ...building } = source;
-        void modeSwitchCost;
-        const unknown: AppConfig = {
-            ...CONFIG,
-            buildings: [{ ...building, modeSwitch: { kind: ModeSwitchKind.Unknown } }],
-        };
-
-        const json = JSON.parse((await capture(unknown)({} as never)).content[1]?.text ?? '{}') as AppConfig;
-
-        expect(json.buildings[0]?.modeSwitch).toEqual({ kind: 'unknown' });
-        expect('modeSwitchCost' in (json.buildings[0] ?? {})).toBe(false);
-    });
-
+describe('get_game_config tool — randomness', () => {
     it('tells a push network that the draw arrives on its own and fulfilment is not the agent’s job', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
+        const text = await prose();
 
-        expect(header).toContain('Randomness: push —');
-        expect(header).toContain('deposits land asynchronously');
-        expect(header).toContain('has nothing to do on this network');
-        expect(header).not.toContain('self-service');
+        expect(text).toContain('Randomness: push —');
+        expect(text).toContain('deposits land asynchronously');
+        expect(text).toContain('has nothing to do on this network');
+        expect(text).not.toContain('self-service');
     });
 
     it('tells a self-service network that reveal finishes the draw itself and what fulfilled: false means', async () => {
-        const config: AppConfig = {
+        const text = await prose({
             ...CONFIG,
             randomness: {
                 kind: RandomnessKind.DRAND,
@@ -277,177 +219,195 @@ describe('get_game_config tool', () => {
                 period: 30,
                 beaconApi: 'https://beacon.example/v2',
             },
-        };
+        });
 
-        const header = (await capture(config)({} as never)).content[0]?.text ?? '';
-
-        expect(header).toContain('Randomness: self-service —');
-        expect(header).toContain('`fulfilled: false`');
-        expect(header).toContain('call `cpu_reveal` on that cell again');
-        expect(header).not.toContain('Randomness: push');
+        expect(text).toContain('Randomness: self-service —');
+        expect(text).toContain('`fulfilled: false`');
+        expect(text).toContain('call `cpu_reveal` on that cell again');
+        expect(text).not.toContain('Randomness: push');
     });
 
-    it('phrases the two modes differently and carries the descriptor in the data', async () => {
-        const push = (await capture()({} as never)).content[0]?.text ?? '';
-        const selfService =
-            (
-                await capture({
-                    ...CONFIG,
-                    randomness: {
-                        kind: RandomnessKind.DRAND,
-                        adapter: '',
-                        genesis: 1,
-                        period: 3,
-                        beaconApi: 'https://beacon.example/v2',
-                    },
-                })({} as never)
-            ).content[0]?.text ?? '';
-
-        expect(push).not.toBe(selfService);
-
-        const json = JSON.parse((await capture()({} as never)).content[1]?.text ?? '{}') as AppConfig;
-        expect(json.randomness).toEqual({
+    it('carries the randomness descriptor itself in the machine block', async () => {
+        expect((await reference()).randomness).toEqual({
             kind: 'entropy',
             adapter: '0x00000000000000000000000000000000000000a1',
         });
     });
 });
 
-describe('get_game_config tool — recipe summary', () => {
-    it('summarizes each recipe on one compact machine-readable line with its id, cycle, inputs, outputs, and cost', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
+describe('get_game_config tool — the static every agent reads once', () => {
+    it('keeps the network, contracts, resources, trade, transit and storage facts in the static section', async () => {
+        const text = await prose();
+        const section = sectionOf(text, STATIC_SECTION_TITLE);
 
-        expect(header).toContain('smelt_steel | 30s/cycle | in 4 Iron (#5) | out 2 Steel (#102) | 0 $CPU/cycle');
+        expect(text).toMatch(/Network robinhood \(chainId 4663\)/);
+        expect(section).toContain('5:Iron');
+        expect(section).toContain('101:Concrete');
+        expect(section).toContain('cell 0x5555555555555555555555555555555555555555');
+        expect(section).toContain('transport 0x7777777777777777777777777777777777777777');
+        expect(section).toContain('1% sale burn');
+        expect(section).toContain(
+            'sale fee up to 100% (the structural bound — a hub owner can set any rate up to this maximum)',
+        );
+        expect(section).toContain('radii in cells — move 1, hub 3');
+        expect(section).toContain('2s per cell');
+        expect(section).toContain("every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override");
+        expect(section).toContain('5:0.1');
+        expect(section).toContain('storage caps are explicit per-resource cell/hub shelf pairs');
+        expect(section).toContain('`0` means unlimited');
     });
 
-    it('preserves recipe cycle duration and outputs in the raw configuration', async () => {
-        const json = JSON.parse((await capture()({} as never)).content[1]?.text ?? '{}') as AppConfig;
+    it('holds the static and not the index rows or the routing map', async () => {
+        const section = sectionOf(await prose(), STATIC_SECTION_TITLE);
 
-        expect(json.recipes[0]?.durationSec).toBe(30);
-        expect(json.recipes[0]?.outputs).toEqual([{ resourceId: 102, amount: 2 }]);
+        expect(section).not.toContain(ENTRY_POINT_LOOKUP.building);
+        expect(section).not.toContain(ENTRY_POINT_LOOKUP.buildingSearch);
+        expect(section).not.toContain('| crafter | tier 2 |');
+    });
+
+    it('carries every static group in the machine block, untrimmed', async () => {
+        const json = await reference();
+
+        expect(json.network).toBe('robinhood');
+        expect(json.chainId).toBe(4663);
+        expect(json.contracts).toEqual(CONFIG.contracts);
+        expect(json.resources).toEqual({ 5: 'Iron', 101: 'Concrete', 102: 'Steel' });
+        expect(json.reveal).toEqual({ ethContribution: '0.001', cpuBurn: '2' });
+        expect(json.transport).toEqual(CONFIG.transport);
+        expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
+        expect(json.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });
     });
 });
 
-describe('get_game_config tool — upgrade graph', () => {
-    it('shows a base building with multiple immediate targets, its level, and no predecessor', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
+describe('get_game_config tool — the building index', () => {
+    it('carries one row per catalog building in the shape the search returns', async () => {
+        const section = sectionOf(await prose(), BUILDING_INDEX_SECTION_TITLE);
 
-        expect(header).toContain(
-            'mine | level 1 | branch none | predecessor none (base building) | ' +
-                'successors mine_branch_a_l2,mine_branch_b_l2 | cost 5 $CPU',
-        );
+        for (const building of CONFIG.buildings) {
+            expect(section).toContain(renderBuildingIndexLine(building, CONFIG.recipes, CONFIG.resources));
+        }
+        expect(section).toContain('mine | Mine | extractor | tier 1 | build 5 $CPU | mines Iron');
+        expect(section).toContain('steel_mill | Steel Mill | crafter | tier 2 | build 20 $CPU | crafts Steel');
     });
 
-    it('shows a branch-specific intermediate building with its predecessor and successor', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
+    it('says how many buildings the catalog holds', async () => {
+        const text = await prose();
 
-        expect(header).toContain(
-            'mine_branch_a_l2 | level 2 | branch a | predecessor mine | successors mine_branch_a_l3 | ' +
-                'cost 15 $CPU | inputs 3 Concrete (#101) | build 300s',
-        );
+        expect(text).toContain(`${BUILDING_INDEX_SECTION_TITLE} (3 building(s))`);
     });
 
-    it('shows a terminal upgrade with no successors', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
+    it('holds rows and neither the static nor the routing map', async () => {
+        const section = sectionOf(await prose(), BUILDING_INDEX_SECTION_TITLE);
 
-        expect(header).toContain(
-            'mine_branch_a_l3 | level 3 | branch a | predecessor mine_branch_a_l2 | successors none (terminal)',
-        );
-        expect(header).toContain(
-            'mine_branch_b_l2 | level 2 | branch b | predecessor mine | successors none (terminal)',
-        );
+        expect(section).toContain('mine | Mine | extractor');
+        expect(section).not.toContain('Reveal: every reveal');
+        expect(section).not.toContain('Contracts —');
+        expect(section).not.toContain(ENTRY_POINT_LOOKUP.recipes);
     });
 
-    it('excludes buildings that do not participate in any upgrade line', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
+    it('carries no card fields: no build time, no demolish cost, no upgrade links, no effects', async () => {
+        const section = sectionOf(await prose(), BUILDING_INDEX_SECTION_TITLE);
 
-        expect(header).not.toMatch(/steel_mill \|/);
+        expect(section).not.toMatch(/build 120s|build 300s/);
+        expect(section).not.toContain('demolish');
+        expect(section).not.toContain('predecessor');
+        expect(section).not.toContain('successors');
+        expect(section).not.toContain('cycleTimeBp');
+        expect(section).not.toContain('extractionShareBp');
     });
 
-    it('labels cycleTimeBp as a modifier rather than an absolute duration', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
+    it('answers an empty catalog with a note rather than a bare heading', async () => {
+        const text = await prose({ ...CONFIG, buildings: [] });
 
-        expect(header).toContain(
-            'cycleTimeBp 9000 (a cycle-time modifier applied on top of the base production cycle, ' +
-                'not an absolute duration)',
-        );
-        expect(header).not.toMatch(/cycleTimeBp 9000 \(9s\)/);
-        expect(header).not.toMatch(/cycleTimeBp 9000 seconds/);
-    });
-
-    it('does not present extractor-compatible resources as a guaranteed mining yield', async () => {
-        const header = (await capture()({} as never)).content[0]?.text ?? '';
-
-        expect(header).toContain('extractor-compatible Iron (#5),resource #6 (compatible resources only');
-        expect(header).toContain('actual mining yield is set at runtime, not a guaranteed amount');
+        expect(text).toContain(EMPTY_CATALOG_NOTE);
     });
 });
 
-describe('get_game_config tool — upgrade graph against awkward configurations', () => {
-    function withOrphanParticipant(overrides: Partial<CatalogBuildingView> = {}): AppConfig {
-        return {
-            ...CONFIG,
-            buildings: [
-                ...CONFIG.buildings,
-                {
-                    ...(CONFIG.buildings[0] as CatalogBuildingView),
-                    type: 'mine_branch_c_l2' as BuildingType,
-                    onChainId: 49,
-                    name: 'Mine Branch C L2',
-                    buildCost: '19',
-                    buildTimeSec: 300,
-                    buildInputs: [],
-                    upgradeFrom: 'mine',
-                    upgradeTo: [],
-                    family: null,
-                    level: null,
-                    branch: 'c',
-                    ...overrides,
-                } as CatalogBuildingView,
-            ],
-        };
-    }
+describe('get_game_config tool — the routing map', () => {
+    it('names a tool for each of the four directions', async () => {
+        const section = sectionOf(await prose(), ROUTING_SECTION_TITLE);
 
-    it('shows a participant with no configured level as unknown rather than crashing or blanking it', async () => {
-        const header = (await capture(withOrphanParticipant())({} as never)).content[0]?.text ?? '';
-
-        expect(header).toContain(
-            'mine_branch_c_l2 | level unknown | branch c | predecessor mine | successors none (terminal)',
-        );
+        expect(section).toContain(ROUTING_BUILDING_CARD_LINE);
+        expect(section).toContain(ROUTING_FIND_BUILDINGS_LINE);
+        expect(section).toContain(ROUTING_RESOURCE_LENS_LINE);
+        expect(section).toContain(ROUTING_RECIPES_LINE);
+        expect(ROUTING_BUILDING_CARD_LINE).toContain(ENTRY_POINT_LOOKUP.building);
+        expect(ROUTING_FIND_BUILDINGS_LINE).toContain(ENTRY_POINT_LOOKUP.buildingSearch);
+        expect(ROUTING_RESOURCE_LENS_LINE).toContain(ENTRY_POINT_LOOKUP.resource);
+        expect(ROUTING_RECIPES_LINE).toContain(ENTRY_POINT_LOOKUP.recipes);
     });
 
-    it('sorts a participant with no configured family after every family-grouped participant, not before', async () => {
-        const header = (await capture(withOrphanParticipant())({} as never)).content[0]?.text ?? '';
+    it('sends upgrade relations to the building card, since the entry point no longer draws them', async () => {
+        const section = sectionOf(await prose(), ROUTING_SECTION_TITLE);
 
-        const mineIndex = header.indexOf('mine | level 1');
-        const orphanIndex = header.indexOf('mine_branch_c_l2 |');
-        expect(mineIndex).toBeGreaterThan(-1);
-        expect(orphanIndex).toBeGreaterThan(mineIndex);
+        expect(section).toContain('upgrade');
+        expect(section).toContain(ENTRY_POINT_LOOKUP.building);
     });
 
-    it('renders a predecessor reference even when that predecessor type no longer exists in the catalog (a stale config)', async () => {
-        const header =
-            (await capture(withOrphanParticipant({ upgradeFrom: 'deleted_predecessor' }))({} as never)).content[0]
-                ?.text ?? '';
+    it('warns that the two lookups answer an unknown id differently', async () => {
+        const section = sectionOf(await prose(), ROUTING_SECTION_TITLE);
 
-        expect(header).toContain('predecessor deleted_predecessor');
+        expect(section).toContain(ROUTING_UNKNOWN_ID_LINE);
+        expect(ROUTING_UNKNOWN_ID_LINE).toContain('`inCatalog: false`');
+        expect(ROUTING_UNKNOWN_ID_LINE).toContain('throws');
     });
 
-    it('reports no upgrade participants when every building in the catalog predates the upgrade graph', async () => {
-        const legacy: AppConfig = {
-            ...CONFIG,
-            buildings: CONFIG.buildings.map((b) => ({
-                ...b,
-                upgradeFrom: null,
-                upgradeTo: [],
-                family: null,
-                level: null,
-                branch: null,
-            })),
-        };
+    it('repeats the same four tool names in the machine block', async () => {
+        expect((await reference()).lookup).toEqual({
+            building: 'cpu_get_building',
+            buildingSearch: 'cpu_find_buildings',
+            resource: 'cpu_get_resource',
+            recipes: 'cpu_list_recipes',
+        });
+    });
 
-        const header = (await capture(legacy)({} as never)).content[0]?.text ?? '';
+    it('holds the routing map and neither the static nor the index rows', async () => {
+        const section = sectionOf(await prose(), ROUTING_SECTION_TITLE);
 
-        expect(header).toContain('No buildings currently participate in an upgrade line.');
+        expect(section).not.toContain('Contracts —');
+        expect(section).not.toContain('Reveal: every reveal');
+        expect(section).not.toContain('| extractor | tier 1 |');
+    });
+});
+
+describe('get_game_config tool — what it stopped carrying', () => {
+    it('draws no upgrade graph anywhere in the answer', async () => {
+        const result = await capture()({} as never);
+        const whole = result.content.map((block) => block.text).join('\n');
+
+        expect(whole).not.toContain('Upgrade graph');
+        expect(whole).not.toContain('predecessor');
+        expect(whole).not.toContain('successors');
+        expect(whole).not.toContain('base building');
+        expect(whole).not.toContain('cycleTimeBp');
+    });
+
+    it('points at the recipe tool instead of copying a single recipe line', async () => {
+        const result = await capture()({} as never);
+        const whole = result.content.map((block) => block.text).join('\n');
+
+        expect(whole).toContain(ENTRY_POINT_LOOKUP.recipes);
+        expect(whole).not.toContain('smelt_steel');
+        expect(whole).not.toContain('$CPU/cycle');
+        expect(whole).not.toContain('30s/cycle');
+        expect(whole).not.toContain('Smelt Steel');
+    });
+
+    it('keeps full building cards out of the machine block', async () => {
+        const result = await capture()({} as never);
+        const raw = result.content[1]?.text ?? '';
+        const json = JSON.parse(raw) as Record<string, unknown>;
+
+        expect('buildings' in json).toBe(false);
+        expect('recipes' in json).toBe(false);
+        expect(raw).not.toContain('buildTimeSec');
+        expect(raw).not.toContain('demolishCost');
+        expect(raw).not.toContain('minableResources');
+        expect(raw).not.toContain('recipeOpexCpu');
+        expect(raw).not.toContain('durationSec');
+    });
+
+    it('still says how much of each the catalog holds, so nothing looks lost', async () => {
+        expect((await reference()).catalog).toEqual({ buildingCount: 3, recipeCount: 1 });
     });
 });
