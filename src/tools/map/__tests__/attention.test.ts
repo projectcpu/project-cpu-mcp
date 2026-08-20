@@ -20,6 +20,7 @@ import { RevealFulfilmentService } from '../../../services/reveal-fulfilment.ser
 import type { AppConfig, DeliveryView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import {
+    PANEL_CONTINUATION_INDENT,
     PANEL_LABEL_SEPARATOR,
     PANEL_MAX_LABEL_LENGTH,
     PANEL_STRUCTURAL_SEQUENCES,
@@ -564,6 +565,21 @@ function labelSeparators(panel: string): number {
     return panel.split(PANEL_LABEL_SEPARATOR).length - 1;
 }
 
+function unwrapped(panel: string): string {
+    return panel
+        .split('\n')
+        .reduce((text, line) =>
+            line.startsWith(PANEL_CONTINUATION_INDENT) ? `${text} ${line.trim()}` : `${text}\n${line}`,
+        );
+}
+
+function flattened(panel: string): string {
+    return panel
+        .split('\n')
+        .map((line) => line.trim())
+        .join('');
+}
+
 function panelLabels(panel: string): Array<string> {
     return panel
         .split('\n')
@@ -870,6 +886,43 @@ describe('get_attention panel, hostile and partial inputs', () => {
         expect(panel.split('\n').length).toBeGreaterThan(5);
         expect(flattened).toContain(`Owner: ${owner}`);
         expect(flattened.replace(/ /gu, '')).toContain(note.replace(/ /gu, ''));
+    });
+
+    it('keeps a clock reading inside an owner address exactly as it arrived', async () => {
+        const panel = panelOf(await harness()({ minSeverity: null, owner: '0xabc 14:32' }));
+
+        expect(panel).toMatch(/Owner: 0xabc 14:32/);
+        expect(labelSeparators(panel)).toBe(PANEL_LABELS.length);
+        expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+    });
+
+    it('lets an owner address forge no field even when the panel is read unwrapped', async () => {
+        const handler = harness();
+
+        for (let offset = 40; offset < 72; offset += 1) {
+            const owner = `${'b'.repeat(offset)}:${'c'.repeat(30)}`;
+            const result = await handler({ minSeverity: null, owner });
+            const panel = panelOf(result);
+
+            expect(labelSeparators(unwrapped(panel))).toBe(PANEL_LABELS.length);
+            expect(flattened(panel)).toContain(`Owner: ${owner}`);
+            for (const line of panel.split('\n')) {
+                expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+            }
+        }
+    });
+
+    it('wraps an owner address without splitting one of its characters in two', async () => {
+        const owner = '\u{1f600}'.repeat(60);
+        const panel = panelOf(await harness()({ minSeverity: null, owner }));
+
+        for (const line of panel.split('\n')) {
+            expect(line.isWellFormed()).toBe(true);
+            expect(line.trimStart()).not.toMatch(/^\p{M}/u);
+            expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+        }
+        expect(flattened(panel)).toContain(`Owner: ${owner}`);
+        expect(panelLabels(panel)).toEqual(PANEL_LABELS);
     });
 
     it('keeps its own labels inside the label ceiling the builder documents', () => {

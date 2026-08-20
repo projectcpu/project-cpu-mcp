@@ -3,19 +3,34 @@ import { describe, expect, it } from 'vitest';
 import {
     PANEL_BAR,
     PANEL_CHARACTER_SUBSTITUTES,
+    PANEL_CONTINUATION_INDENT,
     PANEL_LABEL_SEPARATOR,
     PANEL_MAX_LABEL_LENGTH,
     PANEL_MAX_WIDTH,
     PANEL_RESERVED_CHARACTERS,
+    PANEL_SEQUENCE_ELISIONS,
     PANEL_STRUCTURAL_SEQUENCES,
+    PANEL_UNKNOWN_SUBSTITUTE,
 } from '../panel.constants.js';
 import type { PanelSpec } from '../panel.types.js';
-import { renderPanel } from '../panel.utils.js';
+import { renderPanel, substituteFor } from '../panel.utils.js';
 
 const UNBREAKABLE = `0x${'b'.repeat(70)}`;
 
 function lines(panel: string): Array<string> {
     return panel.split('\n');
+}
+
+function unwrapped(panel: string): string {
+    return lines(panel).reduce((text, line) =>
+        line.startsWith(PANEL_CONTINUATION_INDENT) ? `${text} ${line.trim()}` : `${text}\n${line}`,
+    );
+}
+
+function glued(panel: string): string {
+    return lines(panel)
+        .map((line) => line.trim())
+        .join('');
 }
 
 function occurrences(text: string, sequence: string): number {
@@ -64,6 +79,7 @@ describe('renderPanel', () => {
         const title = 'T'.repeat(90);
         const panel = renderPanel({ title, rows: [[{ label: 'Field', value: UNBREAKABLE }]] });
 
+        expect(PANEL_MAX_WIDTH).toBe(72);
         for (const line of lines(panel)) {
             expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
         }
@@ -85,7 +101,101 @@ describe('renderPanel', () => {
         const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Owner', value: '0xabc\nForged: line' }]] });
 
         expect(lines(panel)).toHaveLength(2);
-        expect(panel).toContain('Owner: 0xabc Forged; line');
+        expect(panel).toContain('Owner: 0xabc Forged:line');
+        expect(occurrences(panel, PANEL_LABEL_SEPARATOR)).toBe(1);
+    });
+
+    it('keeps the colons a value really has, dropping only the space that would make one a separator', () => {
+        const panel = renderPanel({
+            title: 'PANEL',
+            rows: [
+                [{ label: 'Window', value: '14:32 3:1' }],
+                [{ label: 'Note', value: 'Frozen: the live fee is above your tolerance' }],
+            ],
+        });
+
+        expect(panel).toContain('Window: 14:32 3:1');
+        expect(panel).toContain('Note: Frozen:the live fee is above your tolerance');
+        expect(occurrences(panel, PANEL_LABEL_SEPARATOR)).toBe(2);
+    });
+
+    it('ends no wrapped line on what it left of an elided sequence, so unwrapping adds no field', () => {
+        for (let offset = 40; offset < 72; offset += 1) {
+            const value = `${'b'.repeat(offset)}:${'c'.repeat(30)}`;
+            const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Owner', value }]] });
+
+            expect(occurrences(unwrapped(panel), PANEL_LABEL_SEPARATOR)).toBe(1);
+            expect(glued(panel)).toContain(`Owner: ${value}`);
+            for (const line of lines(panel)) {
+                expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+            }
+        }
+    });
+
+    it('writes no named field into a panel, whatever shape the value takes and however it is read', () => {
+        const values = [
+            ':'.repeat(80),
+            `${'b'.repeat(30)}${':'.repeat(50)}`,
+            `${':'.repeat(69)}x`,
+            `${'\u{1f600}'.repeat(30)}:${'\u{1f600}'.repeat(30)}`,
+            'a: b: c: d: '.repeat(12),
+            `${'x'.repeat(60)} ${':'.repeat(30)}`,
+            PANEL_LABEL_SEPARATOR.repeat(60),
+        ];
+        for (let offset = 0; offset < 100; offset += 1) {
+            values.push(`${'b'.repeat(offset)}:${'c'.repeat(40)}`);
+            values.push(`${'b'.repeat(offset)}: ${'c'.repeat(40)}`);
+            values.push(`${'x'.repeat(offset)} Stalled: 999 ${'y'.repeat(40)}`);
+            values.push(`${'\u{1f600}'.repeat(offset)}x`);
+        }
+
+        for (const label of ['Owner', 'X'.repeat(PANEL_MAX_LABEL_LENGTH)]) {
+            for (const value of values) {
+                const panel = renderPanel({ title: 'PANEL', rows: [[{ label, value }]] });
+
+                expect(unwrapped(panel).match(/[^\s:]: /gu)).toHaveLength(1);
+                for (const line of lines(panel)) {
+                    expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+                    expect(line.isWellFormed()).toBe(true);
+                }
+            }
+        }
+    });
+
+    it('never splits one character in two when it wraps a value', () => {
+        const values = ['\u{1f600}'.repeat(60), 'e\u0301'.repeat(60), `0x${'\u{1f600}'.repeat(40)}`];
+
+        for (const value of values) {
+            const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Owner', value }]] });
+
+            expect(lines(panel).length).toBeGreaterThan(2);
+            for (const line of lines(panel)) {
+                expect(line.isWellFormed()).toBe(true);
+                expect(line.trimStart()).not.toMatch(/^\p{M}/u);
+                expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+            }
+            expect(glued(panel)).toContain(`Owner: ${value}`);
+        }
+    });
+
+    it('breaks a long value at its spaces, keeping every word whole', () => {
+        const value = 'word '.repeat(40).trim();
+        const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Note', value }]] });
+
+        expect(lines(panel).length).toBeGreaterThan(2);
+        expect(
+            lines(panel)
+                .slice(1)
+                .map((line) => line.trim())
+                .join(' '),
+        ).toBe(`Note: ${value}`);
+    });
+
+    it('stands in for a structural character it has no substitute for without changing the width', () => {
+        expect(substituteFor(PANEL_BAR, new Map())).toBe(PANEL_UNKNOWN_SUBSTITUTE);
+        expect(PANEL_UNKNOWN_SUBSTITUTE).toHaveLength(1);
+        expect(PANEL_UNKNOWN_SUBSTITUTE).not.toMatch(/\s/u);
+        expect(PANEL_STRUCTURAL_SEQUENCES.join('')).not.toContain(PANEL_UNKNOWN_SUBSTITUTE);
     });
 
     it('prints a missing or blank value instead of dropping its field', () => {
@@ -135,7 +245,15 @@ describe('renderPanel', () => {
     });
 
     it('gives every character its structure is built from a stand-in of the same length', () => {
+        const structure = PANEL_STRUCTURAL_SEQUENCES.join('');
+
         expect(PANEL_RESERVED_CHARACTERS).toContain(PANEL_BAR);
+        expect([...structure]).toHaveLength(structure.length);
+        for (const [sequence, remainder] of PANEL_SEQUENCE_ELISIONS) {
+            expect(remainder.length).toBeGreaterThan(0);
+            expect(remainder.length).toBeLessThan(sequence.length);
+            expect(sequence).toContain(remainder);
+        }
 
         for (const character of PANEL_RESERVED_CHARACTERS) {
             const substitute = PANEL_CHARACTER_SUBSTITUTES.get(character);
