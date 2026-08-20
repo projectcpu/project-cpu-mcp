@@ -1,4 +1,6 @@
 import {
+    PANEL_BAR,
+    PANEL_BAR_SUBSTITUTE,
     PANEL_CONTINUATION_INDENT,
     PANEL_FIELD_SEPARATOR,
     PANEL_LABEL_SEPARATOR,
@@ -7,13 +9,13 @@ import {
 } from './panel.constants.js';
 import type { PanelField, PanelRow, PanelSpec } from './panel.types.js';
 
-function collapse(text: string): string {
-    return text.replace(/\s+/gu, ' ').trim();
+function sanitize(text: string): string {
+    return text.replace(/\s+/gu, ' ').split(PANEL_BAR).join(PANEL_BAR_SUBSTITUTE).trim();
 }
 
 function fieldText(field: PanelField): string {
-    const value = field.value === null ? '' : collapse(field.value);
-    return `${field.label}${PANEL_LABEL_SEPARATOR}${value === '' ? PANEL_MISSING_VALUE : value}`;
+    const value = field.value === null ? '' : sanitize(field.value);
+    return `${sanitize(field.label)}${PANEL_LABEL_SEPARATOR}${value === '' ? PANEL_MISSING_VALUE : value}`;
 }
 
 function lineWidth(lines: ReadonlyArray<string>): number {
@@ -43,8 +45,8 @@ function indented(lines: ReadonlyArray<string>): Array<string> {
 
 function renderTitle(title: string): Array<string> {
     const lines: Array<string> = [];
-    const tail = wrapInto(lines, collapse(title), 1);
-    if (tail !== '') {
+    const tail = wrapInto(lines, sanitize(title), 1);
+    if (tail !== '' || lines.length === 0) {
         lines.push(tail);
     }
     return indented(lines);
@@ -64,7 +66,7 @@ function renderRow(row: PanelRow): Array<string> {
         if (current !== '') {
             lines.push(current);
         }
-        current = wrapInto(lines, text, field.label.length + PANEL_LABEL_SEPARATOR.length + 1);
+        current = wrapInto(lines, text, sanitize(field.label).length + PANEL_LABEL_SEPARATOR.length + 1);
     }
     if (current !== '') {
         lines.push(current);

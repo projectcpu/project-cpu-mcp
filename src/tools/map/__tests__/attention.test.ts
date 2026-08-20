@@ -19,9 +19,11 @@ import { FakeAppConfig, makeConfig } from '../../../services/__tests__/service-f
 import { RevealFulfilmentService } from '../../../services/reveal-fulfilment.service.js';
 import type { AppConfig, DeliveryView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
+import { PANEL_MAX_LABEL_LENGTH } from '../../../utils/panel.constants.js';
 import type { IContractClient, WalletProvider } from '../../../wallet/types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerGetAttentionTool } from '../attention/attention.js';
+import { WAREHOUSE_PRESSURE_LABELS } from '../attention/constants.js';
 
 const CURRENT_SOURCE = getAddress('0xabc1230000000000000000000000000000000001');
 const CURRENT_SOURCE_ON_WIRE = CURRENT_SOURCE.toLowerCase();
@@ -802,5 +804,40 @@ describe('get_attention panel, hostile and partial inputs', () => {
         expect(panel).toMatch(/Near full: 1/);
         expect(panel).toMatch(/Shown: 3/);
         expect(panel).toMatch(/Peak fill: 88% Silica \(#3\)/);
+    });
+    it('does not let a bar inside an owner address forge a field boundary', async () => {
+        const panel = panelOf(await harness()({ minSeverity: null, owner: 'a|b' }));
+
+        for (const line of panel.split('\n')) {
+            expect(line.replace(/ \| /gu, '')).not.toContain('|');
+        }
+        expect(panel).toMatch(/Owner: a\/b/);
+        expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+    });
+
+    it('loses not one character of a value it had to wrap', async () => {
+        const owner = `0x${'ab'.repeat(35)}`;
+        const handler = harness({
+            deliveries: async () => {
+                throw new Error('server down');
+            },
+        });
+        const result = await handler({ minSeverity: null, owner });
+        const panel = panelOf(result);
+        const flattened = panel
+            .split('\n')
+            .map((line) => line.trim())
+            .join('');
+        const note = JSON.parse(result.content[1]?.text ?? '{}').note;
+
+        expect(panel.split('\n').length).toBeGreaterThan(5);
+        expect(flattened).toContain(`Owner: ${owner}`);
+        expect(flattened.replace(/ /gu, '')).toContain(note.replace(/ /gu, ''));
+    });
+
+    it('keeps its own labels inside the label ceiling the builder documents', () => {
+        for (const label of Object.values(WAREHOUSE_PRESSURE_LABELS)) {
+            expect(label.length).toBeLessThanOrEqual(PANEL_MAX_LABEL_LENGTH);
+        }
     });
 });

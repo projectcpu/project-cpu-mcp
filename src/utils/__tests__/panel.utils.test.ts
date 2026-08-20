@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PANEL_MAX_WIDTH } from '../panel.constants.js';
+import { PANEL_MAX_LABEL_LENGTH, PANEL_MAX_WIDTH } from '../panel.constants.js';
 import { renderPanel } from '../panel.utils.js';
 
 const UNBREAKABLE = `0x${'b'.repeat(70)}`;
@@ -76,5 +76,46 @@ describe('renderPanel', () => {
         });
 
         expect(panel).toContain('Left: n/a | Right: n/a');
+    });
+    it('never lets a value introduce something a reader parses as the field separator', () => {
+        const panel = renderPanel({
+            title: 'ROUTE | STATE',
+            rows: [
+                [
+                    { label: 'Msg', value: 'a|b' },
+                    { label: 'Raw', value: ' | ' },
+                    { label: 'Chain', value: 'cell-1 | cell-2 | cell-3' },
+                ],
+            ],
+        });
+
+        for (const line of lines(panel)) {
+            expect(line.replace(/ \| /gu, '')).not.toContain('|');
+        }
+        expect(panel).toContain('Msg: a/b');
+        expect(panel).toContain('Chain: cell-1 / cell-2 / cell-3');
+    });
+
+    it('holds the label rule at the documented label ceiling', () => {
+        const panel = renderPanel({
+            title: 'PANEL',
+            rows: [
+                [
+                    { label: 'Lead', value: '1' },
+                    { label: 'X'.repeat(PANEL_MAX_LABEL_LENGTH), value: UNBREAKABLE },
+                ],
+                [{ label: 'X'.repeat(PANEL_MAX_LABEL_LENGTH), value: UNBREAKABLE }],
+            ],
+        });
+
+        for (const line of lines(panel)) {
+            expect(line).not.toMatch(/:(?! )/);
+            expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+        }
+    });
+
+    it('always emits a header line, even when the title is blank', () => {
+        expect(lines(renderPanel({ title: '', rows: [[{ label: 'Cell', value: '42' }]] }))).toEqual(['', 'Cell: 42']);
+        expect(lines(renderPanel({ title: '   ', rows: [] }))).toEqual(['']);
     });
 });
