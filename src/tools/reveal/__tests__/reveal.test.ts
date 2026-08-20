@@ -4,7 +4,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import type { RevealResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerRevealTool } from '../reveal.js';
 
 interface ToolResult {
@@ -194,6 +194,24 @@ describe('reveal tool', () => {
         expect(text).toMatch(/call reveal on cell 42 again/i);
         expect(text).toMatch(/get_cell 42/);
         expect(text).not.toMatch(/confirmed in block/);
+    });
+
+    it('tags the machine block with the reveal event and keeps the service result intact', async () => {
+        const result = await harness(settledInline)({ tokenId: '42' });
+
+        expect(result.content[1]?.text).toBe(
+            JSON.stringify({ ...settledInline, eventType: ToolEventType.CellRevealed }),
+        );
+        expect(result.content).toHaveLength(2);
+    });
+
+    it('names the same event whether or not the draw landed while the call watched', async () => {
+        const settled = await harness(settledInline)({ tokenId: '42' });
+        const pending = await harness({ ...settledInline, fulfilled: false })({ tokenId: '42' });
+
+        const eventOf = (text: string): string => (JSON.parse(text) as { eventType: string }).eventType;
+        expect(eventOf(settled.content[1]?.text ?? '{}')).toBe(ToolEventType.CellRevealed);
+        expect(eventOf(pending.content[1]?.text ?? '{}')).toBe(ToolEventType.CellRevealed);
     });
 
     it('propagates service errors', async () => {

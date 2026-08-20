@@ -2,7 +2,7 @@ import { UPGRADE_DESCRIPTION } from './constants.js';
 import { upgradePanel } from './panel.utils.js';
 import { upgradeInputSchema } from './types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 export function registerUpgradeTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
@@ -18,7 +18,10 @@ export function registerUpgradeTool(server: ToolRegistrar, context: AppContext):
             return {
                 content: [
                     { type: 'text', text: upgradePanel({ result, config }) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    {
+                        type: 'text',
+                        text: JSON.stringify({ ...result, eventType: ToolEventType.UpgradeStarted }),
+                    },
                 ],
             };
         },

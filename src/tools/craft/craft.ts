@@ -2,7 +2,7 @@ import { CRAFT_DESCRIPTION } from './constants.js';
 import { summarizeCraftStart } from './format.utils.js';
 import { craftInputSchema } from './types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 export function registerCraftTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
@@ -18,7 +18,10 @@ export function registerCraftTool(server: ToolRegistrar, context: AppContext): v
             return {
                 content: [
                     { type: 'text', text: summarizeCraftStart(result) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    {
+                        type: 'text',
+                        text: JSON.stringify({ ...result, eventType: ToolEventType.CraftStarted }),
+                    },
                 ],
             };
         },

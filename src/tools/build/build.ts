@@ -2,7 +2,7 @@ import { BUILD_DESCRIPTION } from './constants.js';
 import { buildPanel } from './panel.utils.js';
 import { buildInputSchema } from './types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 export function registerBuildTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
@@ -18,7 +18,10 @@ export function registerBuildTool(server: ToolRegistrar, context: AppContext): v
             return {
                 content: [
                     { type: 'text', text: buildPanel({ result, config }) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    {
+                        type: 'text',
+                        text: JSON.stringify({ ...result, eventType: ToolEventType.BuildStarted }),
+                    },
                 ],
             };
         },

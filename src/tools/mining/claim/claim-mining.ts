@@ -1,5 +1,5 @@
 import type { AppContext } from '../../../types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { summarizeMiningClaim } from '../format.utils.js';
 import { claimMiningInputSchema } from '../types.js';
 import { CLAIM_MINING_DESCRIPTION } from './constants.js';
@@ -15,7 +15,10 @@ export function registerClaimMiningTool(server: ToolRegistrar, context: AppConte
             return {
                 content: [
                     { type: 'text', text: summarizeMiningClaim(result, resources) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    {
+                        type: 'text',
+                        text: JSON.stringify({ ...result, eventType: ToolEventType.MiningClaimed }),
+                    },
                 ],
             };
         },

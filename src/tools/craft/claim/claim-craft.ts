@@ -1,6 +1,6 @@
 import { CLAIM_CRAFT_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { summarizeCraftClaim } from '../format.utils.js';
 import { craftCellInputSchema } from '../types.js';
 
@@ -15,7 +15,10 @@ export function registerClaimCraftTool(server: ToolRegistrar, context: AppContex
             return {
                 content: [
                     { type: 'text', text: summarizeCraftClaim(result, resources) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    {
+                        type: 'text',
+                        text: JSON.stringify({ ...result, eventType: ToolEventType.CraftClaimed }),
+                    },
                 ],
             };
         },

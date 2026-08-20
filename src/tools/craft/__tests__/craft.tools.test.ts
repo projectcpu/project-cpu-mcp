@@ -11,7 +11,7 @@ import {
 } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerClaimCraftTool } from '../claim/claim-craft.js';
 import { registerCraftTool } from '../craft.js';
 import { registerGetCraftStatusTool } from '../get-status/get-craft-status.js';
@@ -166,6 +166,34 @@ describe('craft tool', () => {
         expect(header).toMatch(/100 \$CPU, plus a per-recipe opex the chain adds on top \(not priced here\)/);
     });
 
+    it('tags the machine block with the craft start event and keeps the service result intact', async () => {
+        const started: CraftStartResult = {
+            tokenId: '42',
+            recipeId: CraftRecipeId.SmeltSteel,
+            batches: 2,
+            costCpu: '0',
+            opex: { served: true, costCpu: '0' },
+            totalCpu: '0',
+            modeSwitch: {
+                cost: { kind: ModeCostKind.Free, why: ModeFreeReason.FirstPick },
+                exact: true,
+                burnedCpu: '0',
+            },
+            approveTxHash: null,
+            txHash: `0x${'1'.repeat(64)}`,
+            status: TxStatus.Success,
+            blockNumber: '100',
+        };
+        const result = await craftHarness(started)({
+            tokenId: '42',
+            recipeId: CraftRecipeId.SmeltSteel,
+            batches: 2,
+        });
+
+        expect(result.content[1]?.text).toBe(JSON.stringify({ ...started, eventType: ToolEventType.CraftStarted }));
+        expect(result.content).toHaveLength(2);
+    });
+
     it('propagates service errors', async () => {
         const craft = {
             craft: async (): Promise<CraftStartResult> => {
@@ -268,6 +296,26 @@ describe('claim_craft tool', () => {
 
         const result = await handler({ tokenId: '42' });
         expect(result.content[0]?.text).toMatch(/Claimed 1 batch\(es\) → 20 Steel \(#102\)/);
+    });
+
+    it('tags the machine block with the craft claim event, distinct from a start', async () => {
+        const claim: CraftClaimResult = {
+            tokenId: '42',
+            recipeId: CraftRecipeId.SmeltSteel,
+            batches: 1,
+            claimedBatches: 1,
+            outputs: [{ resourceId: 102, amount: '20' }],
+            txHash: `0x${'1'.repeat(64)}`,
+            status: TxStatus.Success,
+            blockNumber: '100',
+        };
+        const craft = { claim: async (): Promise<CraftClaimResult> => claim };
+        const context = { craft, appConfig: appConfigStub, logger: new NoopLogger() } as unknown as AppContext;
+        const handler = capture(registerClaimCraftTool, context);
+
+        const result = await handler({ tokenId: '42' });
+        expect(result.content[1]?.text).toBe(JSON.stringify({ ...claim, eventType: ToolEventType.CraftClaimed }));
+        expect(result.content).toHaveLength(2);
     });
 
     it('reports a no-op claim when nothing matured', async () => {

@@ -5,7 +5,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import { makeConfig } from '../../../services/__tests__/service-fakes.js';
 import type { BuildResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerBuildTool } from '../build.js';
 
 interface ToolResult {
@@ -65,11 +65,19 @@ describe('build tool', () => {
         expect(panel).not.toMatch(/mining started/);
     });
 
-    it('leaves the machine-readable block as the plain service result', async () => {
+    it('leaves the machine-readable block as the service result tagged with the event type', async () => {
         const result = await harness(mineResult)({ tokenId: '42', buildingType: BuildingType.Mine });
 
-        expect(result.content[1]?.text).toBe(JSON.stringify(mineResult));
+        expect(result.content[1]?.text).toBe(JSON.stringify({ ...mineResult, eventType: ToolEventType.BuildStarted }));
         expect(result.content).toHaveLength(2);
+    });
+
+    it('names the event in the machine block so the form of the report is not read off the prose', async () => {
+        const result = await harness(mineResult)({ tokenId: '42', buildingType: BuildingType.Mine });
+
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).toBe(ToolEventType.BuildStarted);
+        expect(result.content[0]?.text).not.toMatch(/eventType/);
     });
 
     it('says construction started rather than that the building is usable', async () => {
@@ -79,6 +87,13 @@ describe('build tool', () => {
         expect(panel).toMatch(/construction started/);
         expect(panel).toMatch(/does not work yet/);
         expect(panel).not.toMatch(/\b(ready|complete|completed|completes|finished)\b/i);
+    });
+
+    it('gates the extractor follow-up on the construction that has not finished', async () => {
+        const result = await harness(mineResult)({ tokenId: '42', buildingType: BuildingType.Mine });
+
+        const unwrapped = (result.content[0]?.text ?? '').replace(/\n\s+/gu, ' ');
+        expect(unwrapped).toMatch(/Next: after construction ends, start extraction with cpu_start_mining 42/);
     });
 
     it('reports a crafter with a cpu_craft follow-up listing its recipe', async () => {
