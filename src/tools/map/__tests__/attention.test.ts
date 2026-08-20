@@ -11,7 +11,7 @@ import {
     RandomnessKind,
 } from '../../../api/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import { AttentionReason, type AttentionReport, AttentionSeverity } from '../../../map/types.js';
+import { type AttentionItem, AttentionReason, type AttentionReport, AttentionSeverity } from '../../../map/types.js';
 import { FulfilmentClaims } from '../../../randomness/claims.js';
 import { SelfServiceRandomnessResolver } from '../../../randomness/self-service.resolver.js';
 import type { IRandomnessStrategyFactory, RandomnessStrategy } from '../../../randomness/types.js';
@@ -722,5 +722,85 @@ describe('get_attention panel', () => {
         ]);
         expect(payload.version).toBe(12);
         expect(payload.items).toHaveLength(2);
+    });
+});
+
+function panelItem(reason: AttentionReason, over: Partial<AttentionItem> = {}): AttentionItem {
+    return {
+        tokenId: '4',
+        severity: AttentionSeverity.Warning,
+        reason,
+        resourceId: 3,
+        used: null,
+        cap: null,
+        fillPct: null,
+        breakdown: null,
+        depositRemaining: null,
+        deliveryId: null,
+        arrivalAt: null,
+        demolishingType: null,
+        lotId: null,
+        requestId: null,
+        requestedAt: null,
+        message: null,
+        ...over,
+    };
+}
+
+describe('get_attention panel, hostile and partial inputs', () => {
+    it('keeps the label with its value when an owner address is too long to fit a line', async () => {
+        const handler = harness();
+        const panel = panelOf(await handler({ minSeverity: null, owner: `0x${'b'.repeat(70)}` }));
+
+        for (const line of panel.split('\n')) {
+            expect(line).not.toMatch(/:(?! )/);
+            expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
+        }
+        expect(panel).toMatch(/Owner: 0xbb/);
+        expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+    });
+
+    it('does not let a newline inside an owner address forge a panel line', async () => {
+        const handler = harness();
+        const clean = panelOf(await handler({ minSeverity: null, owner: '0xabc forged line' }));
+        const injected = panelOf(await handler({ minSeverity: null, owner: '0xabc\nforged line' }));
+
+        expect(injected.split('\n')).toHaveLength(clean.split('\n').length);
+        expect(injected).not.toMatch(/^forged line/mu);
+        expect(injected).toMatch(/Owner: 0xabc forged line/);
+    });
+
+    it('counts a stalled craft next to a stalled extractor', async () => {
+        const handler = harness({
+            report: pressureReport({
+                counts: { critical: 2, warning: 0, info: 0 },
+                items: [
+                    panelItem(AttentionReason.StalledMining, { severity: AttentionSeverity.Critical }),
+                    panelItem(AttentionReason.StalledCraft, { tokenId: '5', severity: AttentionSeverity.Critical }),
+                ],
+            }),
+        });
+        const panel = panelOf(await handler({ minSeverity: null }));
+
+        expect(panel).toMatch(/Stalled: 2/);
+        expect(panel).toMatch(/Near full: 0/);
+    });
+
+    it('counts only near-full boxes as pressure, not every other flag on the list', async () => {
+        const handler = harness({
+            report: pressureReport({
+                counts: { critical: 0, warning: 3, info: 0 },
+                items: [
+                    panelItem(AttentionReason.WarehouseNearFull, { fillPct: 88 }),
+                    panelItem(AttentionReason.ProcessFinished, { tokenId: '5' }),
+                    panelItem(AttentionReason.DepositDepleted, { tokenId: '6' }),
+                ],
+            }),
+        });
+        const panel = panelOf(await handler({ minSeverity: null }));
+
+        expect(panel).toMatch(/Near full: 1/);
+        expect(panel).toMatch(/Shown: 3/);
+        expect(panel).toMatch(/Peak fill: 88% Silica \(#3\)/);
     });
 });
