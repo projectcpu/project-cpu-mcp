@@ -16,7 +16,13 @@ export function registerGetChangesTool(server: ToolRegistrar, context: AppContex
             const changes = await context.mapReader.getChanges(since, getWalletAddress(context));
             const { resources } = await context.appConfig.load();
 
-            const panel = changeFeedPanel({ since, changes, health });
+            const panel = changeFeedPanel({
+                since,
+                changes,
+                health,
+                readiness: context.mapSync.getReadiness(),
+                socketConnected: context.mapSync.isSocketConnected(),
+            });
 
             const labeled = {
                 ...changes,

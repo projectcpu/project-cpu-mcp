@@ -410,6 +410,19 @@ describe('get_cell panel', () => {
         expect(panel).toMatch(/Job: idle/);
     });
 
+    it('reads a finished building as ready off the timestamp the API actually sends', async () => {
+        const finished = withCell({
+            building: { type: BuildingType.Mine, buildFinishAt: 1_700_000_000, modeResource: null, modeRecipeId: null },
+        });
+
+        const panel = panelOf(await harness(finished, 1_700_000_600)({ tokenId: '7' }));
+        expect(panel).toMatch(/Building: mine \(ready\)/);
+        expect(panel).not.toMatch(/building until/);
+
+        const justFinished = panelOf(await harness(finished, 1_700_000_000)({ tokenId: '7' }));
+        expect(justFinished).toMatch(/Building: mine \(ready\)/);
+    });
+
     it('marks a stalled job as stalled rather than as running', async () => {
         const panel = panelOf(await harness(CRAFTING)({ tokenId: '7' }));
 

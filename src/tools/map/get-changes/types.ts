@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { ServerHealthView } from '../../../api/types.js';
-import type { MapChanges } from '../../../map/types.js';
+import type { MapChanges, MapReadiness } from '../../../map/types.js';
 
 export const getChangesInputSchema = {
     sinceVersion: z
@@ -17,4 +17,6 @@ export interface ChangeFeedInput {
     since: number;
     changes: MapChanges;
     health: ServerHealthView;
+    readiness: MapReadiness;
+    socketConnected: boolean;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { ROUTE_NETWORK_NOTE } from '../../../services/route.constants.js';
 import type { NetworkNodeView, RouteNetworkResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import {
@@ -194,10 +195,16 @@ describe('route_network panel', () => {
         expect(panelLabels(panel)).toEqual(PANEL_LABELS);
     });
 
-    it('carries the survey note the tool already returns', async () => {
+    it('carries the survey note the tool already returns, word for word', async () => {
         const panel = panelOf(await harness(network())(ARGS));
 
-        expect(flattened(panel).replace(/ /gu, '')).toContain(NOTE.replace(/ /gu, ''));
+        expect(unwrapped(panel)).toContain(NOTE);
+    });
+
+    it('renders the note the route service actually sends without mangling a character of it', async () => {
+        const panel = panelOf(await harness(network({ note: ROUTE_NETWORK_NOTE }))(ARGS));
+
+        expect(unwrapped(panel)).toContain(ROUTE_NETWORK_NOTE);
     });
 
     it('lets the note forge no line, no column and no field', async () => {
