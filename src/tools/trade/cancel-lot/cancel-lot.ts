@@ -1,6 +1,6 @@
 import { CANCEL_LOT_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { summarizeCancelLot } from '../format.utils.js';
 import { cancelLotInputSchema } from '../types.js';
 
@@ -18,7 +18,7 @@ export function registerCancelLotTool(server: ToolRegistrar, context: AppContext
             return {
                 content: [
                     { type: 'text', text: summarizeCancelLot(result, resources) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.LotCancelled }) },
                 ],
             };
         },

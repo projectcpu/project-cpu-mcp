@@ -11,6 +11,21 @@ const WIRE: ReadonlyArray<[string, ToolEventType, string]> = [
     ['MiningClaimed', ToolEventType.MiningClaimed, 'mining_claimed'],
     ['CraftStarted', ToolEventType.CraftStarted, 'craft_started'],
     ['CraftClaimed', ToolEventType.CraftClaimed, 'craft_claimed'],
+    ['TransportSent', ToolEventType.TransportSent, 'transport_sent'],
+    ['DeliveryFinalized', ToolEventType.DeliveryFinalized, 'delivery_finalized'],
+    ['LotCreated', ToolEventType.LotCreated, 'lot_created'],
+    ['LotBought', ToolEventType.LotBought, 'lot_bought'],
+    ['LotCancelled', ToolEventType.LotCancelled, 'lot_cancelled'],
+    ['HubFeeSet', ToolEventType.HubFeeSet, 'hub_fee_set'],
+    ['Swapped', ToolEventType.Swapped, 'swapped'],
+    ['Withdrawn', ToolEventType.Withdrawn, 'withdrawn'],
+    ['CellMinted', ToolEventType.CellMinted, 'cell_minted'],
+    ['SyndicateJoined', ToolEventType.SyndicateJoined, 'syndicate_joined'],
+    ['SyndicateLeft', ToolEventType.SyndicateLeft, 'syndicate_left'],
+    ['SyndicateCreated', ToolEventType.SyndicateCreated, 'syndicate_created'],
+    ['SyndicateManagerChanged', ToolEventType.SyndicateManagerChanged, 'syndicate_manager_changed'],
+    ['SyndicateParamsChanged', ToolEventType.SyndicateParamsChanged, 'syndicate_params_changed'],
+    ['RevealFulfilled', ToolEventType.RevealFulfilled, 'reveal_fulfilled'],
 ];
 
 describe('tool event type', () => {

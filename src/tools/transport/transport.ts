@@ -2,7 +2,7 @@ import { TRANSPORT_DESCRIPTION } from './constants.js';
 import { summarizeTransport } from './format.utils.js';
 import { transportInputSchema } from './types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 export function registerTransportTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
@@ -20,7 +20,7 @@ export function registerTransportTool(server: ToolRegistrar, context: AppContext
             return {
                 content: [
                     { type: 'text', text: summarizeTransport(result, resources) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.TransportSent }) },
                 ],
             };
         },
