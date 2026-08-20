@@ -1,16 +1,27 @@
 import {
-    PANEL_BAR,
-    PANEL_BAR_SUBSTITUTE,
+    PANEL_CHARACTER_SUBSTITUTES,
     PANEL_CONTINUATION_INDENT,
     PANEL_FIELD_SEPARATOR,
     PANEL_LABEL_SEPARATOR,
     PANEL_MAX_WIDTH,
     PANEL_MISSING_VALUE,
+    PANEL_RESERVED_CHARACTERS,
+    PANEL_UNKNOWN_SUBSTITUTE,
 } from './panel.constants.js';
 import type { PanelField, PanelRow, PanelSpec } from './panel.types.js';
 
+function substituted(character: string): string {
+    if (!PANEL_RESERVED_CHARACTERS.includes(character)) {
+        return character;
+    }
+    return PANEL_CHARACTER_SUBSTITUTES.get(character) ?? PANEL_UNKNOWN_SUBSTITUTE;
+}
+
 function sanitize(text: string): string {
-    return text.replace(/\s+/gu, ' ').split(PANEL_BAR).join(PANEL_BAR_SUBSTITUTE).trim();
+    return [...text.replace(/\s+/gu, ' ')]
+        .map((character) => substituted(character))
+        .join('')
+        .trim();
 }
 
 function fieldText(field: PanelField): string {

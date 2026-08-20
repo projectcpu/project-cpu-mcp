@@ -1,12 +1,36 @@
 import { describe, expect, it } from 'vitest';
 
-import { PANEL_MAX_LABEL_LENGTH, PANEL_MAX_WIDTH } from '../panel.constants.js';
+import {
+    PANEL_BAR,
+    PANEL_CHARACTER_SUBSTITUTES,
+    PANEL_LABEL_SEPARATOR,
+    PANEL_MAX_LABEL_LENGTH,
+    PANEL_MAX_WIDTH,
+    PANEL_RESERVED_CHARACTERS,
+    PANEL_STRUCTURAL_SEQUENCES,
+} from '../panel.constants.js';
+import type { PanelSpec } from '../panel.types.js';
 import { renderPanel } from '../panel.utils.js';
 
 const UNBREAKABLE = `0x${'b'.repeat(70)}`;
 
 function lines(panel: string): Array<string> {
     return panel.split('\n');
+}
+
+function occurrences(text: string, sequence: string): number {
+    return text.split(sequence).length - 1;
+}
+
+const LEGS = { label: 'Legs', value: '3' };
+const TAIL = { label: 'Tail', value: 'ok' };
+
+function probeSpecs(probe: string): Array<PanelSpec> {
+    return [
+        { title: `ROUTE${probe}STATE`, rows: [[LEGS, TAIL]] },
+        { title: 'ROUTE STATE', rows: [[{ label: 'Legs', value: `3${probe}9` }, TAIL]] },
+        { title: 'ROUTE STATE', rows: [[{ label: `Le${probe}gs`, value: '3' }, TAIL]] },
+    ];
 }
 
 describe('renderPanel', () => {
@@ -61,7 +85,7 @@ describe('renderPanel', () => {
         const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Owner', value: '0xabc\nForged: line' }]] });
 
         expect(lines(panel)).toHaveLength(2);
-        expect(panel).toContain('Owner: 0xabc Forged: line');
+        expect(panel).toContain('Owner: 0xabc Forged; line');
     });
 
     it('prints a missing or blank value instead of dropping its field', () => {
@@ -94,6 +118,32 @@ describe('renderPanel', () => {
         }
         expect(panel).toContain('Msg: a/b');
         expect(panel).toContain('Chain: cell-1 / cell-2 / cell-3');
+    });
+
+    it('lets no title, label or value introduce any sequence the format builds its structure from', () => {
+        for (const probe of PANEL_STRUCTURAL_SEQUENCES) {
+            for (const spec of probeSpecs(probe)) {
+                const panel = renderPanel(spec);
+                const fields = spec.rows.flat().length;
+                const bars = spec.rows.reduce((count, row) => count + row.length - 1, 0);
+
+                expect(lines(panel)).toHaveLength(spec.rows.length + 1);
+                expect(occurrences(panel, PANEL_LABEL_SEPARATOR)).toBe(fields);
+                expect(occurrences(panel, PANEL_BAR)).toBe(bars);
+            }
+        }
+    });
+
+    it('gives every character its structure is built from a stand-in of the same length', () => {
+        expect(PANEL_RESERVED_CHARACTERS).toContain(PANEL_BAR);
+
+        for (const character of PANEL_RESERVED_CHARACTERS) {
+            const substitute = PANEL_CHARACTER_SUBSTITUTES.get(character);
+
+            expect(substitute).toHaveLength(character.length);
+            expect(substitute).not.toBe(character);
+            expect(PANEL_RESERVED_CHARACTERS).not.toContain(substitute);
+        }
     });
 
     it('holds the label rule at the documented label ceiling', () => {
