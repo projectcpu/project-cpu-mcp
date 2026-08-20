@@ -4,6 +4,13 @@ Shared vocabulary for this MCP server. Everything here is described against the 
 client consumes — the deployed contracts (their ABIs and events), the game API (`GET /api/v1/config`,
 the trade/map endpoints), and the MCP tools — never against any backend internals.
 
+## Roles
+
+- **Operator** — the person a persona-equipped agent addresses and answers to. The same person is the
+  **owner** wherever tools and the game API name the holder of a cell, a lot, a syndicate, or any other
+  on-chain position. One person, two names: which one is used depends on whether the words are spoken
+  to them or read off a data field.
+
 ## Readiness
 
 A building takes time to go up, and until it finishes it stands on the cell without yet acting like
@@ -56,8 +63,9 @@ produces past it. Mining and crafting differ in what they consume, not in how th
   as `processDrawPerCycle`; a `0` from a legacy snapshot means Take equals Warehouse credit.
 - **Extraction share** — the basis-point fraction of the Take credited to the warehouse as Warehouse
   credit; the rest returns to the reservoir rather than being lost. A building property
-  (`effects.extractionShareBp` in `cpu_get_game_config`), lower on an upgraded extractor than on a base one.
-  It determines a newly started Process but never rewrites the Take already snapshotted onto a running one.
+  (`operation.effects.extractionSharePercent` on a `cpu_get_building` card), lower on an upgraded
+  extractor than on a base one. It determines a newly started Process but never rewrites the Take
+  already snapshotted onto a running one.
 - **Stall** — a Process whose matured Cycles cannot settle because the room holds less than one whole
   Cycle's output. Claims settle in whole Cycles, so a partial cycle's worth of room banks nothing. Stalled
   time is discarded — the cursor resets to the moment of the settle and the remaining Batches start
@@ -101,6 +109,22 @@ on-chain immediately before sending, disclose what they expect to burn, and — 
 report what **actually** burned in `modeSwitch.burnedCpu`. When the chain could not be read the price is
 marked `exact: false` and the start still goes: a price this client cannot verify never blocks an action.
 The reported burn is the authority whenever it disagrees with the estimate.
+
+## Building inputs & outputs
+
+A building has three independent plans, and these four terms never cross between them: each names a
+different commitment of a resource, and a building can appear in more than one at once without the
+terms themselves ever blurring together.
+
+- **Build input** — a resource spent once to erect a building, at construction time only. Never called
+  a recipe, and never consumed again afterwards.
+- **Recipe input** — a resource a crafter consumes on every production cycle it runs, for as long as it
+  keeps running that recipe. Distinct from a Build input even when it is the same resource: one is paid
+  once, the other every cycle.
+- **Recipe output** — a resource a crafter's production cycle produces. The counterpart to Recipe input
+  on the same recipe, never on the same building's construction.
+- **Minable resource** — a resource an extractor draws from the deposit of the cell it stands on. An
+  extractor has no inputs of its own kind: nothing feeds it, it only draws from what the cell holds.
 
 ## Demolition
 

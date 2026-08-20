@@ -116,8 +116,11 @@ Every command above pins `@latest`, so restarting the server is how you update �
 
 | Variable | Default | When you need it |
 | --- | --- | --- |
+| `WALLET_MODE` | `evm` | Switch to `agw` to authenticate via a Device Authorization flow instead of a `PRIVATE_KEY` in env. |
+| `API_URL` | the game API's own default endpoint | Point the client at a different game API deployment. |
 | `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
 | `RPC_URL` | Robinhood public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
+| `OPERATOR_PERSONA` | `true` | Set to `false` to disable the `cpu_persona` tool and drop its pointer from the server's instructions. |
 
 Session state (JWT / session keys) is persisted to `~/.project-cpu/`.
 
@@ -125,8 +128,17 @@ Session state (JWT / session keys) is persisted to `~/.project-cpu/`.
 
 Once connected, the server exposes tools grouped by area:
 
-- **Session** — `cpu_authenticate`, `cpu_get_game_config` (static rulebook: resources, costs, contract
-  addresses), `cpu_get_balance` (spendable $CPU + gas).
+- **Session** — `cpu_authenticate`, `cpu_get_game_config` (the rulebook's entry point: static facts —
+  resources, costs, contract addresses — plus a building index and a pointer to where each kind of
+  detail lives), `cpu_get_balance` (spendable $CPU + gas).
+- **Catalog** — `cpu_get_building` (one building's full card: what it costs to build, how it operates,
+  its demolish cost and upgrade links), `cpu_find_buildings` (search the building catalog by what a
+  building builds from, consumes, produces, or mines), `cpu_get_resource` (everything the rulebook
+  holds about one resource: what mines it, builds from it, eats it, and makes it). See
+  [CONTEXT.md](./CONTEXT.md) for the build/recipe input-output vocabulary these use.
+- **Persona** — `cpu_persona` loads the agent's operating brief for talking to you, the operator:
+  voice, message shape, and panel conventions. Enabled by default; set `OPERATOR_PERSONA=false` to
+  turn it off.
 - **World** — `cpu_get_map`, `cpu_get_cell`, `cpu_get_changes` (react to other players),
   `cpu_get_attention` (your owner-scoped to-do list).
 - **Reveal & build** — `cpu_reveal` (surface a cell's deposits on-chain), `cpu_build` (place a
