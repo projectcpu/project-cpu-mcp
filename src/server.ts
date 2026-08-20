@@ -24,6 +24,8 @@ import { registerGetMiningStatusTool } from './tools/mining/get-status/get-minin
 import { registerStartMiningTool } from './tools/mining/start/start-mining.js';
 import { registerMintCellTool } from './tools/mint/mint-cell.js';
 import { registerQuoteMintTool } from './tools/mint/quote/quote-mint.js';
+import { PERSONA_TOOL_NAME } from './tools/persona/constants.js';
+import { registerPersonaTool } from './tools/persona/persona.js';
 import { registerFulfillRevealTool } from './tools/reveal/fulfill-reveal.js';
 import { registerRevealTool } from './tools/reveal/reveal.js';
 import { registerQuoteSwapTool } from './tools/swap/quote/quote-swap.js';
@@ -65,6 +67,7 @@ import type { ToolGate } from './version/types.js';
 
 export const SERVER_INSTRUCTIONS = [
     'MCP server for Project CPU (blockchain game on EVM).',
+    'Before you answer the operator, load your operating brief once with `cpu_persona` and work to it.',
     'Authenticate first: `cpu_authenticate` opens a session — the default EVM mode signs in via SIWE',
     'locally, AGW mode starts a Device Authorization flow.',
     'Then read the entry point once: `cpu_get_game_config` carries the static rulebook — resources,',
@@ -83,10 +86,24 @@ export const SERVER_INSTRUCTIONS = [
     'assuming the rules.',
 ].join(' ');
 
+const SENTENCE_BOUNDARY = /(?<=\.)\s+/u;
+
+function instructionsFor(personaEnabled: boolean): string {
+    if (personaEnabled) {
+        return SERVER_INSTRUCTIONS;
+    }
+    return SERVER_INSTRUCTIONS.split(SENTENCE_BOUNDARY)
+        .filter((sentence) => !sentence.includes(PERSONA_TOOL_NAME))
+        .join(' ');
+}
+
 // Takes the registrar rather than the server so a tool registered the plain way is a compile error
 // here, not a tool that silently answers past the version gates.
 function registerTools(registrar: ToolRegistrar, context: AppContext): void {
     registerAuthenticateTool(registrar, context);
+    if (context.config.OPERATOR_PERSONA) {
+        registerPersonaTool(registrar);
+    }
     registerGetGameConfigTool(registrar, context);
     registerGetBuildingTool(registrar, context);
     registerFindBuildingsTool(registrar, context);
@@ -143,7 +160,10 @@ function registerTools(registrar: ToolRegistrar, context: AppContext): void {
 }
 
 export async function createServer(context: AppContext): Promise<void> {
-    const server = new McpServer({ name: pkg.name, version: pkg.version }, { instructions: SERVER_INSTRUCTIONS });
+    const server = new McpServer(
+        { name: pkg.name, version: pkg.version },
+        { instructions: instructionsFor(context.config.OPERATOR_PERSONA) },
+    );
 
     const gates: Array<ToolGate> = [
         createPackageVersionGate(context.packageVersion),

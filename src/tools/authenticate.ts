@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { AppContext } from '../types.js';
 import { WalletMode } from '../types.js';
+import { PERSONA_BRIEF_MARKER } from './persona/constants.js';
 import type { ToolRegistrar } from './types.js';
 
 const DESCRIPTION = [
@@ -25,8 +26,9 @@ const inputSchema = {
 
 export function registerAuthenticateTool(server: ToolRegistrar, context: AppContext): void {
     const authService = context.auth;
+    const description = context.config.OPERATOR_PERSONA ? `${DESCRIPTION} ${PERSONA_BRIEF_MARKER}` : DESCRIPTION;
 
-    server.registerTool('cpu_authenticate', { description: DESCRIPTION, inputSchema }, async (args) => {
+    server.registerTool('cpu_authenticate', { description, inputSchema }, async (args) => {
         const force = args.force ?? false;
 
         // EVM mode: SIWE signs locally with the env private key — no browser step.

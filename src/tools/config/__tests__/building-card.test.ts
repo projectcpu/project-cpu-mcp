@@ -423,7 +423,7 @@ describe('server registration', () => {
     it('registers the card tool on the server the client connects to', async () => {
         sdk.toolNames.length = 0;
 
-        await createServer({} as unknown as AppContext);
+        await createServer({ config: { OPERATOR_PERSONA: true } } as unknown as AppContext);
 
         expect(sdk.toolNames).toContain('cpu_get_building');
     });
