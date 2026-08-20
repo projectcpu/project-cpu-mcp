@@ -97,6 +97,28 @@ describe('upgrade tool', () => {
 
         expect(content[1]?.text).toBe(JSON.stringify({ ...outcome, eventType: ToolEventType.UpgradeStarted }));
         expect(content).toHaveLength(2);
+        expect(await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' })).not.toHaveProperty(
+            'structuredContent',
+        );
+    });
+
+    it('leaves the event out of the machine block when the target already stood and nothing was sent', async () => {
+        const standing = result({
+            noop: true,
+            upgrading: true,
+            buildCost: '0',
+            buildInputs: [],
+            approveTxHash: null,
+            txHash: null,
+            status: null,
+            blockNumber: null,
+        });
+        const { handler } = harness(standing);
+        const { content } = await handler({ tokenId: '42', targetBuildingType: 'mine_l2a' });
+
+        expect(content[1]?.text).toBe(JSON.stringify(standing));
+        expect(JSON.parse(content[1]?.text ?? '{}')).not.toHaveProperty('eventType');
+        expect(content).toHaveLength(2);
     });
 
     it('names its own event, distinct from a placement', async () => {

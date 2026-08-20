@@ -1,0 +1,41 @@
+import { describe, expect, it } from 'vitest';
+
+import { ToolEventType } from '../types.js';
+
+const WIRE: ReadonlyArray<[string, ToolEventType, string]> = [
+    ['CellRevealed', ToolEventType.CellRevealed, 'cell_revealed'],
+    ['BuildStarted', ToolEventType.BuildStarted, 'build_started'],
+    ['UpgradeStarted', ToolEventType.UpgradeStarted, 'upgrade_started'],
+    ['BuildingDemolished', ToolEventType.BuildingDemolished, 'building_demolished'],
+    ['MiningStarted', ToolEventType.MiningStarted, 'mining_started'],
+    ['MiningClaimed', ToolEventType.MiningClaimed, 'mining_claimed'],
+    ['CraftStarted', ToolEventType.CraftStarted, 'craft_started'],
+    ['CraftClaimed', ToolEventType.CraftClaimed, 'craft_claimed'],
+];
+
+describe('tool event type', () => {
+    it.each(WIRE)('sends %s over the wire as its own literal', (_name, member, wire) => {
+        expect(member).toBe(wire);
+    });
+
+    it('keeps every value distinct, so no two events collapse into one branch', () => {
+        const values = Object.values(ToolEventType);
+
+        expect(new Set(values).size).toBe(values.length);
+        expect(new Set(WIRE.map(([, member]) => member)).size).toBe(WIRE.length);
+    });
+
+    it('names no failure: a failed action has no response body to carry it', () => {
+        for (const [name, value] of Object.entries(ToolEventType)) {
+            expect(name).not.toMatch(/fail|error|reject/iu);
+            expect(value).not.toMatch(/fail|error|reject/iu);
+        }
+    });
+
+    it('names no next action: the agent builds the strategy, the server does not dictate it', () => {
+        for (const [name, value] of Object.entries(ToolEventType)) {
+            expect(name).not.toMatch(/next|recommend|suggest/iu);
+            expect(value).not.toMatch(/next|recommend|suggest/iu);
+        }
+    });
+});

@@ -203,15 +203,37 @@ describe('reveal tool', () => {
             JSON.stringify({ ...settledInline, eventType: ToolEventType.CellRevealed }),
         );
         expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
     });
 
-    it('names the same event whether or not the draw landed while the call watched', async () => {
+    it('names the reveal only once the draw has landed', async () => {
         const settled = await harness(settledInline)({ tokenId: '42' });
         const pending = await harness({ ...settledInline, fulfilled: false })({ tokenId: '42' });
 
         const eventOf = (text: string): string => (JSON.parse(text) as { eventType: string }).eventType;
         expect(eventOf(settled.content[1]?.text ?? '{}')).toBe(ToolEventType.CellRevealed);
-        expect(eventOf(pending.content[1]?.text ?? '{}')).toBe(ToolEventType.CellRevealed);
+        expect(JSON.parse(pending.content[1]?.text ?? '{}')).not.toHaveProperty('eventType');
+    });
+
+    it('claims no reveal on a cell that only carries a request this call neither sent nor settled', async () => {
+        const carried: RevealResult = {
+            ...fulfilledGenesis,
+            genesis: false,
+            requestTxHash: null,
+            status: null,
+            blockNumber: null,
+            ethPaid: '0',
+            cpuBurn: '0',
+            deposits: null,
+            fulfilled: false,
+            note: 'Cell 42 already carries a reveal request, so this call requested nothing and paid nothing.',
+        };
+        const result = await harness(carried)({ tokenId: '42' });
+
+        expect(result.content[0]?.text).toMatch(/nothing new was requested and nothing was spent/);
+        expect(result.content[1]?.text).toBe(JSON.stringify(carried));
+        expect(JSON.parse(result.content[1]?.text ?? '{}')).not.toHaveProperty('eventType');
+        expect(result.content).toHaveLength(2);
     });
 
     it('propagates service errors', async () => {

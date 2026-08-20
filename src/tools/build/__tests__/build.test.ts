@@ -70,6 +70,7 @@ describe('build tool', () => {
 
         expect(result.content[1]?.text).toBe(JSON.stringify({ ...mineResult, eventType: ToolEventType.BuildStarted }));
         expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
     });
 
     it('names the event in the machine block so the form of the report is not read off the prose', async () => {
@@ -94,6 +95,17 @@ describe('build tool', () => {
 
         const unwrapped = (result.content[0]?.text ?? '').replace(/\n\s+/gu, ' ');
         expect(unwrapped).toMatch(/Next: after construction ends, start extraction with cpu_start_mining 42/);
+    });
+
+    it('gates the crafter follow-up on the construction that has not finished', async () => {
+        const result = await harness({
+            ...mineResult,
+            buildingType: BuildingType.SteelMill,
+            buildCost: '20',
+        })({ tokenId: '42', buildingType: BuildingType.SteelMill });
+
+        const unwrapped = (result.content[0]?.text ?? '').replace(/\n\s+/gu, ' ');
+        expect(unwrapped).toMatch(/Next: after construction ends, run a recipe with cpu_craft 42/);
     });
 
     it('reports a crafter with a cpu_craft follow-up listing its recipe', async () => {
@@ -140,6 +152,21 @@ describe('build tool', () => {
         expect(panel).toMatch(/already stands on the cell/);
         expect(panel).toMatch(/Build tx: n\/a/);
         expect(panel).toMatch(/cpu_start_mining 42/);
+    });
+
+    it('leaves the event out of the machine block when the building already stood and nothing was sent', async () => {
+        const standing: BuildResult = {
+            ...mineResult,
+            approveTxHash: null,
+            buildTxHash: null,
+            buildCost: '0',
+            alreadyBuilt: true,
+        };
+        const result = await harness(standing)({ tokenId: '42', buildingType: BuildingType.Mine });
+
+        expect(result.content[1]?.text).toBe(JSON.stringify(standing));
+        expect(JSON.parse(result.content[1]?.text ?? '{}')).not.toHaveProperty('eventType');
+        expect(result.content).toHaveLength(2);
     });
 
     it('propagates service errors', async () => {

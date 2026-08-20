@@ -85,10 +85,13 @@ describe('demolish tool', () => {
 
     it('tags the machine block with the demolition event and keeps the service result intact', async () => {
         const outcome = result();
-        const { content } = await harness(outcome)({ tokenId: '42' });
+        const toolResult = await harness(outcome)({ tokenId: '42' });
 
-        expect(content[1]?.text).toBe(JSON.stringify({ ...outcome, eventType: ToolEventType.BuildingDemolished }));
-        expect(content).toHaveLength(2);
+        expect(toolResult.content[1]?.text).toBe(
+            JSON.stringify({ ...outcome, eventType: ToolEventType.BuildingDemolished }),
+        );
+        expect(toolResult.content).toHaveLength(2);
+        expect(toolResult).not.toHaveProperty('structuredContent');
     });
 
     it('propagates service errors', async () => {

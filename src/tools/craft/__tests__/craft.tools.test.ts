@@ -192,6 +192,7 @@ describe('craft tool', () => {
 
         expect(result.content[1]?.text).toBe(JSON.stringify({ ...started, eventType: ToolEventType.CraftStarted }));
         expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
     });
 
     it('propagates service errors', async () => {
@@ -249,6 +250,36 @@ describe('get_craft_status tool', () => {
         const header = result.content[0]?.text ?? '';
         expect(header).toMatch(/1\/2 batches done/);
         expect(header).toMatch(/1 claimable now/);
+    });
+
+    it('carries no event: a reading tool reports state, not something that happened', async () => {
+        const status: CraftStatusResult = {
+            tokenId: '42',
+            active: true,
+            serverTime: 1040,
+            recipeId: CraftRecipeId.SmeltSteel,
+            batches: 2,
+            claimedBatches: 0,
+            completedBatches: 1,
+            claimableBatches: 1,
+            isFinished: false,
+            startAt: 1000,
+            durationSec: 30,
+            endsAtSec: 1060,
+            nextBatchAtSec: 1060,
+            stalled: false,
+            blockedResourceIds: [],
+        };
+        const craft = { getStatus: async (): Promise<CraftStatusResult> => status };
+        const context = { craft, appConfig: appConfigStub, logger: new NoopLogger() } as unknown as AppContext;
+        const handler = capture(registerGetCraftStatusTool, context);
+
+        const result = await handler({ tokenId: '42' });
+
+        for (const block of result.content) {
+            expect(block.text).not.toMatch(/eventType/u);
+        }
+        expect(result).not.toHaveProperty('structuredContent');
     });
 
     it('reports a cell with no active craft', async () => {
@@ -316,6 +347,10 @@ describe('claim_craft tool', () => {
         const result = await handler({ tokenId: '42' });
         expect(result.content[1]?.text).toBe(JSON.stringify({ ...claim, eventType: ToolEventType.CraftClaimed }));
         expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
+
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).not.toBe(ToolEventType.CraftStarted);
     });
 
     it('reports a no-op claim when nothing matured', async () => {

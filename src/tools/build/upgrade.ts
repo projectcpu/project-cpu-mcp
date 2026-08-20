@@ -20,7 +20,10 @@ export function registerUpgradeTool(server: ToolRegistrar, context: AppContext):
                     { type: 'text', text: upgradePanel({ result, config }) },
                     {
                         type: 'text',
-                        text: JSON.stringify({ ...result, eventType: ToolEventType.UpgradeStarted }),
+                        text: JSON.stringify({
+                            ...result,
+                            ...(result.noop ? {} : { eventType: ToolEventType.UpgradeStarted }),
+                        }),
                     },
                 ],
             };

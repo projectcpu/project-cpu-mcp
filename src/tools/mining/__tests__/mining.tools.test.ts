@@ -126,6 +126,35 @@ describe('get_mining_status tool', () => {
         expect(parsed.targetResourceId).toBe(3);
     });
 
+    it('carries no event: a reading tool reports state, not something that happened', async () => {
+        const result = await statusHarness({
+            tokenId: '42',
+            active: true,
+            serverTime: 2000,
+            targetResourceId: 3,
+            yieldPerCycle: 77,
+            durationSec: 180,
+            startAt: 1700,
+            batches: 10,
+            claimedBatches: 0,
+            completedBatches: 2,
+            claimableBatches: 2,
+            isFinished: false,
+            endsAtSec: 3500,
+            nextBatchAtSec: 2030,
+            claimable: '120',
+            depositRemaining: '500',
+            stalled: false,
+            warehouseUsed: null,
+            warehouseCap: null,
+        })({ tokenId: '42' });
+
+        for (const block of result.content) {
+            expect(block.text).not.toMatch(/eventType/u);
+        }
+        expect(result).not.toHaveProperty('structuredContent');
+    });
+
     it('reports an inactive cell', async () => {
         const result = await statusHarness({
             tokenId: '42',
@@ -161,6 +190,7 @@ describe('start_mining tool', () => {
             JSON.stringify({ ...startResult, eventType: ToolEventType.MiningStarted }),
         );
         expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
     });
 });
 
@@ -179,6 +209,10 @@ describe('claim_mining tool', () => {
 
         expect(result.content[1]?.text).toBe(JSON.stringify({ ...claimed, eventType: ToolEventType.MiningClaimed }));
         expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
+
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).not.toBe(ToolEventType.MiningStarted);
     });
 
     it('reports the claimed amount', async () => {

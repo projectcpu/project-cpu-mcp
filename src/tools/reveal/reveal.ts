@@ -69,7 +69,10 @@ export function registerRevealTool(server: ToolRegistrar, context: AppContext): 
                     { type: 'text', text: header },
                     {
                         type: 'text',
-                        text: JSON.stringify({ ...result, eventType: ToolEventType.CellRevealed }),
+                        text: JSON.stringify({
+                            ...result,
+                            ...(result.fulfilled ? { eventType: ToolEventType.CellRevealed } : {}),
+                        }),
                     },
                 ],
             };

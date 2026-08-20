@@ -20,7 +20,10 @@ export function registerBuildTool(server: ToolRegistrar, context: AppContext): v
                     { type: 'text', text: buildPanel({ result, config }) },
                     {
                         type: 'text',
-                        text: JSON.stringify({ ...result, eventType: ToolEventType.BuildStarted }),
+                        text: JSON.stringify({
+                            ...result,
+                            ...(result.alreadyBuilt ? {} : { eventType: ToolEventType.BuildStarted }),
+                        }),
                     },
                 ],
             };
