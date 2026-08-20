@@ -1,5 +1,4 @@
-const TRUE_LITERAL = 'true';
-const FALSE_LITERAL = 'false';
+import { BOOLEAN_ENV_FALSE, BOOLEAN_ENV_TRUE } from './constants.js';
 
 export function parseBooleanEnv(value: string | null, defaultValue: boolean): boolean {
     if (value === null) {
@@ -7,10 +6,10 @@ export function parseBooleanEnv(value: string | null, defaultValue: boolean): bo
     }
 
     const normalized = value.trim().toLowerCase();
-    if (normalized === TRUE_LITERAL) {
+    if (normalized === BOOLEAN_ENV_TRUE) {
         return true;
     }
-    if (normalized === FALSE_LITERAL) {
+    if (normalized === BOOLEAN_ENV_FALSE) {
         return false;
     }
 

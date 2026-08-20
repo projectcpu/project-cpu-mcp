@@ -2,26 +2,39 @@ import { parseEther } from 'viem';
 
 import {
     BUILD_INPUTS_LABEL,
+    BUILD_TIME_LABEL,
     CARD_INDENT,
     CONSTRUCTION_SECTION_TITLE,
+    COST_LABEL,
+    CYCLE_TIME_LABEL,
+    DEMOLISH_LABEL,
+    EXAMPLE_TYPE_COUNT,
+    EXTRACTION_SHARE_LABEL,
     EXTRACTOR_NO_INPUT_RESOURCES_NOTE,
     FREE_CYCLE_VALUE,
     HUB_OPERATION_NOTE,
+    HUB_ROLE_SUMMARY,
     LIFECYCLE_SECTION_TITLE,
     MINABLE_RESOURCES_LABEL,
     MODE_SWITCH_IMPOSSIBLE_NOTE,
+    MODE_SWITCH_LABEL,
     MODE_SWITCH_UNKNOWN_NOTE,
     NO_BUILD_INPUTS_VALUE,
     NO_MINABLE_RESOURCES_NOTE,
     NO_UPGRADE_PREDECESSOR_VALUE,
     NO_UPGRADE_SUCCESSOR_VALUE,
+    NOTHING_MINED_SUMMARY,
     OPERATION_SECTION_TITLE,
     RECIPE_DETAILS_MISSING_NOTE,
+    RECIPE_INPUT_EFFICIENCY_LABEL,
     RECIPE_INPUTS_LABEL,
     RECIPE_OUTPUTS_LABEL,
     RECIPE_PLAN_INDENT,
+    RECIPES_ONLY_SUMMARY,
     UNKNOWN_BUILDING_TYPE_HINT,
     UNPRICED_OPEX_NOTE,
+    UPGRADE_FROM_LABEL,
+    UPGRADE_TO_LABEL,
 } from './constants.js';
 import type { BuildingCardView, BuildingRecipePlanView, LabeledResourceView, LabeledStackView } from './types.js';
 import { BuildingKind, type CraftStackView, type RecipeView } from '../../../api/types.js';
@@ -33,8 +46,6 @@ import {
     resourceName,
     type ResourceNames,
 } from '../../../utils/format.utils.js';
-
-const EXAMPLE_TYPE_COUNT = 3;
 
 function sumCpu(base: string, opex: string): string {
     return cpuFromWei((parseEther(base) + parseEther(opex)).toString());
@@ -104,11 +115,11 @@ export function summarizeBuildingRole(
     resources: ResourceNames,
 ): string {
     if (building.kind === BuildingKind.Hub) {
-        return 'routes transport and settles trade on its cell';
+        return HUB_ROLE_SUMMARY;
     }
     if (building.kind === BuildingKind.Extractor) {
         const mined = building.minableResources.map((id) => resourceName(resources, id)).join(', ');
-        return mined === '' ? 'mines nothing' : `mines ${mined}`;
+        return mined === '' ? NOTHING_MINED_SUMMARY : `mines ${mined}`;
     }
     const produced = [
         ...new Set(
@@ -119,7 +130,9 @@ export function summarizeBuildingRole(
             ),
         ),
     ].join(', ');
-    return produced === '' ? `runs ${building.recipes.length} recipe(s)` : `crafts ${produced}`;
+    return produced === ''
+        ? `${RECIPES_ONLY_SUMMARY.verb} ${building.recipes.length} ${RECIPES_ONLY_SUMMARY.unit}`
+        : `crafts ${produced}`;
 }
 
 export function buildBuildingCard(
@@ -180,8 +193,8 @@ function line(label: string, value: string, indent = CARD_INDENT): string {
 function constructionLines(card: BuildingCardView, resources: ResourceNames): Array<string> {
     const inputs = card.construction.buildInputs;
     return [
-        line('Cost', `${card.construction.costCpu} $CPU`),
-        line('Build time', `${card.construction.buildTimeSec}s`),
+        line(COST_LABEL, `${card.construction.costCpu} $CPU`),
+        line(BUILD_TIME_LABEL, `${card.construction.buildTimeSec}s`),
         line(
             BUILD_INPUTS_LABEL,
             inputs.length === 0 ? NO_BUILD_INPUTS_VALUE : `${stackList(inputs, resources)}, burned once`,
@@ -215,17 +228,17 @@ function recipeLines(plan: BuildingRecipePlanView, resources: ResourceNames): Ar
 
 function effectLines(card: BuildingCardView, resources: ResourceNames): Array<string> {
     const { effects } = card.operation;
-    const lines = [line('Cycle time', `${effects.cycleTimePercent}% of the base cycle`)];
+    const lines = [line(CYCLE_TIME_LABEL, `${effects.cycleTimePercent}% of the base cycle`)];
     if (card.kind === BuildingKind.Extractor) {
         lines.push(
-            line('Extraction share', `${effects.extractionSharePercent}% of the take credited to the warehouse`),
+            line(EXTRACTION_SHARE_LABEL, `${effects.extractionSharePercent}% of the take credited to the warehouse`),
         );
     }
     if (effects.recipeInputEfficiency.length > 0) {
         const efficiency = effects.recipeInputEfficiency
             .map((entry) => `${resourceLabel(resources, entry.resourceId)} ${entry.percent}%`)
             .join(', ');
-        lines.push(line('Recipe input efficiency', efficiency));
+        lines.push(line(RECIPE_INPUT_EFFICIENCY_LABEL, efficiency));
     }
     return lines;
 }
@@ -263,10 +276,10 @@ function lifecycleLines(card: BuildingCardView, resources: ResourceNames): Array
     const { demolish, upgradeFrom, upgradeTo } = card.lifecycle;
     const fromWarehouse = demolish.inputs.length === 0 ? '' : ` + ${stackList(demolish.inputs, resources)}`;
     return [
-        line('Demolish', `${demolish.costCpu} $CPU${fromWarehouse}, no refund`),
-        line('Mode switch', modeSwitchValue(card)),
-        line('Upgrades from', upgradeFrom ?? NO_UPGRADE_PREDECESSOR_VALUE),
-        line('Upgrades to', upgradeTo.length === 0 ? NO_UPGRADE_SUCCESSOR_VALUE : upgradeTo.join(', ')),
+        line(DEMOLISH_LABEL, `${demolish.costCpu} $CPU${fromWarehouse}, no refund`),
+        line(MODE_SWITCH_LABEL, modeSwitchValue(card)),
+        line(UPGRADE_FROM_LABEL, upgradeFrom ?? NO_UPGRADE_PREDECESSOR_VALUE),
+        line(UPGRADE_TO_LABEL, upgradeTo.length === 0 ? NO_UPGRADE_SUCCESSOR_VALUE : upgradeTo.join(', ')),
     ];
 }
 

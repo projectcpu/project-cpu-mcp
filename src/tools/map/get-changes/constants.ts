@@ -1,3 +1,5 @@
+import { MapReadiness } from '../../../map/types.js';
+
 export const GET_CHANGES_DESCRIPTION = [
     'Get only the cells that changed since a given version — react to other players without re-reading the whole',
     'map. Pass the `version` from a previous map response; the reply carries a new `version` for next time. Omit',
@@ -54,3 +56,17 @@ export const CHANGE_FEED_DEGRADED_EFFECT =
 export const CHANGE_FEED_STOPPED_EFFECT =
     'The map sync is not running, so nothing here is being updated at all. This is only what was last ' +
     'recorded — do not read it as the world right now.';
+
+export const HELD_BACK_STATE: Record<MapReadiness, string> = {
+    [MapReadiness.Ready]: CHANGE_FEED_MAP_NO_STREAM,
+    [MapReadiness.Loading]: CHANGE_FEED_MAP_LOADING,
+    [MapReadiness.Degraded]: CHANGE_FEED_MAP_DEGRADED,
+    [MapReadiness.Stopped]: CHANGE_FEED_MAP_STOPPED,
+};
+
+export const HELD_BACK_EFFECT: Record<MapReadiness, string> = {
+    [MapReadiness.Ready]: CHANGE_FEED_STREAM_DOWN_EFFECT,
+    [MapReadiness.Loading]: CHANGE_FEED_LOADING_EFFECT,
+    [MapReadiness.Degraded]: CHANGE_FEED_DEGRADED_EFFECT,
+    [MapReadiness.Stopped]: CHANGE_FEED_STOPPED_EFFECT,
+};

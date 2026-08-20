@@ -372,8 +372,6 @@ class StubMapApi implements IMapApi {
 
 const SNAPSHOT_MS = 1_699_000_000_000;
 
-// Everything below the socket and the map endpoint is the real thing: MapStore, MapSync, MapReader and the
-// registered handler. `reachable: true` mirrors what ApiClient records for any parseable reply.
 function liveHarness(status = 200): {
     handler: Handler;
     sync: MapSync;

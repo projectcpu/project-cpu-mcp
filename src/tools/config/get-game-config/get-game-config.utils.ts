@@ -12,6 +12,7 @@ import {
     ROUTING_RESOURCE_LENS_LINE,
     ROUTING_SECTION_TITLE,
     ROUTING_UNKNOWN_ID_LINE,
+    SALE_FEE_STRUCTURAL_BOUND_NOTE,
     SALE_FEE_STRUCTURAL_BOUND_PERCENT,
     SELF_SERVICE_RANDOMNESS_SUMMARY,
     STATIC_SECTION_TITLE,
@@ -54,7 +55,7 @@ function describeTransit(config: AppConfig): string {
 function describeTrade(config: AppConfig): string {
     return (
         `${config.trade.saleBurnPercent}% sale burn, sale fee up to ${SALE_FEE_STRUCTURAL_BOUND_PERCENT}% ` +
-        '(the structural bound — a hub owner can set any rate up to this maximum)'
+        SALE_FEE_STRUCTURAL_BOUND_NOTE
     );
 }
 

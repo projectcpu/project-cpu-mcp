@@ -50,6 +50,10 @@ function summaryLine(report: RevealFulfilmentReport): string {
     );
 }
 
+function settledAnyRequest(report: RevealFulfilmentReport): boolean {
+    return report.requests.some((entry) => entry.fulfillTxHash !== null);
+}
+
 export function registerFulfillRevealTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
         'cpu_fulfill_reveal',
@@ -61,8 +65,6 @@ export function registerFulfillRevealTool(server: ToolRegistrar, context: AppCon
                     ? emptyLine(args.tokenIds)
                     : [summaryLine(report), ...report.requests.map(entryLine)].join(' ');
 
-            const settledHere = report.requests.some((entry) => entry.outcome === RevealFulfilmentOutcome.Settled);
-
             return {
                 content: [
                     { type: 'text', text: header },
@@ -70,7 +72,7 @@ export function registerFulfillRevealTool(server: ToolRegistrar, context: AppCon
                         type: 'text',
                         text: JSON.stringify({
                             ...report,
-                            ...(settledHere ? { eventType: ToolEventType.RevealFulfilled } : {}),
+                            ...(settledAnyRequest(report) ? { eventType: ToolEventType.RevealFulfilled } : {}),
                         }),
                     },
                 ],

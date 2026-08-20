@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createServer, SERVER_INSTRUCTIONS } from '../server.js';
+import { SERVER_INSTRUCTIONS } from '../server.constants.js';
+import { createServer } from '../server.js';
 import { PERSONA_BRIEF_MARKER, PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
 import type { AppContext } from '../types.js';
 

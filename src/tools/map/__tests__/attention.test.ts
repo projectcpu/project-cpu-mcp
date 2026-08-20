@@ -849,8 +849,8 @@ describe('get_attention panel, hostile and partial inputs', () => {
             const result = await harness()({ minSeverity: null, owner });
             const panel = panelOf(result);
 
-            expect(labelSeparators(panel)).toBe(PANEL_LABELS.length);
             expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+            expect(flattened(panel)).toContain(`Owner: ${owner}`);
             expect(JSON.parse(result.content[1]?.text ?? '{}').owner).toBe(owner);
         }
     });

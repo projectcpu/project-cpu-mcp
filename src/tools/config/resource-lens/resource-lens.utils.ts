@@ -19,15 +19,15 @@ import {
     TRANSIT_FEE_FLOOR_NOTE,
     TRANSIT_SECTION_TITLE,
     UNKNOWN_RESOURCE_NOTE,
+    UNLIMITED_SHELF_CAP,
     UNLIMITED_SHELF_VALUE,
 } from './constants.js';
 import type { ResourceBuildingRowView, ResourceLensView, ResourceRecipeRowView } from './types.js';
 import type { CraftStackView, RecipeView } from '../../../api/types.js';
 import type { AppConfig, CatalogBuildingView } from '../../../services/types.js';
 import { resourceLabel, resourceName, type ResourceNames } from '../../../utils/format.utils.js';
+import { PANEL_FIELD_SEPARATOR } from '../../../utils/panel.constants.js';
 import { buildIndexRow, renderIndexRow } from '../find-buildings/find-buildings.utils.js';
-
-const UNLIMITED_SHELF = 0;
 
 function stackAmount(stacks: Array<CraftStackView>, resourceId: number): number {
     return stacks.reduce((sum, stack) => (stack.resourceId === resourceId ? sum + stack.amount : sum), 0);
@@ -97,19 +97,21 @@ function groupLines(title: string, rows: Array<string>): Array<string> {
 
 function buildingRowLine(row: ResourceBuildingRowView): string {
     const index = renderIndexRow(row);
-    return row.amount === null ? index : `${index} | ${row.amount} ${PER_BUILD_LABEL}`;
+    return row.amount === null ? index : `${index}${PANEL_FIELD_SEPARATOR}${row.amount} ${PER_BUILD_LABEL}`;
 }
 
 function recipeRowLine(row: ResourceRecipeRowView): string {
     const runners = row.buildings.length === 0 ? EMPTY_GROUP_VALUE : row.buildings.join(', ');
-    return (
-        `${row.name} (${row.id}) | ${row.amount} ${PER_CYCLE_LABEL} | ${row.durationSec}s/cycle | ` +
-        `${RUN_BY_LABEL} ${runners}`
-    );
+    return [
+        `${row.name} (${row.id})`,
+        `${row.amount} ${PER_CYCLE_LABEL}`,
+        `${row.durationSec}s/cycle`,
+        `${RUN_BY_LABEL} ${runners}`,
+    ].join(PANEL_FIELD_SEPARATOR);
 }
 
 function shelfValue(units: number): string {
-    return units === UNLIMITED_SHELF ? UNLIMITED_SHELF_VALUE : `${units} units`;
+    return units === UNLIMITED_SHELF_CAP ? UNLIMITED_SHELF_VALUE : `${units} units`;
 }
 
 function storageLines(lens: ResourceLensView): Array<string> {

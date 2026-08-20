@@ -1,4 +1,5 @@
 import {
+    STALLED_REASONS,
     WAREHOUSE_PRESSURE_LABELS,
     WAREHOUSE_PRESSURE_NO_OWNER_NOTE,
     WAREHOUSE_PRESSURE_SCOPE_SCOUTING,
@@ -9,8 +10,6 @@ import type { WarehousePressureInput } from './types.js';
 import { type AttentionItem, AttentionReason, AttentionSeverity } from '../../../map/types.js';
 import { resourceLabel, type ResourceNames } from '../../../utils/format.utils.js';
 import { renderPanel } from '../../../utils/panel.utils.js';
-
-const STALLED_REASONS: ReadonlyArray<AttentionReason> = [AttentionReason.StalledMining, AttentionReason.StalledCraft];
 
 function countReasons(items: ReadonlyArray<AttentionItem>, reasons: ReadonlyArray<AttentionReason>): number {
     return items.filter((item) => reasons.includes(item.reason)).length;

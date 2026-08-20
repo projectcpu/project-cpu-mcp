@@ -2,13 +2,14 @@ import {
     PANEL_CHARACTER_SUBSTITUTES,
     PANEL_COMBINING_MARK,
     PANEL_CONTINUATION_INDENT,
+    PANEL_FIELD_HEAD,
     PANEL_FIELD_SEPARATOR,
     PANEL_LABEL_SEPARATOR,
     PANEL_MAX_WIDTH,
     PANEL_MISSING_VALUE,
     PANEL_RESERVED_CHARACTERS,
-    PANEL_SEQUENCE_ELISIONS,
     PANEL_UNKNOWN_SUBSTITUTE,
+    PANEL_WRAP_TAIL_FORBIDDEN,
 } from './panel.constants.js';
 import type { PanelField, PanelRow, PanelSpec } from './panel.types.js';
 
@@ -23,17 +24,11 @@ function substituted(character: string): string {
     return substituteFor(character, PANEL_CHARACTER_SUBSTITUTES);
 }
 
-function elided(text: string): string {
-    let current = text;
-    for (const [sequence, remainder] of PANEL_SEQUENCE_ELISIONS) {
-        current = current.split(sequence).join(remainder);
-    }
-    return current;
-}
-
 function sanitize(text: string): string {
-    const substitutedText = [...text.replace(/\s+/gu, ' ')].map((character) => substituted(character)).join('');
-    return elided(substitutedText).trim();
+    return [...text.replace(/\s+/gu, ' ')]
+        .map((character) => substituted(character))
+        .join('')
+        .trim();
 }
 
 function fieldText(field: PanelField): string {
@@ -57,13 +52,17 @@ function splitsCharacter(text: string, at: number): boolean {
     return PANEL_COMBINING_MARK.test(String.fromCodePoint(text.codePointAt(at) ?? 0));
 }
 
-function endsOnElisionRemainder(text: string, at: number): boolean {
+function endsOnForbiddenTail(text: string, at: number): boolean {
     const line = text.slice(0, at).trimEnd();
-    return [...PANEL_SEQUENCE_ELISIONS.values()].some((remainder) => line.endsWith(remainder));
+    return PANEL_WRAP_TAIL_FORBIDDEN.some((tail) => line.endsWith(tail));
+}
+
+function opensAsField(text: string, at: number): boolean {
+    return PANEL_FIELD_HEAD.test(text.slice(at).trimStart());
 }
 
 function damages(text: string, at: number): boolean {
-    return splitsCharacter(text, at) || endsOnElisionRemainder(text, at);
+    return splitsCharacter(text, at) || endsOnForbiddenTail(text, at) || opensAsField(text, at);
 }
 
 function cohesive(text: string, at: number, earliest: number): number {

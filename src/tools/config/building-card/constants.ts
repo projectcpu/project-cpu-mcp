@@ -53,3 +53,29 @@ export const UNKNOWN_BUILDING_TYPE_HINT = 'cpu_get_game_config lists every catal
 export const CARD_INDENT = '  ';
 
 export const RECIPE_PLAN_INDENT = '    ';
+
+export const EXAMPLE_TYPE_COUNT = 3;
+
+export const HUB_ROLE_SUMMARY = 'routes transport and settles trade on its cell';
+
+export const NOTHING_MINED_SUMMARY = 'mines nothing';
+
+export const RECIPES_ONLY_SUMMARY = { verb: 'runs', unit: 'recipe(s)' };
+
+export const COST_LABEL = 'Cost';
+
+export const BUILD_TIME_LABEL = 'Build time';
+
+export const CYCLE_TIME_LABEL = 'Cycle time';
+
+export const EXTRACTION_SHARE_LABEL = 'Extraction share';
+
+export const RECIPE_INPUT_EFFICIENCY_LABEL = 'Recipe input efficiency';
+
+export const DEMOLISH_LABEL = 'Demolish';
+
+export const MODE_SWITCH_LABEL = 'Mode switch';
+
+export const UPGRADE_FROM_LABEL = 'Upgrades from';
+
+export const UPGRADE_TO_LABEL = 'Upgrades to';

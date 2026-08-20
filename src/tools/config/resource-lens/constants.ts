@@ -37,6 +37,8 @@ export const TRANSIT_FEE_FLOOR_LABEL = 'Transit fee floor';
 
 export const EMPTY_GROUP_VALUE = 'none';
 
+export const UNLIMITED_SHELF_CAP = 0;
+
 export const UNLIMITED_SHELF_VALUE = 'unlimited';
 
 export const SHELVES_MISSING_NOTE = 'not listed in the loaded config';

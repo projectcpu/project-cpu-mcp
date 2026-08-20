@@ -14,7 +14,6 @@ export interface GetResourceArgs {
 }
 
 export interface ResourceBuildingRowView extends BuildingIndexRowView {
-    /** Units of the resource the role moves per building; `null` where the role carries no fixed amount. */
     amount: number | null;
 }
 
@@ -23,7 +22,6 @@ export interface ResourceRecipeRowView {
     name: string;
     amount: number;
     durationSec: number;
-    /** Names of the catalog buildings that run this recipe. */
     buildings: Array<string>;
 }
 

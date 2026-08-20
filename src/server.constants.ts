@@ -1,0 +1,22 @@
+export const SERVER_INSTRUCTIONS = [
+    'MCP server for Project CPU (blockchain game on EVM).',
+    'Before you answer the operator, load your operating brief once with `cpu_persona` and work to it.',
+    'Authenticate first: `cpu_authenticate` opens a session — the default EVM mode signs in via SIWE',
+    'locally, AGW mode starts a Device Authorization flow.',
+    'Then read the entry point once: `cpu_get_game_config` carries the static rulebook — resources,',
+    'buildings, costs, storage and transport parameters, contract addresses.',
+    'It is a router, not the whole catalog: static facts plus a building index, and it names the tool to ask',
+    'next — `cpu_get_building`, `cpu_find_buildings`, `cpu_get_resource`, `cpu_list_recipes`.',
+    'The world is a finite sphere of land cells identified only by tokenId; there are no coordinates,',
+    'adjacency comes from the `neighbors` list on each cell, and you plan routes yourself.',
+    'Route planning loop: PLAN once over `cpu_route_network` (waypoints, legal hops, fees, gaps),',
+    'EXECUTE leg by leg re-checking your position with the cheap `cpu_next_hops` because the world moves',
+    'while goods travel, VERIFY every chain with `cpu_quote_transport` before spending. Foreign land with',
+    'no active hub is a wall, not a waypoint.',
+    'You see the world only when you call a tool — there is no push.',
+    'Every other mechanic — reveal, building, mining, crafting, transport, trade, syndicates, payouts —',
+    'is carried by the tools themselves: read the description of the tool and call it rather than',
+    'assuming the rules.',
+].join(' ');
+
+export const SENTENCE_BOUNDARY = /(?<=\.)\s+/u;

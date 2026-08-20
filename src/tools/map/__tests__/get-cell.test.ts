@@ -488,8 +488,8 @@ describe('get_cell panel, hostile and partial inputs', () => {
             )({ tokenId: '7' }),
         );
 
-        expect(labelSeparators(panel)).toBe(PANEL_LABELS.length);
         expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+        expect(flattened(panel)).toContain('mine Job: idle / Note: all clear');
     });
 
     it('lets an owner address forge no field even when the panel is read unwrapped', async () => {

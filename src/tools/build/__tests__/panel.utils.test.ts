@@ -3,31 +3,30 @@ import { describe, expect, it } from 'vitest';
 import { BuildingType } from '../../../api/types.js';
 import { makeConfig } from '../../../services/__tests__/service-fakes.js';
 import type { AppConfig, BuildResult, UpgradeResult } from '../../../services/types.js';
-import { PANEL_CONTINUATION_INDENT, PANEL_LABEL_SEPARATOR, PANEL_MAX_WIDTH } from '../../../utils/panel.constants.js';
+import { PANEL_FIELD_SEPARATOR, PANEL_LABEL_SEPARATOR, PANEL_MAX_WIDTH } from '../../../utils/panel.constants.js';
 import { TxStatus } from '../../../wallet/types.js';
+import { BUILD_PANEL_LABELS, UPGRADE_PANEL_LABELS } from '../constants.js';
 import { buildPanel, upgradePanel } from '../panel.utils.js';
 
-const BUILD_FIELDS = 9;
-const UPGRADE_FIELDS = 10;
+const BUILD_FIELDS = Object.values(BUILD_PANEL_LABELS);
+const UPGRADE_FIELDS = Object.values(UPGRADE_PANEL_LABELS);
 const CLAIMS_USABLE = /\b(ready|complete|completed|completes|finished)\b/iu;
 
 function lines(panel: string): Array<string> {
     return panel.split('\n');
 }
 
-function occurrences(text: string, sequence: string): number {
-    return text.split(sequence).length - 1;
+function panelLabels(panel: string, known: ReadonlyArray<string>): Array<string> {
+    return panel
+        .split('\n')
+        .slice(1)
+        .flatMap((line) => line.trim().split(PANEL_FIELD_SEPARATOR))
+        .map((field) => field.split(PANEL_LABEL_SEPARATOR)[0] ?? '')
+        .filter((label) => known.includes(label));
 }
 
-function unwrapped(panel: string): string {
-    return lines(panel).reduce((text, line) =>
-        line.startsWith(PANEL_CONTINUATION_INDENT) ? `${text} ${line.trim()}` : `${text}\n${line}`,
-    );
-}
-
-function holdsShape(panel: string, fields: number): void {
-    expect(occurrences(panel, PANEL_LABEL_SEPARATOR)).toBe(fields);
-    expect(occurrences(unwrapped(panel), PANEL_LABEL_SEPARATOR)).toBe(fields);
+function holdsShape(panel: string, fields: ReadonlyArray<string>): void {
+    expect(panelLabels(panel, fields)).toEqual(fields);
     for (const line of lines(panel)) {
         expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
     }
@@ -119,7 +118,7 @@ describe('buildPanel', () => {
         });
 
         holdsShape(panel, BUILD_FIELDS);
-        expect(panel).toContain('Mine / Cell:7');
+        expect(panel).toContain('Mine / Cell: 7');
         for (const line of lines(panel)) {
             expect(line.replace(/ \| /gu, '')).not.toContain('|');
         }
@@ -190,7 +189,7 @@ describe('upgradePanel', () => {
         });
 
         holdsShape(panel, UPGRADE_FIELDS);
-        expect(panel).toContain('mine_l2a / Cell:7 Status:done');
+        expect(panel).toContain('mine_l2a / Cell: 7 Status: done');
         for (const line of lines(panel)) {
             expect(line.replace(/ \| /gu, '')).not.toContain('|');
         }

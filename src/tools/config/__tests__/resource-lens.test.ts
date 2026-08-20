@@ -229,7 +229,6 @@ interface RegisteredTool {
     name: string;
     description: string;
     inputKeys: Array<string>;
-    /** Runs the registered input schema over the args, exactly as the SDK does before the handler sees them. */
     call: (args: Record<string, unknown>) => Promise<ToolResult>;
     parseInput: (args: Record<string, unknown>) => unknown;
 }

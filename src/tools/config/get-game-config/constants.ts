@@ -1,5 +1,8 @@
 export const SALE_FEE_STRUCTURAL_BOUND_PERCENT = 100;
 
+export const SALE_FEE_STRUCTURAL_BOUND_NOTE =
+    '(the structural bound — a hub owner can set any rate up to this maximum)';
+
 export const ENTRY_POINT_LOOKUP = {
     building: 'cpu_get_building',
     buildingSearch: 'cpu_find_buildings',

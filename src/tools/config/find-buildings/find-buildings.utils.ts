@@ -10,6 +10,7 @@ import type { BuildingIndexRowView, FindBuildingsArgs } from './types.js';
 import type { RecipeView } from '../../../api/types.js';
 import type { CatalogBuildingView } from '../../../services/types.js';
 import { resourceLabel, type ResourceNames } from '../../../utils/format.utils.js';
+import { PANEL_FIELD_SEPARATOR } from '../../../utils/panel.constants.js';
 import { summarizeBuildingRole } from '../building-card/building-card.utils.js';
 
 function recipesOf(building: CatalogBuildingView, recipes: Array<RecipeView>): Array<RecipeView> {
@@ -74,7 +75,9 @@ export function buildIndexRow(
 }
 
 export function renderIndexRow(row: BuildingIndexRowView): string {
-    return `${row.type} | ${row.name} | ${row.kind} | tier ${row.tier} | build ${row.buildCostCpu} $CPU | ${row.summary}`;
+    return [row.type, row.name, row.kind, `tier ${row.tier}`, `build ${row.buildCostCpu} $CPU`, row.summary].join(
+        PANEL_FIELD_SEPARATOR,
+    );
 }
 
 export function renderBuildingIndexLine(

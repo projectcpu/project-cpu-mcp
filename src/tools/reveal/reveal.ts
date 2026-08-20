@@ -54,6 +54,10 @@ function outcomeLine(result: RevealResult): string {
     return result.note === null ? drawLine(result) : `${result.note} ${drawLine(result)}`;
 }
 
+function mutatedCell(result: RevealResult): boolean {
+    return result.requestTxHash !== null || result.fulfillTxHash !== null || result.fulfilled;
+}
+
 export function registerRevealTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
         'cpu_reveal',
@@ -71,7 +75,7 @@ export function registerRevealTool(server: ToolRegistrar, context: AppContext): 
                         type: 'text',
                         text: JSON.stringify({
                             ...result,
-                            ...(result.fulfilled ? { eventType: ToolEventType.CellRevealed } : {}),
+                            ...(mutatedCell(result) ? { eventType: ToolEventType.CellRevealed } : {}),
                         }),
                     },
                 ],

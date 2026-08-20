@@ -1,8 +1,6 @@
 import type { ActiveDemolition } from '../../../map/types.js';
 import { formatUnixSeconds } from '../../../utils/format.utils.js';
 
-// Details are appended only once they arrive: silence is how "unknown" reads, rather than a run of empty
-// details on every locked cell.
 export function demolishNote(demolish: ActiveDemolition | null): string | null {
     if (demolish === null) {
         return null;

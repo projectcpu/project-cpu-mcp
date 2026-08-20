@@ -4,11 +4,12 @@ import {
     PANEL_BAR,
     PANEL_CHARACTER_SUBSTITUTES,
     PANEL_CONTINUATION_INDENT,
+    PANEL_FIELD_HEAD,
+    PANEL_FIELD_SEPARATOR,
     PANEL_LABEL_SEPARATOR,
     PANEL_MAX_LABEL_LENGTH,
     PANEL_MAX_WIDTH,
     PANEL_RESERVED_CHARACTERS,
-    PANEL_SEQUENCE_ELISIONS,
     PANEL_STRUCTURAL_SEQUENCES,
     PANEL_UNKNOWN_SUBSTITUTE,
 } from '../panel.constants.js';
@@ -101,25 +102,28 @@ describe('renderPanel', () => {
         const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Owner', value: '0xabc\nForged: line' }]] });
 
         expect(lines(panel)).toHaveLength(2);
-        expect(panel).toContain('Owner: 0xabc Forged:line');
-        expect(occurrences(panel, PANEL_LABEL_SEPARATOR)).toBe(1);
+        expect(panel).toContain('Owner: 0xabc Forged: line');
+        expect(occurrences(panel, PANEL_FIELD_SEPARATOR)).toBe(0);
     });
 
-    it('keeps the colons a value really has, dropping only the space that would make one a separator', () => {
+    it('prints the prose of a value exactly as it was given, colon and following space included', () => {
         const panel = renderPanel({
             title: 'PANEL',
             rows: [
                 [{ label: 'Window', value: '14:32 3:1' }],
                 [{ label: 'Note', value: 'Frozen: the live fee is above your tolerance' }],
+                [{ label: 'Reason', value: 'HTTP 503: Service Unavailable' }],
+                [{ label: 'Fee', value: 'Fee: 3 CPU/u' }],
             ],
         });
 
         expect(panel).toContain('Window: 14:32 3:1');
-        expect(panel).toContain('Note: Frozen:the live fee is above your tolerance');
-        expect(occurrences(panel, PANEL_LABEL_SEPARATOR)).toBe(2);
+        expect(panel).toContain('Note: Frozen: the live fee is above your tolerance');
+        expect(panel).toContain('Reason: HTTP 503: Service Unavailable');
+        expect(panel).toContain('Fee: Fee: 3 CPU/u');
     });
 
-    it('ends no wrapped line on what it left of an elided sequence, so unwrapping adds no field', () => {
+    it('ends no wrapped line on a bare colon, so unwrapping invents no label the value never had', () => {
         for (let offset = 40; offset < 72; offset += 1) {
             const value = `${'b'.repeat(offset)}:${'c'.repeat(30)}`;
             const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Owner', value }]] });
@@ -132,7 +136,7 @@ describe('renderPanel', () => {
         }
     });
 
-    it('writes no named field into a panel, whatever shape the value takes and however it is read', () => {
+    it('lets no value forge a second field, whatever shape it takes and however it is read', () => {
         const values = [
             ':'.repeat(80),
             `${'b'.repeat(30)}${':'.repeat(50)}`,
@@ -152,14 +156,27 @@ describe('renderPanel', () => {
         for (const label of ['Owner', 'X'.repeat(PANEL_MAX_LABEL_LENGTH)]) {
             for (const value of values) {
                 const panel = renderPanel({ title: 'PANEL', rows: [[{ label, value }]] });
+                const row = unwrapped(panel).split('\n')[1] ?? '';
 
-                expect(unwrapped(panel).match(/[^\s:]: /gu)).toHaveLength(1);
+                expect(row.startsWith(`${label}${PANEL_LABEL_SEPARATOR}`)).toBe(true);
+                expect(occurrences(row, PANEL_FIELD_SEPARATOR)).toBe(0);
                 for (const line of lines(panel)) {
                     expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
                     expect(line.isWellFormed()).toBe(true);
                 }
             }
         }
+    });
+
+    it('backs a wrap off a phrase that would open a continuation line as a field', () => {
+        const value = `${'x'.repeat(64)} Stalled: 999 ${'y'.repeat(40)}`;
+        const panel = renderPanel({ title: 'PANEL', rows: [[{ label: 'Owner', value }]] });
+
+        expect(lines(panel).length).toBeGreaterThan(2);
+        for (const line of lines(panel).slice(2)) {
+            expect(PANEL_FIELD_HEAD.test(line.trim())).toBe(false);
+        }
+        expect(glued(panel).replace(/ /gu, '')).toContain(`Owner: ${value}`.replace(/ /gu, ''));
     });
 
     it('never splits one character in two when it wraps a value', () => {
@@ -249,11 +266,6 @@ describe('renderPanel', () => {
 
         expect(PANEL_RESERVED_CHARACTERS).toContain(PANEL_BAR);
         expect([...structure]).toHaveLength(structure.length);
-        for (const [sequence, remainder] of PANEL_SEQUENCE_ELISIONS) {
-            expect(remainder.length).toBeGreaterThan(0);
-            expect(remainder.length).toBeLessThan(sequence.length);
-            expect(sequence).toContain(remainder);
-        }
 
         for (const character of PANEL_RESERVED_CHARACTERS) {
             const substitute = PANEL_CHARACTER_SUBSTITUTES.get(character);
