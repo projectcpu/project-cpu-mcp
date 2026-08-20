@@ -41,6 +41,7 @@ import {
     type WalletManager,
     type WalletProvider,
 } from '../../../wallet/types.js';
+import { ToolEventType } from '../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerFulfillRevealTool } from '../fulfill-reveal.js';
 
@@ -636,6 +637,31 @@ describe('cpu_fulfill_reveal', () => {
         await handler(noArgs());
 
         expect(contracts.labels).toEqual(['Reveal fulfilment']);
+    });
+
+    it('names the event in the machine block once a request actually settles', async () => {
+        const { handler } = setup();
+
+        const result = await handler(noArgs());
+
+        expect((reportOf(result) as unknown as { eventType: string }).eventType).toBe(ToolEventType.RevealFulfilled);
+    });
+
+    it('leaves the event out of the machine block when nothing settled on this call', async () => {
+        const { handler, strategy } = setup();
+        strategy.state = AdapterRequestState.CLOSED;
+
+        const result = await handler(noArgs());
+
+        expect(reportOf(result)).not.toHaveProperty('eventType');
+    });
+
+    it('leaves the event out when there was nothing open to settle at all', async () => {
+        const { handler } = setup([]);
+
+        const result = await handler(noArgs());
+
+        expect(reportOf(result)).not.toHaveProperty('eventType');
     });
 });
 

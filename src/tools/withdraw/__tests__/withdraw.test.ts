@@ -4,6 +4,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import type { WithdrawResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
+import { ToolEventType } from '../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerWithdrawTool } from '../withdraw.js';
 
@@ -57,6 +58,12 @@ describe('withdraw tool', () => {
         const parsed = JSON.parse(out.content[1]?.text ?? '{}') as WithdrawResult;
         expect(parsed.executed).toBe('100');
         expect(parsed.partial).toBe(false);
+    });
+
+    it('names the event in the machine block', async () => {
+        const out = await harness(result)({ tokenId: '42', amount: '100' });
+        const parsed = JSON.parse(out.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).toBe(ToolEventType.Withdrawn);
     });
 
     it('reports a partial tranche and names the emission budget', async () => {

@@ -26,6 +26,7 @@ import type {
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
 import { registerGetBalanceTool } from '../../account/get-balance/get-balance.js';
+import { ToolEventType } from '../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerBuyLotTool } from '../buy-lot/buy-lot.js';
 import { registerCancelLotTool } from '../cancel-lot/cancel-lot.js';
@@ -243,6 +244,26 @@ describe('create_lot / cancel_lot tools', () => {
         expect(result.content[0]?.text).toMatch(/finalize_delivery on 123/);
         expect(result.content[0]?.text).toMatch(/cancel tx 0xcancel/);
     });
+
+    it('names the event in the machine block', async () => {
+        const createHandler = capture(registerCreateLotTool, { trade: { createLot: async () => createResult } });
+        const created = await createHandler({
+            chain: [],
+            resourceId: 3,
+            value: '100',
+            pricePerUnit: '0.5',
+            maxSaleFeePercent: null,
+        } as never);
+        expect((JSON.parse(created.content[1]?.text ?? '{}') as { eventType: string }).eventType).toBe(
+            ToolEventType.LotCreated,
+        );
+
+        const cancelHandler = capture(registerCancelLotTool, { trade: { cancelLot: async () => cancelResult } });
+        const cancelled = await cancelHandler({ lotId: '7', chain: [] } as never);
+        expect((JSON.parse(cancelled.content[1]?.text ?? '{}') as { eventType: string }).eventType).toBe(
+            ToolEventType.LotCancelled,
+        );
+    });
 });
 
 describe('set_sale_fee tool', () => {
@@ -253,6 +274,8 @@ describe('set_sale_fee tool', () => {
         expect(result.content[0]?.text).toMatch(/tx 0xsetfee/);
         const json = JSON.parse(result.content[1]?.text ?? '{}') as SetSaleFeeResult;
         expect(json.feePercent).toBe(2.5);
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).toBe(ToolEventType.HubFeeSet);
     });
 
     it('propagates validation errors from the service', async () => {
@@ -283,6 +306,8 @@ describe('buy_lot tool', () => {
         expect(result.content[0]?.text).toMatch(/0.05 was burned/);
         expect(result.content[0]?.text).toMatch(/sale approve 0xapprove/);
         expect(result.content[0]?.text).toMatch(/buy tx 0xbuy/);
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).toBe(ToolEventType.LotBought);
     });
 
     it('propagates service errors', async () => {

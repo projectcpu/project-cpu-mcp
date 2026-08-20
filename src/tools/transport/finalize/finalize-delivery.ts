@@ -1,5 +1,5 @@
 import type { AppContext } from '../../../types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { finalizeDeliveryInputSchema } from '../types.js';
 import { FINALIZE_DELIVERY_DESCRIPTION } from './constants.js';
 
@@ -16,7 +16,7 @@ export function registerFinalizeDeliveryTool(server: ToolRegistrar, context: App
             return {
                 content: [
                     { type: 'text', text: header },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.DeliveryFinalized }) },
                 ],
             };
         },

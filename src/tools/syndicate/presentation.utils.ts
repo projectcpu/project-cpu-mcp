@@ -18,6 +18,7 @@ import type {
     SyndicateMembershipView,
     SyndicateRatesView,
 } from '../../services/types.js';
+import { ToolEventType } from '../types.js';
 
 function rates(ratesView: SyndicateRatesView): SyndicateRatesView {
     return {
@@ -95,22 +96,31 @@ function trustedPresentation(input: SyndicatePresentation) {
         }
         case SyndicatePresentationKind.Join: {
             const value = joined(input.value);
-            return { value, summary: summarizeJoin(value) };
+            return { value: { ...value, eventType: ToolEventType.SyndicateJoined }, summary: summarizeJoin(value) };
         }
         case SyndicatePresentationKind.Create: {
             const value = created(input.value);
-            return { value, summary: summarizeCreate(value) };
+            return {
+                value: { ...value, eventType: ToolEventType.SyndicateCreated },
+                summary: summarizeCreate(value),
+            };
         }
         case SyndicatePresentationKind.SetParams: {
             const value = params(input.value);
-            return { value, summary: summarizeSetParams(value) };
+            return {
+                value: { ...value, eventType: ToolEventType.SyndicateParamsChanged },
+                summary: summarizeSetParams(value),
+            };
         }
         case SyndicatePresentationKind.Leave: {
             const value = {
                 syndicateId: input.value.syndicateId,
                 rejoinAvailableImmediately: input.value.rejoinAvailableImmediately,
             };
-            return { value, summary: summarizeLeave(value) };
+            return {
+                value: { ...value, eventType: ToolEventType.SyndicateLeft },
+                summary: summarizeLeave(value),
+            };
         }
         case SyndicatePresentationKind.TransferManager: {
             const value = {
@@ -118,7 +128,10 @@ function trustedPresentation(input: SyndicatePresentation) {
                 previousManager: input.value.previousManager,
                 newManager: input.value.newManager,
             };
-            return { value, summary: summarizeTransfer(value) };
+            return {
+                value: { ...value, eventType: ToolEventType.SyndicateManagerChanged },
+                summary: summarizeTransfer(value),
+            };
         }
     }
 }

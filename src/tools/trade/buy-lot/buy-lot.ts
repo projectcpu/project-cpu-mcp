@@ -1,6 +1,6 @@
 import { BUY_LOT_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { summarizeBuyLot } from '../format.utils.js';
 import { buyLotInputSchema } from '../types.js';
 
@@ -19,7 +19,7 @@ export function registerBuyLotTool(server: ToolRegistrar, context: AppContext): 
             return {
                 content: [
                     { type: 'text', text: summarizeBuyLot(result, resources) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.LotBought }) },
                 ],
             };
         },
