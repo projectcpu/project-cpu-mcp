@@ -36,6 +36,10 @@ export const NO_MINABLE_RESOURCES_NOTE = 'Nothing to mine: this building draws f
 
 export const RECIPE_DETAILS_MISSING_NOTE = 'details absent from the loaded config; read cpu_list_recipes';
 
+export const UNPRICED_OPEX_NOTE = 'plus a per-recipe opex the chain adds on top (not priced here)';
+
+export const FREE_CYCLE_VALUE = 'free';
+
 export const MODE_SWITCH_IMPOSSIBLE_NOTE = 'cannot switch — one output or none, so it can never be re-pointed';
 
 export const MODE_SWITCH_UNKNOWN_NOTE = 'unknown — this config predates the price; cpu_get_cell prices it per cell';

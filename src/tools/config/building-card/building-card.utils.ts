@@ -1,8 +1,11 @@
+import { parseEther } from 'viem';
+
 import {
     BUILD_INPUTS_LABEL,
     CARD_INDENT,
     CONSTRUCTION_SECTION_TITLE,
     EXTRACTOR_NO_INPUT_RESOURCES_NOTE,
+    FREE_CYCLE_VALUE,
     HUB_OPERATION_NOTE,
     LIFECYCLE_SECTION_TITLE,
     MINABLE_RESOURCES_LABEL,
@@ -18,13 +21,28 @@ import {
     RECIPE_OUTPUTS_LABEL,
     RECIPE_PLAN_INDENT,
     UNKNOWN_BUILDING_TYPE_HINT,
+    UNPRICED_OPEX_NOTE,
 } from './constants.js';
 import type { BuildingCardView, BuildingRecipePlanView, LabeledResourceView, LabeledStackView } from './types.js';
 import { BuildingKind, type CraftStackView, type RecipeView } from '../../../api/types.js';
 import { type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
-import { bpToPercent, resourceLabel, resourceName, type ResourceNames } from '../../../utils/format.utils.js';
+import {
+    bpToPercent,
+    cpuFromWei,
+    resourceLabel,
+    resourceName,
+    type ResourceNames,
+} from '../../../utils/format.utils.js';
 
 const EXAMPLE_TYPE_COUNT = 3;
+
+function sumCpu(base: string, opex: string): string {
+    return cpuFromWei((parseEther(base) + parseEther(opex)).toString());
+}
+
+function isZeroCpu(amount: string): boolean {
+    return parseEther(amount) === 0n;
+}
 
 function normalizeType(type: string): string {
     return type.trim().toLowerCase();
@@ -66,12 +84,15 @@ function recipePlan(
     resources: ResourceNames,
 ): BuildingRecipePlanView {
     const recipe = recipes.find((candidate) => candidate.id === id) ?? null;
+    const costCpu = recipe?.costCpu ?? null;
+    const opexCpu = building.recipeOpexCpu?.[id] ?? null;
     return {
         id,
         name: recipe?.name ?? null,
         durationSec: recipe?.durationSec ?? null,
-        costCpu: recipe?.costCpu ?? null,
-        opexCpu: building.recipeOpexCpu?.[id] ?? null,
+        costCpu,
+        opexCpu,
+        totalCpu: costCpu === null || opexCpu === null ? null : sumCpu(costCpu, opexCpu),
         recipeInputs: recipe === null ? [] : labelStacks(recipe.inputs, resources),
         recipeOutputs: recipe === null ? [] : labelStacks(recipe.outputs, resources),
     };
@@ -168,13 +189,23 @@ function constructionLines(card: BuildingCardView, resources: ResourceNames): Ar
     ];
 }
 
+function cycleCost(plan: BuildingRecipePlanView): string {
+    if (plan.costCpu === null) {
+        return RECIPE_DETAILS_MISSING_NOTE;
+    }
+    if (plan.opexCpu === null) {
+        return `${plan.costCpu} $CPU base, ${UNPRICED_OPEX_NOTE}`;
+    }
+    if (isZeroCpu(plan.opexCpu)) {
+        return isZeroCpu(plan.costCpu) ? FREE_CYCLE_VALUE : `${plan.costCpu} $CPU/cycle`;
+    }
+    return `${plan.costCpu} $CPU base + ${plan.opexCpu} $CPU opex = ${plan.totalCpu} $CPU/cycle`;
+}
+
 function recipeLines(plan: BuildingRecipePlanView, resources: ResourceNames): Array<string> {
     const name = plan.name === null ? '' : ` (${plan.name})`;
-    const cost = plan.opexCpu ?? plan.costCpu;
     const terms =
-        plan.durationSec === null
-            ? RECIPE_DETAILS_MISSING_NOTE
-            : `${plan.durationSec}s/cycle, ${cost ?? '0'} $CPU/cycle`;
+        plan.durationSec === null ? RECIPE_DETAILS_MISSING_NOTE : `${plan.durationSec}s/cycle, ${cycleCost(plan)}`;
     return [
         `${CARD_INDENT}${plan.id}${name} — ${terms}`,
         line(RECIPE_INPUTS_LABEL, stackList(plan.recipeInputs, resources), RECIPE_PLAN_INDENT),

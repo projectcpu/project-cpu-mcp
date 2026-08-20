@@ -1,12 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { BuildingKind, BuildingType, CraftRecipeId, RandomnessKind } from '../../../api/types.js';
+import { BuildingKind, BuildingType, CraftRecipeId, RandomnessKind, type RecipeView } from '../../../api/types.js';
 import { Network } from '../../../config/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { createServer } from '../../../server.js';
 import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerGetBuildingTool } from '../building-card/building-card.js';
+import { summarizeBuildingRole } from '../building-card/building-card.utils.js';
+
+const sdk = vi.hoisted(() => ({ toolNames: new Array<string>() }));
+
+vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+    McpServer: class McpServerStub {
+        registerTool(name: string): void {
+            sdk.toolNames.push(name);
+        }
+
+        connect(): Promise<void> {
+            return Promise.resolve();
+        }
+    },
+}));
+
+vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
+    StdioServerTransport: class StdioServerTransportStub {},
+}));
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -170,6 +190,16 @@ async function machineBlock(buildingType: string): Promise<Record<string, unknow
     return JSON.parse(result.content[1]?.text ?? '{}') as Record<string, unknown>;
 }
 
+function withMill(building: Partial<CatalogBuildingView>, recipe: Partial<RecipeView> = {}): AppConfig {
+    return {
+        ...CONFIG,
+        buildings: CONFIG.buildings.map((entry) =>
+            entry.type === BuildingType.SteelMill ? ({ ...entry, ...building } as CatalogBuildingView) : entry,
+        ),
+        recipes: CONFIG.recipes.map((entry) => ({ ...entry, ...recipe })),
+    };
+}
+
 function section(text: string, title: string): string {
     const titles = ['Construction', 'Operation', 'Lifecycle'];
     const start = text.indexOf(`${title}\n`);
@@ -218,11 +248,39 @@ describe('get_building tool', () => {
         expect(operation).not.toContain('7 Iron');
     });
 
-    it('carries the crafter cycle duration and its operating cost', async () => {
+    it('prices a cycle at what the craft actually burns — the recipe base plus the opex on top', async () => {
         const operation = section(await card(BuildingType.SteelMill), 'Operation');
 
         expect(operation).toContain('30s');
-        expect(operation).toContain('2 $CPU');
+        expect(operation).toContain('3 $CPU base + 2 $CPU opex = 5 $CPU/cycle');
+    });
+
+    it('never declares a paid recipe free when this building adds no opex to it', async () => {
+        const freeOpex = withMill({ recipeOpexCpu: { smelt_steel: '0' } });
+
+        const operation = section(await card(BuildingType.SteelMill, freeOpex), 'Operation');
+
+        expect(operation).toContain('3 $CPU/cycle');
+        expect(operation).not.toMatch(/\b0 \$CPU\/cycle/);
+        expect(operation).not.toMatch(/free/i);
+    });
+
+    it('says the opex is unpriced rather than zero when the config serves none', async () => {
+        const unpriced = withMill({ recipeOpexCpu: null });
+
+        const operation = section(await card(BuildingType.SteelMill, unpriced), 'Operation');
+
+        expect(operation).toContain('3 $CPU base');
+        expect(operation).toMatch(/not priced here/i);
+        expect(operation).not.toContain('= 3 $CPU/cycle');
+    });
+
+    it('keeps a free recipe free instead of pricing it at zero', async () => {
+        const free = withMill({ recipeOpexCpu: { smelt_steel: '0' } }, { costCpu: '0' });
+
+        const operation = section(await card(BuildingType.SteelMill, free), 'Operation');
+
+        expect(operation).toContain('free');
     });
 
     it('says outright that an extractor consumes no input resources', async () => {
@@ -298,6 +356,26 @@ describe('get_building tool', () => {
         expect((mine.operation as Record<string, unknown>).recipes).toEqual([]);
     });
 
+    it('keeps both price terms and their sum in the machine block', async () => {
+        const mill = await machineBlock(BuildingType.SteelMill);
+        const [recipe] = (mill.operation as Record<string, unknown>).recipes as Array<Record<string, unknown>>;
+
+        expect(recipe?.costCpu).toBe('3');
+        expect(recipe?.opexCpu).toBe('2');
+        expect(recipe?.totalCpu).toBe('5');
+    });
+
+    it('leaves the total unknown rather than guessing it when no opex is served', async () => {
+        const unpriced = withMill({ recipeOpexCpu: null });
+        const result = await register(unpriced).call({ buildingType: BuildingType.SteelMill });
+        const card = JSON.parse(result.content[1]?.text ?? '{}') as Record<string, unknown>;
+        const [recipe] = (card.operation as Record<string, unknown>).recipes as Array<Record<string, unknown>>;
+
+        expect(recipe?.costCpu).toBe('3');
+        expect(recipe?.opexCpu).toBeNull();
+        expect(recipe?.totalCpu).toBeNull();
+    });
+
     it('describes the two input plans apart in the tool description', () => {
         const { description } = register();
 
@@ -311,5 +389,42 @@ describe('get_building tool', () => {
         const operation = section(await card(BuildingType.SteelMill, orphaned), 'Operation');
 
         expect(operation).toContain(CraftRecipeId.SmeltSteel);
+    });
+});
+
+describe('building role summary', () => {
+    it('tells an extractor what it mines', () => {
+        expect(summarizeBuildingRole(MINE, CONFIG.recipes, CONFIG.resources)).toBe('mines Iron, Copper');
+    });
+
+    it('tells a crafter what it produces, never what it swallows', () => {
+        const summary = summarizeBuildingRole(STEEL_MILL, CONFIG.recipes, CONFIG.resources);
+
+        expect(summary).toBe('crafts Steel');
+        expect(summary).not.toContain('Iron');
+    });
+
+    it('tells a hub what it routes rather than what it mines', () => {
+        const summary = summarizeBuildingRole(HUB, CONFIG.recipes, CONFIG.resources);
+
+        expect(summary).toMatch(/routes/i);
+        expect(summary).not.toMatch(/mine|craft/i);
+    });
+
+    it('rides on the first line of the card', async () => {
+        const [headline] = (await card(BuildingType.SteelMill)).split('\n');
+
+        expect(headline).toContain('Steel Mill');
+        expect(headline).toContain('crafts Steel');
+    });
+});
+
+describe('server registration', () => {
+    it('registers the card tool on the server the client connects to', async () => {
+        sdk.toolNames.length = 0;
+
+        await createServer({} as unknown as AppContext);
+
+        expect(sdk.toolNames).toContain('cpu_get_building');
     });
 });

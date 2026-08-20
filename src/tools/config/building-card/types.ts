@@ -31,6 +31,7 @@ export interface BuildingRecipePlanView {
     durationSec: number | null;
     costCpu: string | null;
     opexCpu: string | null;
+    totalCpu: string | null;
     recipeInputs: Array<LabeledStackView>;
     recipeOutputs: Array<LabeledStackView>;
 }
