@@ -10,6 +10,7 @@ import { registerUpgradeTool } from './tools/build/upgrade.js';
 import { registerGetBuildingTool } from './tools/config/building-card/building-card.js';
 import { registerFindBuildingsTool } from './tools/config/find-buildings/find-buildings.js';
 import { registerGetGameConfigTool } from './tools/config/get-game-config/get-game-config.js';
+import { registerGetResourceTool } from './tools/config/resource-lens/resource-lens.js';
 import { registerClaimCraftTool } from './tools/craft/claim/claim-craft.js';
 import { registerCraftTool } from './tools/craft/craft.js';
 import { registerGetCraftStatusTool } from './tools/craft/get-status/get-craft-status.js';
@@ -87,6 +88,7 @@ function registerTools(registrar: ToolRegistrar, context: AppContext): void {
     registerGetGameConfigTool(registrar, context);
     registerGetBuildingTool(registrar, context);
     registerFindBuildingsTool(registrar, context);
+    registerGetResourceTool(registrar, context);
     registerGetMapTool(registrar, context);
     registerGetCellTool(registrar, context);
     registerGetChangesTool(registrar, context);
