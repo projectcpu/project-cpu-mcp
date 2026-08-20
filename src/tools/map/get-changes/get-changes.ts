@@ -3,6 +3,7 @@ import type { ToolRegistrar } from '../../types.js';
 import { labelCell } from '../label.utils.js';
 import { getWalletAddress } from '../wallet.utils.js';
 import { GET_CHANGES_DESCRIPTION } from './constants.js';
+import { changeFeedPanel } from './panel.utils.js';
 import { getChangesInputSchema } from './types.js';
 
 export function registerGetChangesTool(server: ToolRegistrar, context: AppContext): void {
@@ -15,8 +16,13 @@ export function registerGetChangesTool(server: ToolRegistrar, context: AppContex
             const changes = await context.mapReader.getChanges(since, getWalletAddress(context));
             const { resources } = await context.appConfig.load();
 
-            const serverTag = health.reachable ? 'server=up' : 'server=DOWN';
-            const header = `Changes since v${since}: ${changes.changedCount} cells · now v${changes.version} · ${serverTag}`;
+            const panel = changeFeedPanel({
+                since,
+                changes,
+                health,
+                readiness: context.mapSync.getReadiness(),
+                socketConnected: context.mapSync.isSocketConnected(),
+            });
 
             const labeled = {
                 ...changes,
@@ -26,7 +32,7 @@ export function registerGetChangesTool(server: ToolRegistrar, context: AppContex
 
             return {
                 content: [
-                    { type: 'text', text: header },
+                    { type: 'text', text: panel },
                     { type: 'text', text: JSON.stringify(labeled) },
                 ],
             };
