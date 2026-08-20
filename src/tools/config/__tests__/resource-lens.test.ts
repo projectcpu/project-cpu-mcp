@@ -1,0 +1,407 @@
+import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+
+import { BuildingKind, BuildingType, CraftRecipeId, RandomnessKind } from '../../../api/types.js';
+import { Network } from '../../../config/types.js';
+import { NoopLogger } from '../../../logger/noop.logger.js';
+import { createServer } from '../../../server.js';
+import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from '../../../services/types.js';
+import type { AppContext } from '../../../types.js';
+import type { ToolRegistrar } from '../../types.js';
+import { registerGetResourceTool } from '../resource-lens/resource-lens.js';
+import type { ResourceLensView } from '../resource-lens/types.js';
+
+const sdk = vi.hoisted(() => ({ toolNames: new Array<string>() }));
+
+vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
+    McpServer: class McpServerStub {
+        registerTool(name: string): void {
+            sdk.toolNames.push(name);
+        }
+
+        connect(): Promise<void> {
+            return Promise.resolve();
+        }
+    },
+}));
+
+vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
+    StdioServerTransport: class StdioServerTransportStub {},
+}));
+
+interface ToolResult {
+    content: Array<{ type: string; text: string }>;
+}
+
+const MINE: CatalogBuildingView = {
+    type: BuildingType.Mine,
+    onChainId: 4,
+    name: 'Mine',
+    kind: BuildingKind.Extractor,
+    tier: 1,
+    buildCost: '5',
+    buildTimeSec: 120,
+    buildInputs: [],
+    demolishCost: { cpu: '2.5', inputs: [] },
+    modeSwitchCost: '1',
+    modeSwitch: { kind: ModeSwitchKind.Possible, costCpu: '1' },
+    minableResources: [5, 6],
+    recipes: [],
+    effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
+    recipeOpexCpu: null,
+    upgradeFrom: null,
+    upgradeTo: ['mine_l2'],
+    family: 'mine',
+    level: 1,
+    branch: null,
+};
+
+const MINE_L2: CatalogBuildingView = {
+    ...MINE,
+    type: 'mine_l2' as BuildingType,
+    onChainId: 46,
+    name: 'Deep Mine',
+    tier: 2,
+    buildCost: '15',
+    buildInputs: [{ resourceId: 102, amount: 3 }],
+    minableResources: [5],
+    upgradeFrom: BuildingType.Mine,
+    upgradeTo: [],
+    level: 2,
+};
+
+const STEEL_MILL: CatalogBuildingView = {
+    type: BuildingType.SteelMill,
+    onChainId: 11,
+    name: 'Steel Mill',
+    kind: BuildingKind.Crafter,
+    tier: 2,
+    buildCost: '20',
+    buildTimeSec: 900,
+    buildInputs: [{ resourceId: 101, amount: 2 }],
+    demolishCost: { cpu: '10', inputs: [] },
+    modeSwitchCost: null,
+    modeSwitch: { kind: ModeSwitchKind.Impossible },
+    minableResources: [],
+    recipes: [CraftRecipeId.SmeltSteel],
+    effects: { cycleTimeBp: 10000, extractionShareBp: 10000, inputEfficiency: [] },
+    recipeOpexCpu: { smelt_steel: '2' },
+    upgradeFrom: null,
+    upgradeTo: [],
+    family: null,
+    level: null,
+    branch: null,
+};
+
+const COPPER_SMELTER: CatalogBuildingView = {
+    ...STEEL_MILL,
+    type: BuildingType.CopperSmelter,
+    onChainId: 12,
+    name: 'Copper Smelter',
+    tier: 2,
+    buildCost: '18',
+    buildInputs: [{ resourceId: 5, amount: 4 }],
+};
+
+const HEATSINK_PLANT: CatalogBuildingView = {
+    ...STEEL_MILL,
+    type: BuildingType.HeatsinkPlant,
+    onChainId: 13,
+    name: 'Heatsink Plant',
+    tier: 3,
+    buildCost: '40',
+    buildInputs: [{ resourceId: 5, amount: 9 }],
+    recipes: [CraftRecipeId.MakeHeatsinks],
+    recipeOpexCpu: { make_heatsinks: '1' },
+};
+
+const HUB: CatalogBuildingView = {
+    ...MINE,
+    type: BuildingType.Hub,
+    onChainId: 22,
+    name: 'Hub',
+    kind: BuildingKind.Hub,
+    tier: 1,
+    buildCost: '30',
+    minableResources: [],
+    modeSwitchCost: null,
+    modeSwitch: { kind: ModeSwitchKind.Impossible },
+    upgradeTo: [],
+    family: null,
+    level: null,
+    branch: null,
+};
+
+const CONFIG: AppConfig = {
+    network: Network.ROBINHOOD,
+    chainId: 4663,
+    contracts: {
+        land: '0xland',
+        cpuToken: '0xcpu',
+        cpuHook: '0x4444444444444444444444444444444444444444',
+        cell: '0x5555555555555555555555555555555555555555',
+        cellLens: '0x6666666666666666666666666666666666666666',
+        transport: '0x7777777777777777777777777777777777777777',
+        trade: '0x8888888888888888888888888888888888888888',
+        syndicate: '0x9999999999999999999999999999999999999999',
+    },
+    randomness: { kind: RandomnessKind.ENTROPY, adapter: '0x00000000000000000000000000000000000000a1' },
+    resources: { 5: 'Iron', 6: 'Copper', 101: 'Concrete', 102: 'Steel', 103: 'Heatsinks', 104: 'Slag' },
+    recipes: [
+        {
+            id: CraftRecipeId.SmeltSteel,
+            name: 'Smelt Steel',
+            tier: 2,
+            inputs: [{ resourceId: 5, amount: 4 }],
+            outputs: [{ resourceId: 102, amount: 2 }],
+            durationSec: 30,
+            costCpu: '3',
+        },
+        {
+            id: CraftRecipeId.MakeHeatsinks,
+            name: 'Make Heatsinks',
+            tier: 3,
+            inputs: [{ resourceId: 102, amount: 2 }],
+            outputs: [{ resourceId: 103, amount: 1 }],
+            durationSec: 60,
+            costCpu: '4',
+        },
+    ],
+    buildings: [MINE, MINE_L2, STEEL_MILL, COPPER_SMELTER, HEATSINK_PLANT, HUB],
+    reveal: { ethContribution: '0.001', cpuBurn: '2' },
+    transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1', 102: '0.25' } },
+    trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
+    storage: {
+        caps: [
+            { resourceId: 5, cellCap: 100, hubCap: 1000 },
+            { resourceId: 102, cellCap: 0, hubCap: 500 },
+        ],
+    },
+};
+
+interface RegisteredTool {
+    name: string;
+    description: string;
+    inputKeys: Array<string>;
+    /** Runs the registered input schema over the args, exactly as the SDK does before the handler sees them. */
+    call: (args: Record<string, unknown>) => Promise<ToolResult>;
+    parseInput: (args: Record<string, unknown>) => unknown;
+}
+
+function register(config: AppConfig = CONFIG): RegisteredTool {
+    const context = {
+        appConfig: { load: async () => config },
+        logger: new NoopLogger(),
+    } as unknown as AppContext;
+    let registered: RegisteredTool | null = null;
+    const server = {
+        registerTool(
+            name: string,
+            definition: { description: string; inputSchema: z.ZodRawShape },
+            handler: (args: never) => Promise<ToolResult>,
+        ): void {
+            const schema = z.object(definition.inputSchema);
+            registered = {
+                name,
+                description: definition.description,
+                inputKeys: Object.keys(definition.inputSchema),
+                call: async (args) => handler(schema.parse(args) as never),
+                parseInput: (args) => schema.parse(args),
+            };
+        },
+    } as unknown as ToolRegistrar;
+    registerGetResourceTool(server, context);
+    if (registered === null) {
+        throw new Error('tool was not registered');
+    }
+    return registered;
+}
+
+async function lookUp(resourceId: number, config: AppConfig = CONFIG): Promise<ToolResult> {
+    return register(config).call({ resourceId });
+}
+
+async function text(resourceId: number, config: AppConfig = CONFIG): Promise<string> {
+    return (await lookUp(resourceId, config)).content[0]?.text ?? '';
+}
+
+async function lens(resourceId: number, config: AppConfig = CONFIG): Promise<ResourceLensView> {
+    const result = await lookUp(resourceId, config);
+    return JSON.parse(result.content[1]?.text ?? '{}') as ResourceLensView;
+}
+
+describe('resource lens tool', () => {
+    it('registers one lens tool keyed by a resource id and nothing else', () => {
+        const tool = register();
+
+        expect(tool.name).toMatch(/^cpu_[a-z_]+$/);
+        expect(tool.inputKeys).toEqual(['resourceId']);
+    });
+
+    it('accepts the resource id through its own registered schema and rejects a non-id', () => {
+        const tool = register();
+
+        expect(tool.parseInput({ resourceId: 5 })).toEqual({ resourceId: 5 });
+        expect(() => tool.parseInput({ resourceId: 'iron' })).toThrow();
+        expect(() => tool.parseInput({ resourceId: 1.5 })).toThrow();
+        expect(() => tool.parseInput({})).toThrow();
+    });
+
+    it('splits the four roles of one resource apart under the canon names', async () => {
+        const iron = await lens(5);
+
+        expect(iron.minedBy.map((row) => row.type)).toEqual([BuildingType.Mine, 'mine_l2']);
+        expect(iron.buildInputTo.map((row) => row.type)).toEqual([
+            BuildingType.CopperSmelter,
+            BuildingType.HeatsinkPlant,
+        ]);
+        expect(iron.recipeInputTo.map((row) => row.id)).toEqual([CraftRecipeId.SmeltSteel]);
+        expect(iron.recipeOutputOf).toEqual([]);
+    });
+
+    it('reads the same four roles from the other side for a crafted resource', async () => {
+        const steel = await lens(102);
+
+        expect(steel.minedBy).toEqual([]);
+        expect(steel.buildInputTo.map((row) => row.type)).toEqual(['mine_l2']);
+        expect(steel.recipeInputTo.map((row) => row.id)).toEqual([CraftRecipeId.MakeHeatsinks]);
+        expect(steel.recipeOutputOf.map((row) => row.id)).toEqual([CraftRecipeId.SmeltSteel]);
+    });
+
+    it('puts a building that is both built out of the resource and eats it into both groups separately', async () => {
+        const iron = await lens(5);
+        const eaters = iron.recipeInputTo.flatMap((row) => row.buildings);
+
+        expect(iron.buildInputTo.map((row) => row.name)).toContain('Copper Smelter');
+        expect(eaters).toContain('Copper Smelter');
+        expect(iron.buildInputTo.map((row) => row.name)).not.toContain('Steel Mill');
+        expect(eaters).toContain('Steel Mill');
+    });
+
+    it('never merges the build role into the recipe role', async () => {
+        const iron = await lens(5);
+
+        expect(iron.buildInputTo.map((row) => row.name)).not.toContain('Mine');
+        expect(iron.recipeInputTo.map((row) => row.buildings).flat()).not.toContain('Heatsink Plant');
+    });
+
+    it('carries the amount each role moves, so the two consumptions are never read as one', async () => {
+        const iron = await lens(5);
+
+        expect(iron.buildInputTo.map((row) => row.amount)).toEqual([4, 9]);
+        expect(iron.recipeInputTo[0]?.amount).toBe(4);
+    });
+
+    it('carries the cell shelf, the hub shelf and the transit fee floor of the resource', async () => {
+        const iron = await lens(5);
+        const rendered = await text(5);
+
+        expect(iron.storage).toEqual({ cellShelf: 100, hubShelf: 1000 });
+        expect(iron.transitFeeFloorCpu).toBe('0.1');
+        expect(rendered).toMatch(/cell shelf/i);
+        expect(rendered).toMatch(/hub shelf/i);
+        expect(rendered).toMatch(/transit fee floor/i);
+        expect(rendered).toContain('0.1');
+    });
+
+    it('reads a zero shelf as unlimited rather than as no room', async () => {
+        const rendered = await text(102);
+
+        expect((await lens(102)).storage).toEqual({ cellShelf: 0, hubShelf: 500 });
+        expect(rendered).toMatch(/unlimited/i);
+    });
+
+    it('answers a resource nothing touches with empty lists instead of an error', async () => {
+        const result = await lookUp(104);
+        const slag = await lens(104);
+
+        expect(result.content[0]?.text ?? '').toContain('Slag');
+        expect(slag).toMatchObject({
+            minedBy: [],
+            buildInputTo: [],
+            recipeInputTo: [],
+            recipeOutputOf: [],
+            inCatalog: true,
+        });
+    });
+
+    it('answers an id absent from the catalog rather than throwing, and says it is absent', async () => {
+        const unknown = await lens(999);
+        const rendered = await text(999);
+
+        expect(unknown.inCatalog).toBe(false);
+        expect(unknown.minedBy).toEqual([]);
+        expect(rendered).toMatch(/cpu_get_game_config/);
+    });
+
+    it('prints every link by the name of the building or the recipe', async () => {
+        const rendered = await text(5);
+
+        expect(rendered).toContain('Mine');
+        expect(rendered).toContain('Deep Mine');
+        expect(rendered).toContain('Copper Smelter');
+        expect(rendered).toContain('Heatsink Plant');
+        expect(rendered).toContain('Smelt Steel');
+    });
+
+    it('labels the four groups apart in the text so neither consumption reads as the other', async () => {
+        const rendered = await text(5);
+
+        expect(rendered).toMatch(/mined by/i);
+        expect(rendered).toMatch(/build input/i);
+        expect(rendered).toMatch(/recipe input/i);
+        expect(rendered).toMatch(/recipe output/i);
+    });
+
+    it('carries no trading data at all, in either half of the answer', async () => {
+        const result = await lookUp(5);
+        const whole = JSON.stringify(result);
+
+        expect(whole).not.toMatch(/vwap/i);
+        expect(whole).not.toMatch(/\bprice/i);
+        expect(whole).not.toMatch(/\bvolume/i);
+        expect(whole).not.toMatch(/\bbid\b|\bask\b|\blot\b/i);
+    });
+
+    it('says in its description that trading numbers live in their own tool', () => {
+        const { description } = register();
+
+        expect(description).toMatch(/cpu_get_market_index/);
+        expect(description).toMatch(/resource/i);
+    });
+
+    it('needs no live read of its own — the loaded config is the whole answer', async () => {
+        const sealed = new Proxy(
+            { appConfig: { load: async () => CONFIG } },
+            {
+                get(target, property) {
+                    if (property !== 'appConfig') {
+                        throw new Error(`the lens reached past the loaded config for "${String(property)}"`);
+                    }
+                    return Reflect.get(target, property);
+                },
+            },
+        ) as unknown as AppContext;
+        let registered: ((args: never) => Promise<ToolResult>) | null = null;
+        const server = {
+            registerTool(_name: string, definition: { inputSchema: z.ZodRawShape }, handler: never): void {
+                void z.object(definition.inputSchema);
+                registered = handler;
+            },
+        } as unknown as ToolRegistrar;
+        registerGetResourceTool(server, sealed);
+        const call = registered as unknown as (args: unknown) => Promise<ToolResult>;
+
+        await expect(call({ resourceId: 5 })).resolves.toBeDefined();
+    });
+});
+
+describe('server registration', () => {
+    it('registers the resource lens on the server the client connects to', async () => {
+        sdk.toolNames.length = 0;
+
+        await createServer({} as unknown as AppContext);
+
+        expect(sdk.toolNames).toContain('cpu_get_resource');
+    });
+});
