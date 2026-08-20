@@ -69,6 +69,8 @@ export const SERVER_INSTRUCTIONS = [
     'locally, AGW mode starts a Device Authorization flow.',
     'Then read the entry point once: `cpu_get_game_config` carries the static rulebook — resources,',
     'buildings, costs, storage and transport parameters, contract addresses.',
+    'It is a router, not the whole catalog: static facts plus a building index, and it names the tool to ask',
+    'next — `cpu_get_building`, `cpu_find_buildings`, `cpu_get_resource`, `cpu_list_recipes`.',
     'The world is a finite sphere of land cells identified only by tokenId; there are no coordinates,',
     'adjacency comes from the `neighbors` list on each cell, and you plan routes yourself.',
     'Route planning loop: PLAN once over `cpu_route_network` (waypoints, legal hops, fees, gaps),',
