@@ -1,3 +1,48 @@
+export const BUILD_PANEL_TITLE = 'BUILDING PLACEMENT';
+
+export const BUILD_PANEL_LABELS = {
+    cell: 'Cell',
+    building: 'Building',
+    status: 'Status',
+    finishesIn: 'Finishes in',
+    paid: 'Paid',
+    approveTx: 'Approve tx',
+    buildTx: 'Build tx',
+    purpose: 'Purpose',
+    next: 'Next',
+};
+
+export const BUILD_PANEL_STATUS_STARTED = 'construction started; the building does not work yet';
+export const BUILD_PANEL_STATUS_NOOP = 'no transaction sent; this building already stands on the cell';
+export const BUILD_PANEL_PURPOSE_HUB = 'routes transport and trade';
+export const BUILD_PANEL_NEXT_AFTER = 'after construction ends,';
+export const BUILD_PANEL_NEXT_MINE = 'start extraction with cpu_start_mining';
+export const BUILD_PANEL_NEXT_CRAFT = 'run a recipe with cpu_craft';
+export const BUILD_PANEL_NEXT_INSPECT = 'inspect it with cpu_get_cell';
+
+export const UPGRADE_PANEL_TITLE = 'BUILDING UPGRADE';
+
+export const UPGRADE_PANEL_LABELS = {
+    cell: 'Cell',
+    from: 'From',
+    to: 'To',
+    status: 'Status',
+    finishes: 'Finishes',
+    paid: 'Paid',
+    materials: 'Materials',
+    approveTx: 'Approve tx',
+    upgradeTx: 'Upgrade tx',
+    next: 'Next',
+};
+
+export const UPGRADE_PANEL_STATUS_STARTED =
+    'construction started; production and hub functions are unavailable until it ends';
+export const UPGRADE_PANEL_STATUS_NOOP_UPGRADING =
+    'no transaction sent; the target already stands on the cell and is still going up';
+export const UPGRADE_PANEL_STATUS_NOOP_SETTLED =
+    'no transaction sent; the target already stands on the cell with no construction running';
+export const UPGRADE_PANEL_NEXT_INSPECT = 'inspect progress with cpu_get_cell';
+
 export const BUILD_DESCRIPTION = [
     'Place a building on a revealed Land cell you own (needs a session — `cpu_authenticate` first). Pick a',
     '`buildingType` from the catalog (`cpu_get_game_config`): an extractor mines a raw deposit, a crafter runs a',

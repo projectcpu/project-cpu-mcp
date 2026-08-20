@@ -2,6 +2,17 @@ import { z } from 'zod';
 
 import { BuildingType } from '../../api/types.js';
 import { tokenIdSchema } from '../../geometry/types.js';
+import type { AppConfig, BuildResult, UpgradeResult } from '../../services/types.js';
+
+export interface BuildPanelInput {
+    result: BuildResult;
+    config: AppConfig;
+}
+
+export interface UpgradePanelInput {
+    result: UpgradeResult;
+    config: AppConfig;
+}
 
 export const buildInputSchema = {
     tokenId: tokenIdSchema.transform(String).describe('The tokenId of a revealed cell you own to build on.'),
