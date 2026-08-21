@@ -1,6 +1,6 @@
 import {
     PERSONA_ACTION_LOG_TEMPLATE,
-    PERSONA_BASE_SUMMARY_TEMPLATE,
+    PERSONA_BASE_STATUS_TEMPLATE,
     PERSONA_SECTION_ORDER,
     PERSONA_SECTION_SEPARATOR,
     PERSONA_SECTIONS,
@@ -14,7 +14,7 @@ function sectionText(section: PersonaSection): string {
     }
     return [
         PERSONA_SECTIONS[section],
-        renderPanel(PERSONA_BASE_SUMMARY_TEMPLATE),
+        renderPanel(PERSONA_BASE_STATUS_TEMPLATE),
         renderPanel(PERSONA_ACTION_LOG_TEMPLATE),
     ].join(PERSONA_SECTION_SEPARATOR);
 }

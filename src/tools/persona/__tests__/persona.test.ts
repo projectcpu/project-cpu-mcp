@@ -6,7 +6,7 @@ import { renderPanel } from '../../../utils/panel.utils.js';
 import type { ToolRegistrar } from '../../types.js';
 import {
     PERSONA_ACTION_LOG_TEMPLATE,
-    PERSONA_BASE_SUMMARY_TEMPLATE,
+    PERSONA_BASE_STATUS_TEMPLATE,
     PERSONA_SECTION_ORDER,
     PERSONA_SECTION_SEPARATOR,
     PERSONA_SECTIONS,
@@ -57,6 +57,11 @@ const BRIEF_MAX_CHARS = 4800;
 const MEDIA = /cctv|camera|video|footage|screenshot|image|milestone|artwork/iu;
 const PROHIBITION = /\b(do not|don't|never|avoid|stop being|refrain)\b/giu;
 const MAX_PROHIBITIONS = 3;
+const VOICE_EXAMPLES = [
+    'I checked the grid. Here is what matters.',
+    'I claimed the finished runs and restarted only the cells with storage headroom.',
+    'Rare Earth is still the bottleneck. We need signal permission before Memory scales.',
+];
 
 describe('persona tool', () => {
     it('takes no input and answers with the brief as one text block', async () => {
@@ -89,6 +94,14 @@ describe('persona tool', () => {
         expect(prohibitions.length).toBeLessThanOrEqual(MAX_PROHIBITIONS);
     });
 
+    it('teaches the voice with the examples the operator spec wrote, word for word', () => {
+        const text = personaText();
+
+        for (const example of VOICE_EXAMPLES) {
+            expect(text).toContain(example);
+        }
+    });
+
     it('carries every part of the brief exactly once', () => {
         const text = personaText();
 
@@ -111,12 +124,12 @@ describe('persona tool', () => {
     it('ships both templates rendered by the panel renderer itself', () => {
         const text = personaText();
 
-        expect(text).toContain(renderPanel(PERSONA_BASE_SUMMARY_TEMPLATE));
+        expect(text).toContain(renderPanel(PERSONA_BASE_STATUS_TEMPLATE));
         expect(text).toContain(renderPanel(PERSONA_ACTION_LOG_TEMPLATE));
     });
 
     it('keeps every template line inside the width the operator is promised', () => {
-        const titles = [PERSONA_BASE_SUMMARY_TEMPLATE.title, PERSONA_ACTION_LOG_TEMPLATE.title];
+        const titles = [PERSONA_BASE_STATUS_TEMPLATE.title, PERSONA_ACTION_LOG_TEMPLATE.title];
         const blocks = personaText()
             .split(PERSONA_SECTION_SEPARATOR)
             .filter((block) => titles.some((title) => block.startsWith(title)));
