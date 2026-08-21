@@ -26,7 +26,9 @@ import { registerStartMiningTool } from './tools/mining/start/start-mining.js';
 import { registerMintCellTool } from './tools/mint/mint-cell.js';
 import { registerQuoteMintTool } from './tools/mint/quote/quote-mint.js';
 import { PERSONA_TOOL_NAME } from './tools/persona/constants.js';
+import { createPersonaDelivery, createPersonaGate } from './tools/persona/persona.gate.js';
 import { registerPersonaTool } from './tools/persona/persona.js';
+import type { PersonaDelivery } from './tools/persona/types.js';
 import { registerFulfillRevealTool } from './tools/reveal/fulfill-reveal.js';
 import { registerRevealTool } from './tools/reveal/reveal.js';
 import { registerQuoteSwapTool } from './tools/swap/quote/quote-swap.js';
@@ -77,10 +79,10 @@ function instructionsFor(personaEnabled: boolean): string {
 
 // Takes the registrar rather than the server so a tool registered the plain way is a compile error
 // here, not a tool that silently answers past the version gates.
-function registerTools(registrar: ToolRegistrar, context: AppContext): void {
+function registerTools(registrar: ToolRegistrar, context: AppContext, persona: PersonaDelivery): void {
     registerAuthenticateTool(registrar, context);
     if (context.config.OPERATOR_PERSONA) {
-        registerPersonaTool(registrar);
+        registerPersonaTool(registrar, persona);
     }
     registerGetGameConfigTool(registrar, context);
     registerGetBuildingTool(registrar, context);
@@ -143,11 +145,15 @@ export async function createServer(context: AppContext): Promise<void> {
         { instructions: instructionsFor(context.config.OPERATOR_PERSONA) },
     );
 
+    const persona = createPersonaDelivery();
     const gates: Array<ToolGate> = [
         createPackageVersionGate(context.packageVersion),
         createBackendVersionGate(context.backendVersion),
     ];
-    registerTools(createGuardedRegistrar(server, gates), context);
+    if (context.config.OPERATOR_PERSONA) {
+        gates.push(createPersonaGate(persona));
+    }
+    registerTools(createGuardedRegistrar(server, gates), context, persona);
 
     const stdio = new StdioServerTransport();
     await server.connect(stdio);

@@ -7,3 +7,8 @@ export enum PersonaSection {
     Failures = 'failures',
     Rhythm = 'rhythm',
 }
+
+export interface PersonaDelivery {
+    isServed(): boolean;
+    markServed(): void;
+}

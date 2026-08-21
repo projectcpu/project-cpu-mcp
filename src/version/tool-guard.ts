@@ -18,6 +18,7 @@ export function createNoticeBuffer(): NoticeBuffer {
 }
 
 export function guardToolHandler<TArgs extends Array<unknown>>(
+    toolName: string,
     gates: ReadonlyArray<ToolGate>,
     handler: ToolHandler<TArgs>,
     buffer: NoticeBuffer,
@@ -26,7 +27,7 @@ export function guardToolHandler<TArgs extends Array<unknown>>(
         const collected: Array<string> = buffer.take();
         try {
             for (const gate of gates) {
-                collected.push(...(await gate.check()));
+                collected.push(...(await gate.check(toolName)));
             }
         } catch (error) {
             buffer.keep(collected);
@@ -59,7 +60,7 @@ export function createGuardedRegistrar(server: ToolRegistrar, gates: ReadonlyArr
         server.registerTool(
             name,
             config,
-            guardToolHandler(gates, callback as unknown as ToolHandler, buffer) as unknown as typeof callback,
+            guardToolHandler(name, gates, callback as unknown as ToolHandler, buffer) as unknown as typeof callback,
         );
 
     return { registerTool };

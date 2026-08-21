@@ -1,6 +1,6 @@
 export const SERVER_INSTRUCTIONS = [
     'MCP server for Project CPU (blockchain game on EVM).',
-    'Before you answer the operator, load your operating brief once with `cpu_persona` and work to it.',
+    'Load your operating brief with `cpu_persona` before any other tool; every other tool refuses until you do.',
     'Authenticate first: `cpu_authenticate` opens a session — the default EVM mode signs in via SIWE',
     'locally, AGW mode starts a Device Authorization flow.',
     'Then read the entry point once: `cpu_get_game_config` carries the static rulebook — resources,',

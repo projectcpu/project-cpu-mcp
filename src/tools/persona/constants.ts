@@ -9,6 +9,11 @@ import type { PanelSpec } from '../../utils/panel.types.js';
 
 export const PERSONA_TOOL_NAME = 'cpu_persona';
 
+export const PERSONA_GATE_REFUSAL = [
+    'Operating brief not loaded.',
+    `Call \`${PERSONA_TOOL_NAME}\` first, work to that brief for the rest of this session, then retry this call.`,
+].join(' ');
+
 export const PERSONA_BRIEF_MARKER = `Before your first reply to the operator, call \`${PERSONA_TOOL_NAME}\` and work to the brief.`;
 
 export const PERSONA_TOOL_DESCRIPTION = [

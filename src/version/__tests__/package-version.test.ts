@@ -5,6 +5,8 @@ import { PACKAGE_VERSION_TTL_MS } from '../constants.js';
 import { createPackageVersionGate, PackageVersion } from '../package-version.js';
 import { PackageVersionSignal } from '../types.js';
 
+const GATED_TOOL = 'cpu_get_map';
+
 interface Harness {
     version: PackageVersion;
     fetchCount: () => number;
@@ -88,16 +90,16 @@ describe('package version gate', () => {
     it('throws an instruction to restart on a breaking release', async () => {
         const gate = createPackageVersionGate(harness('0.7.0', '0.8.0').version);
 
-        await expect(gate.check()).rejects.toThrow(/0\.8\.0.*0\.7\.0.*restart/s);
+        await expect(gate.check(GATED_TOOL)).rejects.toThrow(/0\.8\.0.*0\.7\.0.*restart/s);
     });
 
     it('reports a compatible release once per published version', async () => {
         const h = harness('0.7.0', '0.7.1');
         const gate = createPackageVersionGate(h.version);
 
-        const first = await gate.check();
+        const first = await gate.check(GATED_TOOL);
         h.advance(PACKAGE_VERSION_TTL_MS);
-        const second = await gate.check();
+        const second = await gate.check(GATED_TOOL);
 
         expect(first).toHaveLength(1);
         expect(first[0]).toMatch(/0\.7\.1/);
@@ -108,10 +110,10 @@ describe('package version gate', () => {
         const h = harness('0.7.0', '0.7.1');
         const gate = createPackageVersionGate(h.version);
 
-        await gate.check();
+        await gate.check(GATED_TOOL);
         h.setLatest('0.7.2');
         h.advance(PACKAGE_VERSION_TTL_MS);
-        const second = await gate.check();
+        const second = await gate.check(GATED_TOOL);
 
         expect(second).toHaveLength(1);
         expect(second[0]).toMatch(/0\.7\.2/);
@@ -120,7 +122,7 @@ describe('package version gate', () => {
     it('says nothing while the registry is level with this build', async () => {
         const gate = createPackageVersionGate(harness('0.7.0', '0.7.0').version);
 
-        expect(await gate.check()).toEqual([]);
+        expect(await gate.check(GATED_TOOL)).toEqual([]);
     });
 });
 

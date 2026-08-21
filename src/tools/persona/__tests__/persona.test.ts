@@ -12,9 +12,10 @@ import {
     PERSONA_SECTIONS,
     PERSONA_TOOL_NAME,
 } from '../constants.js';
+import { createPersonaDelivery } from '../persona.gate.js';
 import { registerPersonaTool } from '../persona.js';
 import { personaText } from '../persona.utils.js';
-import { PersonaSection } from '../types.js';
+import { type PersonaDelivery, PersonaSection } from '../types.js';
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -27,7 +28,7 @@ interface RegisteredTool {
     call: (args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
-function register(): RegisteredTool {
+function register(delivery: PersonaDelivery = createPersonaDelivery()): RegisteredTool {
     let registered: RegisteredTool | null = null;
     const server = {
         registerTool(
@@ -45,7 +46,7 @@ function register(): RegisteredTool {
         },
     } as unknown as ToolRegistrar;
 
-    registerPersonaTool(server);
+    registerPersonaTool(server, delivery);
     if (registered === null) {
         throw new Error('tool was not registered');
     }
@@ -64,6 +65,16 @@ const VOICE_EXAMPLES = [
 ];
 
 describe('persona tool', () => {
+    it('marks the brief as served when it answers', async () => {
+        const delivery = createPersonaDelivery();
+        const tool = register(delivery);
+
+        expect(delivery.isServed()).toBe(false);
+        await tool.call({});
+
+        expect(delivery.isServed()).toBe(true);
+    });
+
     it('takes no input and answers with the brief as one text block', async () => {
         const tool = register();
 
