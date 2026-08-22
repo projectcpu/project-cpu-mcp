@@ -1,26 +1,29 @@
 import {
-    BASE_BUILDING_PREDECESSOR_LABEL,
-    CYCLE_TIME_MODIFIER_NOTE,
-    EXTRACTOR_COMPATIBILITY_NOTE,
-    NO_RECIPES_CONFIGURED_NOTE,
-    NO_UPGRADE_PARTICIPANTS_NOTE,
+    BUILDING_INDEX_SECTION_TITLE,
+    EMPTY_CATALOG_NOTE,
+    ENTRY_POINT_HEADLINE_TAIL,
+    ENTRY_POINT_LOOKUP,
     NONE_LABEL,
     PUSH_RANDOMNESS_SUMMARY,
     REVEAL_PAYMENT_UNKNOWN_SUMMARY,
+    ROUTING_BUILDING_CARD_LINE,
+    ROUTING_FIND_BUILDINGS_LINE,
+    ROUTING_RECIPES_LINE,
+    ROUTING_RESOURCE_LENS_LINE,
+    ROUTING_SECTION_TITLE,
+    ROUTING_UNKNOWN_ID_LINE,
+    SALE_FEE_STRUCTURAL_BOUND_NOTE,
+    SALE_FEE_STRUCTURAL_BOUND_PERCENT,
     SELF_SERVICE_RANDOMNESS_SUMMARY,
-    TERMINAL_UPGRADE_SUCCESSOR_LABEL,
-    UNKNOWN_LABEL,
+    STATIC_SECTION_TITLE,
+    STORAGE_SHELVES_SUMMARY,
+    TRANSIT_FEE_FLOOR_SUMMARY,
 } from './constants.js';
-import {
-    BuildingKind,
-    type CraftStackView,
-    type RandomnessDescriptor,
-    RandomnessKind,
-    type RecipeView,
-    type RevealPaymentView,
-} from '../../../api/types.js';
-import type { CatalogBuildingView } from '../../../services/types.js';
-import { formatStacks, resourceLabel, type ResourceNames } from '../../../utils/format.utils.js';
+import type { GameConfigReferenceView } from './types.js';
+import { type RandomnessDescriptor, RandomnessKind, type RevealPaymentView } from '../../../api/types.js';
+import type { AppConfig } from '../../../services/types.js';
+import { INDEX_COLUMNS_LEGEND } from '../find-buildings/constants.js';
+import { renderBuildingIndexLine } from '../find-buildings/find-buildings.utils.js';
 
 export function describeRandomnessMode(randomness: RandomnessDescriptor): string {
     return randomness.kind === RandomnessKind.DRAND ? SELF_SERVICE_RANDOMNESS_SUMMARY : PUSH_RANDOMNESS_SUMMARY;
@@ -37,105 +40,92 @@ export function describeRevealPayment(payment: RevealPaymentView | null): string
     );
 }
 
-export function summarizeRecipeLines(recipes: Array<RecipeView>, resources: ResourceNames): string {
-    if (recipes.length === 0) {
-        return NO_RECIPES_CONFIGURED_NOTE;
-    }
-    return recipes.map((recipe) => formatRecipeLine(recipe, resources)).join('\n');
+function renderPairs(entries: Array<[string, string]>): string {
+    return entries.length > 0 ? entries.map(([key, value]) => `${key}:${value}`).join(', ') : NONE_LABEL;
 }
 
-function formatRecipeLine(recipe: RecipeView, resources: ResourceNames): string {
+function describeTransit(config: AppConfig): string {
+    const floors = renderPairs(Object.entries(config.transport.moveFeeFloors));
     return (
-        `${recipe.id} | ${recipe.durationSec}s/cycle | in ${formatRecipeStacks(recipe.inputs, resources)} | ` +
-        `out ${formatRecipeStacks(recipe.outputs, resources)} | ${recipe.costCpu} $CPU/cycle`
+        `radii in cells — move ${config.transport.moveRadius}, hub ${config.transport.hubRadius}; ` +
+        `${config.transport.moveTimePerCellSec}s per cell; ${TRANSIT_FEE_FLOOR_SUMMARY} — ${floors}`
     );
 }
 
-function formatRecipeStacks(stacks: Array<CraftStackView>, resources: ResourceNames): string {
-    return stacks.length > 0 ? formatStacks(resources, stacks, '+') : NONE_LABEL;
-}
-
-export function summarizeUpgradeGraph(buildings: Array<CatalogBuildingView>, resources: ResourceNames): string {
-    const participants = buildings.filter(isUpgradeParticipant).sort(compareUpgradeParticipants);
-    if (participants.length === 0) {
-        return NO_UPGRADE_PARTICIPANTS_NOTE;
-    }
-    return participants.map((building) => formatUpgradeParticipantLine(building, resources)).join('\n');
-}
-
-function isUpgradeParticipant(building: CatalogBuildingView): boolean {
-    return building.upgradeFrom !== null || building.upgradeTo.length > 0;
-}
-
-function compareUpgradeParticipants(a: CatalogBuildingView, b: CatalogBuildingView): number {
-    const byFamily = compareNullableStrings(a.family, b.family);
-    if (byFamily !== 0) {
-        return byFamily;
-    }
-    const byLevel = compareNullableNumbers(a.level, b.level);
-    if (byLevel !== 0) {
-        return byLevel;
-    }
-    return a.type.localeCompare(b.type);
-}
-
-function compareNullableStrings(a: string | null, b: string | null): number {
-    if (a === b) {
-        return 0;
-    }
-    if (a === null) {
-        return 1;
-    }
-    if (b === null) {
-        return -1;
-    }
-    return a.localeCompare(b);
-}
-
-function compareNullableNumbers(a: number | null, b: number | null): number {
-    if (a === b) {
-        return 0;
-    }
-    if (a === null) {
-        return 1;
-    }
-    if (b === null) {
-        return -1;
-    }
-    return a - b;
-}
-
-function formatUpgradeParticipantLine(building: CatalogBuildingView, resources: ResourceNames): string {
-    const level = building.level !== null ? String(building.level) : UNKNOWN_LABEL;
-    const branch = building.branch ?? NONE_LABEL;
-    const predecessor = building.upgradeFrom ?? BASE_BUILDING_PREDECESSOR_LABEL;
-    const successors = building.upgradeTo.length > 0 ? building.upgradeTo.join(',') : TERMINAL_UPGRADE_SUCCESSOR_LABEL;
-    const inputs = building.buildInputs.length > 0 ? formatStacks(resources, building.buildInputs, ',') : NONE_LABEL;
+function describeTrade(config: AppConfig): string {
     return (
-        `${building.type} | level ${level} | branch ${branch} | predecessor ${predecessor} | ` +
-        `successors ${successors} | cost ${building.buildCost} $CPU | inputs ${inputs} | ` +
-        `build ${building.buildTimeSec}s | effects ${formatUpgradeEffects(building, resources)}`
+        `${config.trade.saleBurnPercent}% sale burn, sale fee up to ${SALE_FEE_STRUCTURAL_BOUND_PERCENT}% ` +
+        SALE_FEE_STRUCTURAL_BOUND_NOTE
     );
 }
 
-function formatUpgradeEffects(building: CatalogBuildingView, resources: ResourceNames): string {
-    const inputEfficiency =
-        building.effects.inputEfficiency.length > 0
-            ? building.effects.inputEfficiency
-                  .map((entry) => `${resourceLabel(resources, entry.resourceId)}:${entry.percent}%`)
-                  .join(',')
-            : NONE_LABEL;
+export function renderHeadline(config: AppConfig): string {
     return (
-        `cycleTimeBp ${building.effects.cycleTimeBp} (${CYCLE_TIME_MODIFIER_NOTE}), ` +
-        `extractionShareBp ${building.effects.extractionShareBp}, inputEfficiency ${inputEfficiency}` +
-        formatExtractorCompatibilityNote(building, resources)
+        `Network ${config.network} (chainId ${config.chainId}), ${config.buildings.length} building(s), ` +
+        `${config.recipes.length} recipe(s). ${ENTRY_POINT_HEADLINE_TAIL}`
     );
 }
 
-function formatExtractorCompatibilityNote(building: CatalogBuildingView, resources: ResourceNames): string {
-    if (building.kind !== BuildingKind.Extractor || building.minableResources.length === 0) {
-        return '';
+export function renderRoutingMap(): string {
+    return [
+        ROUTING_SECTION_TITLE,
+        ROUTING_BUILDING_CARD_LINE,
+        ROUTING_FIND_BUILDINGS_LINE,
+        ROUTING_RESOURCE_LENS_LINE,
+        ROUTING_RECIPES_LINE,
+        ROUTING_UNKNOWN_ID_LINE,
+    ].join('\n');
+}
+
+export function renderStaticFacts(config: AppConfig): string {
+    return [
+        STATIC_SECTION_TITLE,
+        `Reveal: ${describeRevealPayment(config.reveal)}.`,
+        `Randomness: ${describeRandomnessMode(config.randomness)}`,
+        `Trade: ${describeTrade(config)}.`,
+        `Transit: ${describeTransit(config)}.`,
+        `Storage: ${STORAGE_SHELVES_SUMMARY}.`,
+        `Resources: ${renderPairs(Object.entries(config.resources))}.`,
+        `Contracts — land ${config.contracts.land}, $CPU ${config.contracts.cpuToken}, ` +
+            `cpuHook ${config.contracts.cpuHook}, cell ${config.contracts.cell}, ` +
+            `transport ${config.contracts.transport}.`,
+    ].join('\n');
+}
+
+export function renderBuildingIndex(config: AppConfig): string {
+    const heading = `${BUILDING_INDEX_SECTION_TITLE} (${config.buildings.length} building(s)). ${INDEX_COLUMNS_LEGEND}`;
+    if (config.buildings.length === 0) {
+        return `${heading}\n${EMPTY_CATALOG_NOTE}`;
     }
-    const compatible = building.minableResources.map((id) => resourceLabel(resources, id)).join(',');
-    return `, extractor-compatible ${compatible} (${EXTRACTOR_COMPATIBILITY_NOTE})`;
+    const rows = config.buildings.map((building) =>
+        renderBuildingIndexLine(building, config.recipes, config.resources),
+    );
+    return [heading, ...rows].join('\n');
+}
+
+export function renderEntryPoint(config: AppConfig): string {
+    return [renderHeadline(config), renderRoutingMap(), renderStaticFacts(config), renderBuildingIndex(config)].join(
+        '\n\n',
+    );
+}
+
+export function buildGameConfigReference(config: AppConfig): GameConfigReferenceView {
+    return {
+        network: config.network,
+        chainId: config.chainId,
+        contracts: config.contracts,
+        randomness: config.randomness,
+        resources: config.resources,
+        reveal: config.reveal,
+        transport: config.transport,
+        trade: config.trade,
+        storage: config.storage,
+        catalog: { buildingCount: config.buildings.length, recipeCount: config.recipes.length },
+        lookup: {
+            building: ENTRY_POINT_LOOKUP.building,
+            buildingSearch: ENTRY_POINT_LOOKUP.buildingSearch,
+            resource: ENTRY_POINT_LOOKUP.resource,
+            recipes: ENTRY_POINT_LOOKUP.recipes,
+        },
+    };
 }

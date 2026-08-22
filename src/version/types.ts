@@ -5,7 +5,7 @@ import type { MapSnapshotResponse } from '../map/types.js';
 import type { AppConfig, IAppConfig } from '../services/types.js';
 
 export interface ToolGate {
-    check(): Promise<Array<string>>;
+    check(toolName: string): Promise<Array<string>>;
 }
 
 export interface NoticeBuffer {

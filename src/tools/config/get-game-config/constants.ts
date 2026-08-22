@@ -1,15 +1,64 @@
 export const SALE_FEE_STRUCTURAL_BOUND_PERCENT = 100;
 
+export const SALE_FEE_STRUCTURAL_BOUND_NOTE =
+    '(the structural bound — a hub owner can set any rate up to this maximum)';
+
+export const ENTRY_POINT_LOOKUP = {
+    building: 'cpu_get_building',
+    buildingSearch: 'cpu_find_buildings',
+    resource: 'cpu_get_resource',
+    recipes: 'cpu_list_recipes',
+};
+
 export const GET_GAME_CONFIG_DESCRIPTION = [
-    'Return the game rulebook for the active network: the resource catalog (id → name), the building catalog',
-    '(name, kind — extractor/crafter/hub — and $CPU cost; the full JSON also carries each building’s mine/craft',
-    'bindings and build time), a compact upgrade graph for every building that has a predecessor or a successor',
-    '(catalog type, level, branch, immediate predecessor/successors, cost, inputs, build time, and effects — feed',
-    'this into `cpu_upgrade`), one compact line per recipe (id, cycle duration, inputs, outputs, $CPU/cycle),',
-    'what every reveal is charged, how this network delivers randomness (self-service or push — it decides what',
-    '`cpu_reveal` does), and the on-chain contract addresses. A read-only reference call —',
-    'call it once to ground planning. No session needed.',
+    'The entry point of the rulebook: the static facts of the active network, read once — resource catalog',
+    '(id → name), contract addresses, storage shelves, transport parameters and transit-fee floors, reveal',
+    'cost, how this network delivers randomness (it decides what `cpu_reveal` does), trade parameters — plus a',
+    'building index (one row per building: `type`, name, kind, tier, build cost, one line of what it does).',
+    `Detail is not duplicated here: \`${ENTRY_POINT_LOOKUP.building}\` for one building in full with its upgrade`,
+    `links, \`${ENTRY_POINT_LOOKUP.buildingSearch}\` to search by what a building consumes, produces or mines,`,
+    `\`${ENTRY_POINT_LOOKUP.resource}\` for everything about one resource, \`${ENTRY_POINT_LOOKUP.recipes}\` for`,
+    'the recipes. Read-only. No session needed.',
 ].join(' ');
+
+export const ENTRY_POINT_HEADLINE_TAIL =
+    'Start here: the static below, an index of every building, and where to go for anything deeper.';
+
+export const ROUTING_SECTION_TITLE = 'Where to go for detail:';
+
+export const ROUTING_BUILDING_CARD_LINE = [
+    `- One building in full — \`${ENTRY_POINT_LOOKUP.building}\` with the \`type\` from the index below:`,
+    'construction, operation, lifecycle, and the upgrade links in both directions, which live on the card and',
+    'nowhere else.',
+].join(' ');
+
+export const ROUTING_FIND_BUILDINGS_LINE = [
+    `- Which buildings touch a resource — \`${ENTRY_POINT_LOOKUP.buildingSearch}\`, filtered by build input,`,
+    'recipe input, recipe output or minable resource; those are four different questions, and a single match',
+    'comes back as the full card.',
+].join(' ');
+
+export const ROUTING_RESOURCE_LENS_LINE = [
+    `- Everything about one resource at once — \`${ENTRY_POINT_LOOKUP.resource}\`: what mines it, what is built`,
+    'out of it, what eats it every cycle, what makes it, plus its shelves and its transit-fee floor.',
+].join(' ');
+
+export const ROUTING_RECIPES_LINE = [
+    `- Recipes — \`${ENTRY_POINT_LOOKUP.recipes}\` owns them: ids, cycle duration, inputs, outputs and the $CPU`,
+    'a cycle costs are read there, and are deliberately not copied here so that the two can never disagree.',
+].join(' ');
+
+export const ROUTING_UNKNOWN_ID_LINE = [
+    `- An id the catalog does not carry: \`${ENTRY_POINT_LOOKUP.resource}\` answers with empty groups and`,
+    `\`inCatalog: false\`, while \`${ENTRY_POINT_LOOKUP.building}\` throws on an unknown building type — expect`,
+    'an answer from the one and an error from the other.',
+].join(' ');
+
+export const STATIC_SECTION_TITLE = 'Static reference (read once):';
+
+export const BUILDING_INDEX_SECTION_TITLE = 'Building index';
+
+export const EMPTY_CATALOG_NOTE = 'No buildings in the catalog of this network.';
 
 export const REVEAL_PAYMENT_UNKNOWN_SUMMARY = [
     'every reveal is charged, the first reveal of a cell included, but this network serves no price for it, so',
@@ -27,20 +76,12 @@ export const PUSH_RANDOMNESS_SUMMARY = [
     '(poll `cpu_get_cell`); a reveal-fulfilment tool has nothing to do on this network.',
 ].join(' ');
 
-export const NO_RECIPES_CONFIGURED_NOTE = 'No recipes configured.';
+export const STORAGE_SHELVES_SUMMARY = [
+    'storage caps are explicit per-resource cell/hub shelf pairs (`0` means unlimited); map reads label the',
+    'shelf currently in force as each resource storage `cap`, and the machine block below carries every pair',
+].join(' ');
 
-export const NO_UPGRADE_PARTICIPANTS_NOTE = 'No buildings currently participate in an upgrade line.';
-
-export const BASE_BUILDING_PREDECESSOR_LABEL = 'none (base building)';
-
-export const TERMINAL_UPGRADE_SUCCESSOR_LABEL = 'none (terminal)';
+export const TRANSIT_FEE_FLOOR_SUMMARY =
+    "every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override wins over it)";
 
 export const NONE_LABEL = 'none';
-
-export const UNKNOWN_LABEL = 'unknown';
-
-export const CYCLE_TIME_MODIFIER_NOTE =
-    'a cycle-time modifier applied on top of the base production cycle, not an absolute duration';
-
-export const EXTRACTOR_COMPATIBILITY_NOTE =
-    'compatible resources only — actual mining yield is set at runtime, not a guaranteed amount';

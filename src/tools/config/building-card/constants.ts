@@ -1,0 +1,78 @@
+export const GET_BUILDING_DESCRIPTION = [
+    'One building of the catalog as a card. Input is the catalog `type` (as `cpu_get_game_config` lists it).',
+    'Three plans, never mixed: CONSTRUCTION — $CPU cost, build time, build inputs burned once to erect it;',
+    'OPERATION — a crafter: every recipe it runs (inputs → outputs, cycle duration, $CPU per cycle); an',
+    'extractor: the minable resources it draws from the cell deposit (it consumes no inputs); a hub: what it',
+    'routes; LIFECYCLE — demolish cost, mode switching, upgrade links both ways. Build inputs are spent once',
+    'at construction; recipe inputs on every cycle. Read-only. No session needed.',
+].join(' ');
+
+export const CONSTRUCTION_SECTION_TITLE = 'Construction';
+
+export const OPERATION_SECTION_TITLE = 'Operation';
+
+export const LIFECYCLE_SECTION_TITLE = 'Lifecycle';
+
+export const BUILD_INPUTS_LABEL = 'Build inputs';
+
+export const RECIPE_INPUTS_LABEL = 'Recipe inputs';
+
+export const RECIPE_OUTPUTS_LABEL = 'Recipe outputs';
+
+export const MINABLE_RESOURCES_LABEL = 'Minable resources';
+
+export const NO_BUILD_INPUTS_VALUE = 'none, $CPU only';
+
+export const EXTRACTOR_NO_INPUT_RESOURCES_NOTE =
+    'No input resources: an extractor draws from the deposit of the cell it stands on and consumes nothing to run.';
+
+export const HUB_OPERATION_NOTE =
+    'Produces nothing: a hub routes transport and settles trade on its cell, and charges transit and sale fees.';
+
+export const NO_MINABLE_RESOURCES_NOTE = 'Nothing to mine: this building draws from no deposit.';
+
+export const RECIPE_DETAILS_MISSING_NOTE = 'details absent from the loaded config; read cpu_list_recipes';
+
+export const UNPRICED_OPEX_NOTE = 'plus a per-recipe opex the chain adds on top (not priced here)';
+
+export const FREE_CYCLE_VALUE = 'free';
+
+export const MODE_SWITCH_IMPOSSIBLE_NOTE = 'cannot switch — one output or none, so it can never be re-pointed';
+
+export const MODE_SWITCH_UNKNOWN_NOTE = 'unknown — this config predates the price; cpu_get_cell prices it per cell';
+
+export const NO_UPGRADE_PREDECESSOR_VALUE = 'none (base building)';
+
+export const NO_UPGRADE_SUCCESSOR_VALUE = 'none (terminal)';
+
+export const UNKNOWN_BUILDING_TYPE_HINT = 'cpu_get_game_config lists every catalog type';
+
+export const CARD_INDENT = '  ';
+
+export const RECIPE_PLAN_INDENT = '    ';
+
+export const EXAMPLE_TYPE_COUNT = 3;
+
+export const HUB_ROLE_SUMMARY = 'routes transport and settles trade on its cell';
+
+export const NOTHING_MINED_SUMMARY = 'mines nothing';
+
+export const RECIPES_ONLY_SUMMARY = { verb: 'runs', unit: 'recipe(s)' };
+
+export const COST_LABEL = 'Cost';
+
+export const BUILD_TIME_LABEL = 'Build time';
+
+export const CYCLE_TIME_LABEL = 'Cycle time';
+
+export const EXTRACTION_SHARE_LABEL = 'Extraction share';
+
+export const RECIPE_INPUT_EFFICIENCY_LABEL = 'Recipe input efficiency';
+
+export const DEMOLISH_LABEL = 'Demolish';
+
+export const MODE_SWITCH_LABEL = 'Mode switch';
+
+export const UPGRADE_FROM_LABEL = 'Upgrades from';
+
+export const UPGRADE_TO_LABEL = 'Upgrades to';

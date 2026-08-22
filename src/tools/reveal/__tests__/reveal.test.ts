@@ -4,7 +4,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import type { RevealResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerRevealTool } from '../reveal.js';
 
 interface ToolResult {
@@ -194,6 +194,77 @@ describe('reveal tool', () => {
         expect(text).toMatch(/call reveal on cell 42 again/i);
         expect(text).toMatch(/get_cell 42/);
         expect(text).not.toMatch(/confirmed in block/);
+    });
+
+    it('tags the machine block with the reveal event and keeps the service result intact', async () => {
+        const result = await harness(settledInline)({ tokenId: '42' });
+
+        expect(result.content[1]?.text).toBe(
+            JSON.stringify({ ...settledInline, eventType: ToolEventType.CellRevealed }),
+        );
+        expect(result.content).toHaveLength(2);
+        expect(result).not.toHaveProperty('structuredContent');
+    });
+
+    it('names the reveal on every call that opened or settled the request, draw or no draw', async () => {
+        const settled = await harness(settledInline)({ tokenId: '42' });
+        const paidAndOpen = await harness({
+            ...settledInline,
+            fulfillTxHash: null,
+            deposits: null,
+            fulfilled: false,
+        })({ tokenId: '42' });
+
+        const eventOf = (text: string): string => (JSON.parse(text) as { eventType: string }).eventType;
+        expect(eventOf(settled.content[1]?.text ?? '{}')).toBe(ToolEventType.CellRevealed);
+        expect(eventOf(paidAndOpen.content[1]?.text ?? '{}')).toBe(ToolEventType.CellRevealed);
+    });
+
+    it('names the reveal when this call only settled a request it did not open', async () => {
+        const settledOnly: RevealResult = {
+            ...settledInline,
+            requestTxHash: null,
+            ethPaid: '0',
+            cpuBurn: '0',
+            fulfilled: false,
+        };
+        const result = await harness(settledOnly)({ tokenId: '42' });
+
+        expect(JSON.parse(result.content[1]?.text ?? '{}')).toHaveProperty('eventType', ToolEventType.CellRevealed);
+    });
+
+    it('names the reveal when the draw landed without this call sending either transaction', async () => {
+        const drawnElsewhere: RevealResult = {
+            ...settledInline,
+            requestTxHash: null,
+            fulfillTxHash: null,
+            ethPaid: '0',
+            cpuBurn: '0',
+        };
+        const result = await harness(drawnElsewhere)({ tokenId: '42' });
+
+        expect(JSON.parse(result.content[1]?.text ?? '{}')).toHaveProperty('eventType', ToolEventType.CellRevealed);
+    });
+
+    it('claims no reveal on a cell that only carries a request this call neither sent nor settled', async () => {
+        const carried: RevealResult = {
+            ...fulfilledGenesis,
+            genesis: false,
+            requestTxHash: null,
+            status: null,
+            blockNumber: null,
+            ethPaid: '0',
+            cpuBurn: '0',
+            deposits: null,
+            fulfilled: false,
+            note: 'Cell 42 already carries a reveal request, so this call requested nothing and paid nothing.',
+        };
+        const result = await harness(carried)({ tokenId: '42' });
+
+        expect(result.content[0]?.text).toMatch(/nothing new was requested and nothing was spent/);
+        expect(result.content[1]?.text).toBe(JSON.stringify(carried));
+        expect(JSON.parse(result.content[1]?.text ?? '{}')).not.toHaveProperty('eventType');
+        expect(result.content).toHaveLength(2);
     });
 
     it('propagates service errors', async () => {

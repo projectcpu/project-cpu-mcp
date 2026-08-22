@@ -1,7 +1,7 @@
 import { WITHDRAW_DESCRIPTION } from './constants.js';
 import { withdrawInputSchema } from './types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 export function registerWithdrawTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
@@ -21,7 +21,7 @@ export function registerWithdrawTool(server: ToolRegistrar, context: AppContext)
             return {
                 content: [
                     { type: 'text', text: header },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.Withdrawn }) },
                 ],
             };
         },

@@ -5,7 +5,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import type { DemolishResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
-import type { ToolRegistrar } from '../../types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerDemolishTool } from '../demolish.js';
 
 interface ToolResult {
@@ -81,6 +81,17 @@ describe('demolish tool', () => {
         });
         const header = (await harness(outcome)({ tokenId: '42' })).content[0]?.text ?? '';
         expect(header).toMatch(/plus 2 Concrete \(#101\) from its warehouse/);
+    });
+
+    it('tags the machine block with the demolition event and keeps the service result intact', async () => {
+        const outcome = result();
+        const toolResult = await harness(outcome)({ tokenId: '42' });
+
+        expect(toolResult.content[1]?.text).toBe(
+            JSON.stringify({ ...outcome, eventType: ToolEventType.BuildingDemolished }),
+        );
+        expect(toolResult.content).toHaveLength(2);
+        expect(toolResult).not.toHaveProperty('structuredContent');
     });
 
     it('propagates service errors', async () => {

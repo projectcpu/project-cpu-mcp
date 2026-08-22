@@ -1,3 +1,5 @@
+import { AttentionReason } from '../../../map/types.js';
+
 export const GET_ATTENTION_DESCRIPTION = [
     'Owner-scoped roll-up of cells worth attention, most time-sensitive first — so you skip scanning the whole',
     'map. Flags, each with a severity: stalled mining/craft (the output box has room for less than one whole',
@@ -20,3 +22,30 @@ export const GET_ATTENTION_DESCRIPTION = [
     '`minSeverity` filters by urgency. If the deliveries, lots or open-reveal-request lookup is down, the',
     'remaining items still return and a `note` says so.',
 ].join(' ');
+
+export const WAREHOUSE_PRESSURE_TITLE = 'WAREHOUSE PRESSURE';
+
+export const WAREHOUSE_PRESSURE_LABELS = {
+    scope: 'Scope',
+    owner: 'Owner',
+    map: 'Map',
+    shown: 'Shown',
+    critical: 'Critical',
+    warning: 'Warning',
+    info: 'Info',
+    nearFull: 'Near full',
+    peakFill: 'Peak fill',
+    stalled: 'Stalled',
+    note: 'Note',
+};
+
+export const WAREHOUSE_PRESSURE_SCOPE_SELF = 'self';
+export const WAREHOUSE_PRESSURE_SCOPE_SCOUTING = 'scouting';
+
+export const WAREHOUSE_PRESSURE_NO_OWNER_NOTE =
+    'Attention needs a wallet or an `owner` address — call authenticate or pass owner. Nothing to scope to.';
+
+export const STALLED_REASONS: ReadonlyArray<AttentionReason> = [
+    AttentionReason.StalledMining,
+    AttentionReason.StalledCraft,
+];

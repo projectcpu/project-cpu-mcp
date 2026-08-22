@@ -4,6 +4,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import type { DeliveryView, FinalizeResult, TransportQuote, TransportResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
+import { ToolEventType } from '../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerFinalizeDeliveryTool } from '../finalize/finalize-delivery.js';
 import { registerGetTransportStatusTool } from '../get-status/get-transport-status.js';
@@ -106,6 +107,13 @@ describe('transport tool', () => {
         });
         await expect(handler({ path: [], resourceId: 3, amount: '100' } as never)).rejects.toThrow(/not authenticated/);
     });
+
+    it('names the event in the machine block', async () => {
+        const handler = capture(registerTransportTool, { transport: async () => freeResult });
+        const result = await handler({ path: [], resourceId: 3, amount: '100' } as never);
+        const parsed = JSON.parse(result.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).toBe(ToolEventType.TransportSent);
+    });
 });
 
 describe('quote_transport tool', () => {
@@ -166,5 +174,18 @@ describe('finalize_delivery tool', () => {
         const out = await handler({ ids: ['55'] } as never);
         expect(out.content[0]?.text).toMatch(/Finalized 1 delivery/);
         expect(out.content[0]?.text).toMatch(/0xfin/);
+    });
+
+    it('names the event in the machine block', async () => {
+        const result: FinalizeResult = {
+            deliveryIds: ['55'],
+            txHash: '0xfin',
+            status: TxStatus.Success,
+            blockNumber: '100',
+        };
+        const handler = capture(registerFinalizeDeliveryTool, { finalize: async () => result });
+        const out = await handler({ ids: ['55'] } as never);
+        const parsed = JSON.parse(out.content[1]?.text ?? '{}') as { eventType: string };
+        expect(parsed.eventType).toBe(ToolEventType.DeliveryFinalized);
     });
 });

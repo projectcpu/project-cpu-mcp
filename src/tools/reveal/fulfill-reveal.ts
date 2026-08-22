@@ -7,7 +7,7 @@ import {
     type RevealFulfilmentReport,
 } from '../../services/types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 const OUTCOME_LABEL: Record<RevealFulfilmentOutcome, string> = {
     [RevealFulfilmentOutcome.Settled]: 'settled',
@@ -50,6 +50,10 @@ function summaryLine(report: RevealFulfilmentReport): string {
     );
 }
 
+function settledAnyRequest(report: RevealFulfilmentReport): boolean {
+    return report.requests.some((entry) => entry.fulfillTxHash !== null);
+}
+
 export function registerFulfillRevealTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
         'cpu_fulfill_reveal',
@@ -64,7 +68,13 @@ export function registerFulfillRevealTool(server: ToolRegistrar, context: AppCon
             return {
                 content: [
                     { type: 'text', text: header },
-                    { type: 'text', text: JSON.stringify(report) },
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            ...report,
+                            ...(settledAnyRequest(report) ? { eventType: ToolEventType.RevealFulfilled } : {}),
+                        }),
+                    },
                 ],
             };
         },

@@ -500,6 +500,7 @@ describe('MapSync and the tool-call gate', () => {
         expect(resets).toBe(1);
 
         const guarded = guardToolHandler(
+            'cpu_get_map',
             [createBackendVersionGate(carrier)],
             () => ({ content: [{ type: 'text' as const, text: 'done' }] }),
             createNoticeBuffer(),

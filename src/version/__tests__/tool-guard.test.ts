@@ -8,6 +8,8 @@ import { BACKEND_RESET_NOTICE } from '../constants.js';
 import { createGuardedRegistrar, createNoticeBuffer, guardToolHandler } from '../tool-guard.js';
 import type { IBackendVersionSignal, ToolGate } from '../types.js';
 
+const GUARDED_TOOL = 'cpu_get_map';
+
 function okHandler(text: string): ToolHandler<[]> {
     return () => ({ content: [{ type: 'text', text }] });
 }
@@ -73,7 +75,12 @@ describe('tool guard', () => {
             return { content: [] };
         };
 
-        const guarded = guardToolHandler([blockingGate('restart required')], handler, createNoticeBuffer());
+        const guarded = guardToolHandler(
+            GUARDED_TOOL,
+            [blockingGate('restart required')],
+            handler,
+            createNoticeBuffer(),
+        );
 
         await expect(guarded()).rejects.toThrow('restart required');
         expect(handlerCalls).toBe(0);
@@ -89,6 +96,7 @@ describe('tool guard', () => {
         };
 
         const guarded = guardToolHandler(
+            GUARDED_TOOL,
             [blockingGate('restart required'), later],
             okHandler('done'),
             createNoticeBuffer(),
@@ -99,7 +107,12 @@ describe('tool guard', () => {
     });
 
     it('appends a notice to the first result only', async () => {
-        const guarded = guardToolHandler([noticeGate(['update available'])], okHandler('done'), createNoticeBuffer());
+        const guarded = guardToolHandler(
+            GUARDED_TOOL,
+            [noticeGate(['update available'])],
+            okHandler('done'),
+            createNoticeBuffer(),
+        );
 
         const first = await guarded();
         const second = await guarded();
@@ -109,13 +122,19 @@ describe('tool guard', () => {
     });
 
     it('keeps the handler result untouched when every gate is silent', async () => {
-        const guarded = guardToolHandler([silentGate(), silentGate()], okHandler('done'), createNoticeBuffer());
+        const guarded = guardToolHandler(
+            GUARDED_TOOL,
+            [silentGate(), silentGate()],
+            okHandler('done'),
+            createNoticeBuffer(),
+        );
 
         expect(textOf(await guarded())).toEqual(['done']);
     });
 
     it('appends notices from every gate in order', async () => {
         const guarded = guardToolHandler(
+            GUARDED_TOOL,
             [noticeGate(['first']), noticeGate(['second'])],
             okHandler('done'),
             createNoticeBuffer(),
@@ -127,7 +146,12 @@ describe('tool guard', () => {
     it('preserves fields the handler set beside the content', async () => {
         const handler: ToolHandler<[]> = () => ({ content: [{ type: 'text', text: 'boom' }], isError: true });
 
-        const guarded = guardToolHandler([noticeGate(['update available'])], handler, createNoticeBuffer());
+        const guarded = guardToolHandler(
+            GUARDED_TOOL,
+            [noticeGate(['update available'])],
+            handler,
+            createNoticeBuffer(),
+        );
 
         expect((await guarded()).isError).toBe(true);
     });
@@ -137,7 +161,7 @@ describe('tool guard', () => {
             content: [{ type: 'text', text: args.tokenId }],
         });
 
-        const guarded = guardToolHandler([silentGate()], handler, createNoticeBuffer());
+        const guarded = guardToolHandler(GUARDED_TOOL, [silentGate()], handler, createNoticeBuffer());
 
         expect(textOf(await guarded({ tokenId: '42' }))).toEqual(['42']);
     });
@@ -146,7 +170,12 @@ describe('tool guard', () => {
 describe('reset notice', () => {
     it('rides along on the first answer after a reset and is gone on the next', async () => {
         const version = new FakeBackendVersion();
-        const guarded = guardToolHandler([createBackendVersionGate(version)], okHandler('done'), createNoticeBuffer());
+        const guarded = guardToolHandler(
+            GUARDED_TOOL,
+            [createBackendVersionGate(version)],
+            okHandler('done'),
+            createNoticeBuffer(),
+        );
 
         version.resetOnNextCall = true;
         const first = await guarded();
@@ -160,8 +189,8 @@ describe('reset notice', () => {
         const version = new FakeBackendVersion();
         const buffer = createNoticeBuffer();
         const gates = [createBackendVersionGate(version)];
-        const failing = guardToolHandler(gates, failingHandler('cell not found'), buffer);
-        const succeeding = guardToolHandler(gates, okHandler('done'), buffer);
+        const failing = guardToolHandler(GUARDED_TOOL, gates, failingHandler('cell not found'), buffer);
+        const succeeding = guardToolHandler(GUARDED_TOOL, gates, okHandler('done'), buffer);
 
         version.resetOnNextCall = true;
         await expect(failing()).rejects.toThrow('cell not found');
@@ -173,7 +202,7 @@ describe('reset notice', () => {
     it('does not double up when the handler succeeds', async () => {
         const version = new FakeBackendVersion();
         const buffer = createNoticeBuffer();
-        const guarded = guardToolHandler([createBackendVersionGate(version)], okHandler('done'), buffer);
+        const guarded = guardToolHandler(GUARDED_TOOL, [createBackendVersionGate(version)], okHandler('done'), buffer);
 
         version.resetOnNextCall = true;
 
@@ -185,8 +214,8 @@ describe('reset notice', () => {
         const version = new FakeBackendVersion();
         const buffer = createNoticeBuffer();
         const gates = [createBackendVersionGate(version)];
-        const failing = guardToolHandler(gates, failingHandler('cell not found'), buffer);
-        const succeeding = guardToolHandler(gates, okHandler('done'), buffer);
+        const failing = guardToolHandler(GUARDED_TOOL, gates, failingHandler('cell not found'), buffer);
+        const succeeding = guardToolHandler(GUARDED_TOOL, gates, okHandler('done'), buffer);
 
         version.resetOnNextCall = true;
         await expect(failing()).rejects.toThrow('cell not found');
@@ -200,9 +229,14 @@ describe('reset notice', () => {
         const version = new FakeBackendVersion();
         const buffer = createNoticeBuffer();
         const backendGate = createBackendVersionGate(version);
-        const failing = guardToolHandler([backendGate], failingHandler('cell not found'), buffer);
-        const blocked = guardToolHandler([blockingGate('restart required'), backendGate], okHandler('done'), buffer);
-        const succeeding = guardToolHandler([backendGate], okHandler('done'), buffer);
+        const failing = guardToolHandler(GUARDED_TOOL, [backendGate], failingHandler('cell not found'), buffer);
+        const blocked = guardToolHandler(
+            GUARDED_TOOL,
+            [blockingGate('restart required'), backendGate],
+            okHandler('done'),
+            buffer,
+        );
+        const succeeding = guardToolHandler(GUARDED_TOOL, [backendGate], okHandler('done'), buffer);
 
         version.resetOnNextCall = true;
         await expect(failing()).rejects.toThrow('cell not found');
@@ -223,7 +257,7 @@ describe('reset notice', () => {
         let now = 0;
         const buffer = createNoticeBuffer();
         const gates = [createBackendVersionGate(carrier)];
-        const guarded = guardToolHandler(gates, okHandler('done'), buffer);
+        const guarded = guardToolHandler(GUARDED_TOOL, gates, okHandler('done'), buffer);
 
         await guarded();
         answer = 'sha-2';
@@ -239,6 +273,7 @@ describe('reset notice', () => {
     it('runs the package check before the backend one and stops there when blocked', async () => {
         const version = new FakeBackendVersion();
         const guarded = guardToolHandler(
+            GUARDED_TOOL,
             [blockingGate('restart required'), createBackendVersionGate(version)],
             okHandler('done'),
             createNoticeBuffer(),
@@ -257,6 +292,7 @@ describe('reset notice', () => {
         };
         let handlerCalls = 0;
         const guarded = guardToolHandler(
+            GUARDED_TOOL,
             [createBackendVersionGate(version)],
             () => {
                 handlerCalls += 1;

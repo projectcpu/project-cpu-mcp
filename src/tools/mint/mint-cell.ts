@@ -2,7 +2,7 @@ import { MINT_CELL_DESCRIPTION } from './constants.js';
 import { summarizeMint } from './format.utils.js';
 import { mintInputSchema } from './types.js';
 import type { AppContext } from '../../types.js';
-import type { ToolRegistrar } from '../types.js';
+import { ToolEventType, type ToolRegistrar } from '../types.js';
 
 export function registerMintCellTool(server: ToolRegistrar, context: AppContext): void {
     server.registerTool(
@@ -14,7 +14,7 @@ export function registerMintCellTool(server: ToolRegistrar, context: AppContext)
             return {
                 content: [
                     { type: 'text', text: summarizeMint(result) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.CellMinted }) },
                 ],
             };
         },
