@@ -11,18 +11,14 @@ export const ENTRY_POINT_LOOKUP = {
 };
 
 export const GET_GAME_CONFIG_DESCRIPTION = [
-    'The entry point of the rulebook and the call to start from — a short reference plus a map of where the',
-    'detail lives, not the catalog itself. It carries the static facts of the active network that are worth',
-    'reading once: the resource catalog (id → name), contract addresses, storage shelves, transport parameters',
-    'and per-resource transit-fee floors, what every reveal is charged, how this network delivers randomness',
-    '(it decides what `cpu_reveal` does), and the trade parameters. Alongside them an index of the whole',
-    'building catalog — one row per building with its `type`, name, kind, tier, build cost and one line of what',
-    'it does — enough to say which building is which and to pick the `type` to ask about next. Detail is one',
-    `call away and deliberately not duplicated here: \`${ENTRY_POINT_LOOKUP.building}\` returns one building in`,
-    `full including its upgrade links, \`${ENTRY_POINT_LOOKUP.buildingSearch}\` searches the catalog by what a`,
-    `building consumes, produces or mines, \`${ENTRY_POINT_LOOKUP.resource}\` answers everything about one`,
-    `resource, and \`${ENTRY_POINT_LOOKUP.recipes}\` owns the recipes. Start here, then ask the tool it points`,
-    'at. A read-only reference call. No session needed.',
+    'The entry point of the rulebook: the static facts of the active network, read once — resource catalog',
+    '(id → name), contract addresses, storage shelves, transport parameters and transit-fee floors, reveal',
+    'cost, how this network delivers randomness (it decides what `cpu_reveal` does), trade parameters — plus a',
+    'building index (one row per building: `type`, name, kind, tier, build cost, one line of what it does).',
+    `Detail is not duplicated here: \`${ENTRY_POINT_LOOKUP.building}\` for one building in full with its upgrade`,
+    `links, \`${ENTRY_POINT_LOOKUP.buildingSearch}\` to search by what a building consumes, produces or mines,`,
+    `\`${ENTRY_POINT_LOOKUP.resource}\` for everything about one resource, \`${ENTRY_POINT_LOOKUP.recipes}\` for`,
+    'the recipes. Read-only. No session needed.',
 ].join(' ');
 
 export const ENTRY_POINT_HEADLINE_TAIL =
