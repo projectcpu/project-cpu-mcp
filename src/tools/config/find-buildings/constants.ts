@@ -3,18 +3,15 @@ export const DEFAULT_MATCH_LIMIT = 50;
 export const MAX_MATCH_LIMIT = 200;
 
 export const FIND_BUILDINGS_DESCRIPTION = [
-    'Search the building catalog by what a building consumes, produces or mines, so a question like "which',
-    'buildings process steel" is answered without reading the whole catalog. Every filter is optional and',
-    'they combine with AND. The four resource filters are the four separate roles a resource plays, and they',
-    'never mean the same thing: `buildInput` — resources burned ONCE to erect the building, `recipeInput` —',
-    'resources a crafter consumes on EVERY production cycle, `recipeOutput` — what such a cycle produces,',
-    '`minableResource` — what an extractor draws from the deposit of its own cell. Asking for steel as a',
-    'build input finds what is built out of steel; asking for it as a recipe input finds what eats steel to',
-    'run — different buildings, different questions. `kind` and `tier` narrow further. Answers are index rows',
-    `— type, name, kind, tier, build cost and one line of what it does — up to ${DEFAULT_MATCH_LIMIT} of them`,
-    'by default; narrow the filters rather than paging. A single match comes back as the full building card,',
-    'the same one `cpu_get_building` returns. No match is a plain answer, not an error.',
-    'A read-only reference call. No session needed.',
+    'Search the building catalog by what a building consumes, produces or mines ("which buildings process',
+    'steel"). Filters are optional and combine with AND. The four resource filters are four distinct roles:',
+    '`buildInput` — a build input, burned ONCE to erect the building; `recipeInput` — a recipe input, consumed',
+    'on EVERY production cycle;',
+    '`recipeOutput` — what a cycle produces; `minableResource` — what an extractor draws from its own cell',
+    'deposit. `kind` and `tier` narrow further. Answers are index rows (type, name, kind, tier, build cost, one',
+    `line of what it does), up to ${DEFAULT_MATCH_LIMIT} by default — narrow the filters rather than paging. A`,
+    'single match returns the full card, as `cpu_get_building` does. No match is a plain answer, not an error.',
+    'Read-only. No session needed.',
 ].join(' ');
 
 export const INDEX_COLUMNS_LEGEND = 'One row each — type | name | kind | tier | build cost | what it does:';

@@ -1,18 +1,12 @@
 export const GET_RESOURCE_DESCRIPTION = [
-    'Return everything the rulebook holds about ONE resource, read from the resource side instead of the',
-    'building side, so "what do I do with steel" costs one call rather than a walk of the whole catalog.',
-    'Input is the resource id as `cpu_get_game_config` lists it. The answer keeps the four roles a resource',
-    'plays apart and never mixes them: MINED BY — extractors that draw it from the deposit of their own cell;',
-    'BUILD INPUT TO — buildings that burn it ONCE at construction and never again; RECIPE INPUT TO — recipes',
-    'that consume it on EVERY production cycle, each with the buildings that run them; RECIPE OUTPUT OF —',
-    'recipes that produce it. A building erected out of the resource that also processes it appears in both',
-    'groups, separately, because those are two different commitments of the same resource. Alongside the four:',
-    'the cell shelf and hub shelf bounding how much of it one cell may hold, and its transit fee floor — the',
-    'per-unit minimum a foreign hub charges to route it. What the resource trades for is deliberately NOT',
-    'here: `cpu_get_market_index` owns that number and caches it, and a live figure copied into a static',
-    'reference reads as fresh long after it stopped being. A resource nothing touches answers with empty',
-    'groups, which is an answer and not an error.',
-    'A read-only reference call. No session needed.',
+    'Everything the rulebook holds about ONE resource ("what do I do with steel"), in one call. Input is the',
+    'resource id as `cpu_get_game_config` lists it. Four roles kept apart: MINED BY — extractors that draw it',
+    'from their own cell deposit; BUILD INPUT TO — buildings that burn it ONCE at construction; RECIPE INPUT',
+    'TO — recipes consuming it on EVERY cycle, with the buildings that run them; RECIPE OUTPUT OF — recipes',
+    'producing it. A building both built from and processing the resource appears in both groups. Also: the',
+    'cell and hub shelves bounding how much one cell may hold, and its transit fee floor (per-unit minimum a',
+    'foreign hub charges). Market price is NOT here — `cpu_get_market_index` owns it. A resource nothing',
+    'touches answers with empty groups, not an error. Read-only. No session needed.',
 ].join(' ');
 
 export const LENS_HEADLINE_TAIL = 'what mines it, what is built out of it, what eats it and what makes it.';

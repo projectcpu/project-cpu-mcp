@@ -17,9 +17,9 @@ export const PERSONA_GATE_REFUSAL = [
 export const PERSONA_BRIEF_MARKER = `Before your first reply to the operator, call \`${PERSONA_TOOL_NAME}\` and work to the brief.`;
 
 export const PERSONA_TOOL_DESCRIPTION = [
-    'Your operating brief for talking to the operator: the voice, the language rule, the shape of a message,',
-    'the panel bar the tools already render to, and the two panel templates you assemble yourself.',
-    'Takes no input. Read it once at the start of a session, before your first reply to the operator.',
+    'Your operating brief for talking to the operator: voice, language rule, message shape, the panel bar the',
+    'tools render to, and the two panel templates you assemble yourself. No input. Read once, before your',
+    'first reply to the operator.',
 ].join(' ');
 
 export const PERSONA_BASE_STATUS_TEMPLATE: PanelSpec = {

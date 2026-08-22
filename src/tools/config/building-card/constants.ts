@@ -1,13 +1,10 @@
 export const GET_BUILDING_DESCRIPTION = [
-    'Return one building of the catalog as a card, so a question about a single building never costs the whole',
-    'catalog. Input is the catalog `type` (as `cpu_get_game_config` lists it). The card prints three separate',
-    'plans and never mixes them: CONSTRUCTION — $CPU cost, build time and the build inputs burned once to erect',
-    'it; OPERATION — for a crafter every recipe it runs as recipe inputs to recipe outputs with the cycle',
-    'duration and the $CPU it costs per cycle, for an extractor the minable resources it draws from the cell',
-    'deposit (an extractor consumes no input resources at all), for a hub what it routes; LIFECYCLE — demolish',
-    'cost, mode switching, and the upgrade links in both directions. Build inputs are not a recipe: they are',
-    'spent once at construction, while recipe inputs are consumed by every production cycle afterwards.',
-    'A read-only reference call. No session needed.',
+    'One building of the catalog as a card. Input is the catalog `type` (as `cpu_get_game_config` lists it).',
+    'Three plans, never mixed: CONSTRUCTION — $CPU cost, build time, build inputs burned once to erect it;',
+    'OPERATION — a crafter: every recipe it runs (inputs → outputs, cycle duration, $CPU per cycle); an',
+    'extractor: the minable resources it draws from the cell deposit (it consumes no inputs); a hub: what it',
+    'routes; LIFECYCLE — demolish cost, mode switching, upgrade links both ways. Build inputs are spent once',
+    'at construction; recipe inputs on every cycle. Read-only. No session needed.',
 ].join(' ');
 
 export const CONSTRUCTION_SECTION_TITLE = 'Construction';
