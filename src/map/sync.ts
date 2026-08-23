@@ -37,6 +37,7 @@ export class MapSync implements MapStatus {
     private degradeTimer: ReturnType<typeof setTimeout> | null = null;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private resyncPaused = false;
+    private repairInFlight: Promise<void> | null = null;
     private droppedInFullSnapshot = 0;
     private generation = 0;
 
@@ -175,13 +176,34 @@ export class MapSync implements MapStatus {
         if (this.resyncPaused) {
             return;
         }
-        const generation = this.generation;
-        const since = this.store.getSyncVersion();
-        // A delta never re-sends a row the parser already dropped, so while a gap is open the only read that
-        // can close it is one of the whole map.
+        // One repairing read at a time. Each of them measures the open gap before it asks and writes that
+        // measurement off when it answers, so two overlapping reads would write the same gap off twice and
+        // an answer older than the gap could close it. An overlap rides the read already in flight instead.
+        if (this.repairInFlight !== null) {
+            await this.repairInFlight;
+            return;
+        }
         const repairCells = this.store.getDroppedCells();
         const repairUpdates = this.store.getDroppedUpdates();
+        if (repairCells === 0 && repairUpdates === 0) {
+            await this.readMap(0, 0);
+            return;
+        }
+        const repair = this.readMap(repairCells, repairUpdates);
+        this.repairInFlight = repair;
+        try {
+            await repair;
+        } finally {
+            this.repairInFlight = null;
+        }
+    }
+
+    // A delta never re-sends a row the parser already dropped, so while a gap is open the only read that can
+    // close it is one of the whole map.
+    private async readMap(repairCells: number, repairUpdates: number): Promise<void> {
         const repairing = repairCells > 0 || repairUpdates > 0;
+        const generation = this.generation;
+        const since = this.store.getSyncVersion();
         try {
             const { snapshot, dropped } = await this.fetchSnapshot(
                 repairing ? MAP_HTTP_PATH : `${MAP_HTTP_PATH}?since=${since}`,

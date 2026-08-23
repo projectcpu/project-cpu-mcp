@@ -442,7 +442,22 @@ describe('RouteService.nextHops over Virgin ground', () => {
         await expect(unread.nextHops({ from: ORIGIN, towards: null, resourceId: RES })).rejects.toThrow(
             /could not read every row[\s\S]*Unreadable rows: 1/,
         );
+        await expect(unread.nextHops({ from: ORIGIN, towards: null, resourceId: RES })).rejects.toThrow(
+            /update to a client that understands the rows this world serves/,
+        );
         await expect(unread.network(exportInput())).rejects.toThrow(/could not read every row/);
+    });
+
+    it('names the unread row, not the missed update, when both went unread at once', async () => {
+        const both = makeService([own(String(ORIGIN))], DEFAULT_FLOORS, {}, false, 1, 1);
+
+        const failure = await both
+            .nextHops({ from: ORIGIN, towards: null, resourceId: RES })
+            .then(() => null)
+            .catch((error: Error) => error.message);
+
+        expect(failure).toMatch(/could not read every row[\s\S]*Unreadable rows: 1/);
+        expect(failure).not.toMatch(/Unreadable updates/);
     });
 
     it('blames staleness, not an out-of-date client, when a live update was the thing it could not read', async () => {

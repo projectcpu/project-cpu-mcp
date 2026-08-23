@@ -156,6 +156,14 @@ describe('MapStore', () => {
             expect(store.getDroppedUpdates()).toBe(1);
         });
 
+        it('leaves the unread rows a partial repair did not cover still counted', () => {
+            store.noteDroppedCells(2);
+
+            store.clearRepairedGaps(1, 0);
+
+            expect(store.getDroppedCells()).toBe(1);
+        });
+
         it('never lets a repair drive a count below zero', () => {
             store.noteDroppedCells(1);
 

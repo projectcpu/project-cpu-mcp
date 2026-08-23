@@ -32,12 +32,36 @@ class FakeApi implements IMapApi {
         this.snapshotCells = snapshotCells;
     }
 
+    public gate = false;
+    private readonly held: Array<(cells: Array<RawCell>) => void> = [];
+
     async request<T>(path: string): Promise<{ status: number; data: T }> {
         this.calls.push(path);
         this.trace.push('map-request');
+        if (this.gate) {
+            const answered = await new Promise<Array<RawCell>>((resolve) => {
+                this.held.push(resolve);
+            });
+            return {
+                status: 200,
+                data: makeSnapshot({ version: this.snapshotVersion, serverTime: 1000, cells: answered }) as T,
+            };
+        }
         const cells = path.includes('since=') ? this.resyncCells : this.snapshotCells;
         const data = makeSnapshot({ version: this.snapshotVersion, serverTime: 1000, cells }) as T;
         return { status: 200, data };
+    }
+
+    heldCount(): number {
+        return this.held.length;
+    }
+
+    answerNewest(cells: Array<RawCell>): void {
+        this.held.pop()?.(cells);
+    }
+
+    answerOldest(cells: Array<RawCell>): void {
+        this.held.shift()?.(cells);
     }
 
     getBaseUrl(): string {
@@ -82,6 +106,12 @@ function setup(snapshotCells: Array<RawCell>): {
         reconnectGraceMs: GRACE_MS,
     });
     return { sync, socket, api, store, backendVersion, trace };
+}
+
+function flush(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
 }
 
 async function waitReady(sync: MapSync): Promise<void> {
@@ -171,6 +201,77 @@ describe('MapSync', () => {
         await sync.resyncNow();
 
         expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('refuses an older repairing answer the right to close a gap a newer answer just re-measured', async () => {
+        const { sync, api, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+        expect(store.getDroppedCells()).toBe(1);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+
+        api.gate = true;
+        const first = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+        const second = sync.resyncNow();
+        await flush();
+
+        api.answerNewest([makeCell({ tokenId: '1', updated: 50 }), { tokenId: '2' } as unknown as RawCell]);
+        await flush();
+        api.answerOldest([makeCell({ tokenId: '1', updated: 50 })]);
+        await Promise.all([first, second]);
+
+        expect(store.getDroppedCells()).toBe(1);
+        expect(store.get('2')).toBeNull();
+        expect((await reader.routingSnapshot()).complete).toBe(false);
+    });
+
+    it('lets a reconnect ride the repairing read already in flight instead of opening a second one', async () => {
+        const { sync, api, socket, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+        api.calls.length = 0;
+
+        api.gate = true;
+        const repair = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+        socket.emitConnect();
+        await flush();
+
+        expect(api.heldCount()).toBe(1);
+        expect(api.calls).toEqual([MAP_HTTP_PATH]);
+
+        api.answerNewest([makeCell({ tokenId: '1', updated: 50 }), { tokenId: '2' } as unknown as RawCell]);
+        await repair;
+        await flush();
+
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('keeps a gap that opened while the repairing read was in flight', async () => {
+        const { sync, api, socket, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        socket.emitUnreadableCell();
+        expect(store.getDroppedUpdates()).toBe(1);
+
+        api.gate = true;
+        const repair = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+        socket.emitUnreadableCell();
+
+        api.answerOldest([makeCell({ tokenId: '1', updated: 50 })]);
+        await repair;
+
+        expect(store.getDroppedUpdates()).toBe(1);
+        expect((await reader.routingSnapshot()).complete).toBe(false);
     });
 
     it('asks for a delta while nothing is missing', async () => {

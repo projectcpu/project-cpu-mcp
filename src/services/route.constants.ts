@@ -85,8 +85,8 @@ export const INCOMPLETE_SNAPSHOT_MESSAGE =
 export const UNREADABLE_UPDATES_MESSAGE =
     'The map loaded whole, but a live cell update arrived in a shape this client could not read, so what it ' +
     'holds for that cell may already be out of date and routing is refused rather than planned over facts ' +
-    'that may have moved. This clears itself: the next whole-map reload repairs it. Retry shortly, or run any ' +
-    'action that refreshes the map first.';
+    'that may have moved. The next whole-map reload repairs it — run any action that refreshes the map, then ' +
+    'retry.';
 
 export const UNREADABLE_ROWS_MESSAGE =
     'The map loaded, but this client could not read every row of it, so routing is refused: a row it cannot ' +
