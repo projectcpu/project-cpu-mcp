@@ -292,7 +292,7 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(section).toContain(
             'sale fee up to 100% (the structural bound — a hub owner can set any rate up to this maximum)',
         );
-        expect(section).toContain('radii in cells — move 1, hub 3');
+        expect(section).toContain('radii in cells — move 1 everywhere; hub reach is set per Hub tier, 3 by default');
         expect(section).toContain('2s per cell');
         expect(section).toContain("every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override");
         expect(section).toContain('5:0.1');

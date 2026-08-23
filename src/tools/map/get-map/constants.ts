@@ -1,5 +1,5 @@
 export const GET_MAP_DESCRIPTION = [
-    'Read the live game world (public, background-synced). The world is a finite sphere of 48,990 cells keyed by',
+    'Read the live game world (public, background-synced). The world is a finite sphere of 29,150 cells keyed by',
     'tokenId — no coordinates: navigate via each cell’s `neighbors` (6 adjacent, 5 next to a pentagon vertex;',
     'owned/other/empty, empty = unminted) and `cpu_next_hops`; `pos {face,i,j}` is only a rough hint (wraps at',
     'face seams). Returns a `summary`, a `resourceIndex` of your cells, and per-resource `storage`',
