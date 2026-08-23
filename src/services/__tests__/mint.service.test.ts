@@ -248,9 +248,16 @@ describe('MintService', () => {
         });
 
         it('throws when quantity exceeds the per-wallet limit', async () => {
-            await expect(makeService(new MintWallet()).quote({ quantity: '6' })).rejects.toThrow(
-                /per-wallet mint limit/i,
+            const quoteWallet = new MintWallet();
+            await expect(makeService(quoteWallet).quote({ quantity: '6' })).rejects.toThrow(
+                /Quantity 6 exceeds the per-wallet mint limit of 5 for this drop\./i,
             );
+            const mintWallet = new MintWallet();
+            await expect(makeService(mintWallet).mint({ quantity: '6' })).rejects.toThrow(
+                /Quantity 6 exceeds the per-wallet mint limit of 5 for this drop\./i,
+            );
+            expect(quoteWallet.sent).toHaveLength(0);
+            expect(mintWallet.sent).toHaveLength(0);
         });
 
         it('throws a clear error when the public drop read reverts', async () => {
@@ -276,8 +283,22 @@ describe('MintService', () => {
 
         it('refuses a drop the land contract never configured', async () => {
             const wallet = new MintWallet(UNCONFIGURED_DROP);
-            await expect(makeService(wallet).quote({ quantity: '1' })).rejects.toThrow(/per-wallet mint limit of 0/i);
-            await expect(makeService(wallet).mint({ quantity: '1' })).rejects.toThrow(/per-wallet mint limit of 0/i);
+            const quoteError = await makeService(wallet)
+                .quote({ quantity: '1' })
+                .then(
+                    () => null,
+                    (error: Error) => error,
+                );
+            const mintError = await makeService(wallet)
+                .mint({ quantity: '1' })
+                .then(
+                    () => null,
+                    (error: Error) => error,
+                );
+            expect(quoteError?.message).toMatch(/no public drop configured/i);
+            expect(mintError?.message).toMatch(/no public drop configured/i);
+            expect(quoteError?.message).not.toMatch(/exceeds/i);
+            expect(mintError?.message).not.toMatch(/exceeds/i);
             expect(wallet.sent).toHaveLength(0);
         });
 

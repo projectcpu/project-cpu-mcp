@@ -62,6 +62,9 @@ export const ROUTE_GRAPH_INSTRUCTIONS: ReadonlyArray<string> = [
         'handed to another player, and a live Syndicate discount can reorder candidates around it.',
     'Quote the relevant shortlist with cpu_quote_transport before the player chooses: live Syndicate ' +
         'discounts can reorder paths that the nominal graph fees rank the other way.',
+    'This result carries `quoteTemplate` — the quote call with resource and amount already filled in and ' +
+        '`arguments.path` left empty: drop the chain you picked into that slot, source first and target last, ' +
+        'and call it as it stands.',
     'A successful quote validates route mechanics and economics at quote time. It does not promise the later ' +
         'transaction will succeed — ownership, balances, capacity, pauses, allowances and live state all still ' +
         'apply.',

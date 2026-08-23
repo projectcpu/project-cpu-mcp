@@ -497,6 +497,10 @@ describe('cpu_route_network response', () => {
             tool: QUOTE_TOOL_NAME,
             arguments: { path: [], resourceId: RES, amount: AMOUNT },
         });
+
+        const text = instructionsText(descriptor);
+        expect(text).toMatch(/quoteTemplate/);
+        expect(text).toMatch(/path/i);
     });
 
     it('instructs: a raw graph loaded with code, never printed, no repeated node, re-export when stale', async () => {
