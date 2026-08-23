@@ -47,7 +47,8 @@ function renderPairs(entries: Array<[string, string]>): string {
 function describeTransit(config: AppConfig): string {
     const floors = renderPairs(Object.entries(config.transport.moveFeeFloors));
     return (
-        `radii in cells — move ${config.transport.moveRadius}, hub ${config.transport.hubRadius}; ` +
+        `radii in cells — move ${config.transport.moveRadius} everywhere; hub reach is set per Hub tier, ` +
+        `${config.transport.hubRadius} by default for a tier without its own; ` +
         `${config.transport.moveTimePerCellSec}s per cell; ${TRANSIT_FEE_FLOOR_SUMMARY} — ${floors}`
     );
 }

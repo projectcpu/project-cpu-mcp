@@ -220,7 +220,7 @@ describe('world bounds', () => {
     it('accepts the first and last token id and rejects everything outside the world', () => {
         expect(parseTokenId(MIN_TOKEN_ID)).toBe(1);
         expect(parseTokenId(29150)).toBe(29150);
-        for (const outside of [0, -1, 29151, 48990]) {
+        for (const outside of [0, -1, 29151, 99999]) {
             expect(() => parseTokenId(outside)).toThrow(/tokenId must be an integer/);
         }
         expect(() => tokenIdToCell(29151)).toThrow();
