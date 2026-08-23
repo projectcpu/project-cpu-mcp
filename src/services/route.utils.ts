@@ -1,3 +1,4 @@
+import { INCOMPLETE_SNAPSHOT_MESSAGE, UNREADABLE_ROWS_MESSAGE } from './route.constants.js';
 import { BuildingKind } from '../api/types.js';
 import { neighbors } from '../geometry/adjacency.js';
 import { kRing } from '../geometry/graph.utils.js';
@@ -6,8 +7,19 @@ export interface RouteNode {
     tokenId: string;
     isOwn: boolean;
     isHub: boolean;
+    /** Open ground: no completed reveal, so nobody controls it and any payer may route through it. */
+    isVirgin: boolean;
     radius: number;
 }
+
+/** What a cell must expose to be classified as a waypoint: who holds it, and whether it is still open ground. */
+export interface WaypointCell extends RadiusCell {
+    tokenId: string;
+    owner: string;
+    revealCount: number;
+}
+
+export type NodeResolver = (tokenId: string) => RouteNode | null;
 
 export interface ReachableWaypoint {
     node: RouteNode;
@@ -55,6 +67,67 @@ export function effectiveNodeRadius(cell: RadiusCell, policy: RadiusPolicy): num
     return served ?? policy.defaultHubRadius;
 }
 
+export function isVirginCell(cell: { revealCount: number }): boolean {
+    return cell.revealCount === 0;
+}
+
+/**
+ * The Intermediate-waypoint rule in one place: open ground, the payer's own land, or an Active Hub — anyone's.
+ * A foreign cell past its first completed reveal without an Active Hub is controlled territory and no waypoint.
+ */
+export function waypointNode(cell: WaypointCell, address: string, policy: RadiusPolicy): RouteNode | null {
+    const isOwn = cell.owner.toLowerCase() === address;
+    const isVirgin = isVirginCell(cell);
+    if (!isVirgin && !isOwn && !cell.activeHub) {
+        return null;
+    }
+    return {
+        tokenId: cell.tokenId,
+        isOwn,
+        isHub: cell.activeHub,
+        isVirgin,
+        radius: effectiveNodeRadius(cell, policy),
+    };
+}
+
+export function waypointNodes(
+    cells: ReadonlyArray<WaypointCell>,
+    address: string,
+    policy: RadiusPolicy,
+): Map<string, RouteNode> {
+    const nodes = new Map<string, RouteNode>();
+    for (const cell of cells) {
+        const node = waypointNode(cell, address, policy);
+        if (node !== null) {
+            nodes.set(cell.tokenId, node);
+        }
+    }
+    return nodes;
+}
+
+/** Ground nobody has minted: unowned, unrevealed, no hub — legal to cross on ordinary move reach. */
+export function unmintedNode(tokenId: string, policy: RadiusPolicy): RouteNode {
+    return { tokenId, isOwn: false, isHub: false, isVirgin: true, radius: policy.moveRadius };
+}
+
+/**
+ * Resolves any token id against one complete snapshot: a projected waypoint, unminted Virgin ground when the
+ * snapshot holds no row for it, or nothing when the row exists but is controlled foreign territory.
+ */
+export function waypointResolver(
+    nodes: ReadonlyMap<string, RouteNode>,
+    mintedTokens: ReadonlySet<string>,
+    policy: RadiusPolicy,
+): NodeResolver {
+    return (tokenId: string): RouteNode | null => {
+        const node = nodes.get(tokenId);
+        if (node !== undefined) {
+            return node;
+        }
+        return mintedTokens.has(tokenId) ? null : unmintedNode(tokenId, policy);
+    };
+}
+
 export function effectiveTransitFee(
     overrides: Record<number, string> | null,
     resourceId: number,
@@ -88,7 +161,7 @@ export function isHopLegal(a: RouteNode, b: RouteNode, distance: number): boolea
     return distance <= hopReachLimit(a, b);
 }
 
-export function maxNodeRadius(nodes: Map<string, RouteNode>): number {
+export function maxNodeRadius(nodes: ReadonlyMap<string, RouteNode>): number {
     let max = 0;
     for (const node of nodes.values()) {
         max = Math.max(max, node.radius);
@@ -96,9 +169,14 @@ export function maxNodeRadius(nodes: Map<string, RouteNode>): number {
     return max;
 }
 
+/** The widest reach any candidate can contribute — open ground included, so no legal long hop is scanned past. */
+export function widestReach(nodes: ReadonlyMap<string, RouteNode>, policy: RadiusPolicy): number {
+    return Math.max(maxNodeRadius(nodes), policy.moveRadius);
+}
+
 export function reachableWaypoints(
     from: RouteNode,
-    nodes: Map<string, RouteNode>,
+    resolve: NodeResolver,
     widestRadius: number,
 ): Array<ReachableWaypoint> {
     const scan = Math.max(0, from.radius + widestRadius - 1);
@@ -107,8 +185,8 @@ export function reachableWaypoints(
         if (distance === 0) {
             continue;
         }
-        const node = nodes.get(String(token));
-        if (node === undefined || !isHopLegal(from, node, distance)) {
+        const node = resolve(String(token));
+        if (node === null || !isHopLegal(from, node, distance)) {
             continue;
         }
         result.push({ node, hopDistance: distance });
@@ -124,9 +202,10 @@ export interface NetworkEdge {
 
 export function networkEdges(nodes: Map<string, RouteNode>): Array<NetworkEdge> {
     const widest = maxNodeRadius(nodes);
+    const resolve: NodeResolver = (tokenId) => nodes.get(tokenId) ?? null;
     const edges: Array<NetworkEdge> = [];
     for (const node of nodes.values()) {
-        for (const { node: other, hopDistance } of reachableWaypoints(node, nodes, widest)) {
+        for (const { node: other, hopDistance } of reachableWaypoints(node, resolve, widest)) {
             if (Number(other.tokenId) > Number(node.tokenId)) {
                 edges.push({ a: node.tokenId, b: other.tokenId, distance: hopDistance });
             }
@@ -202,4 +281,12 @@ export function distancesFrom(origin: number, targets: ReadonlySet<number>, maxS
         frontier = next;
     }
     return found;
+}
+
+/** Tells a half-loaded map apart from one whose rows this client could not read — the remedies differ. */
+export function incompleteSnapshotMessage(droppedCells: number): string {
+    if (droppedCells > 0) {
+        return `${UNREADABLE_ROWS_MESSAGE} Unreadable rows: ${droppedCells}.`;
+    }
+    return INCOMPLETE_SNAPSHOT_MESSAGE;
 }

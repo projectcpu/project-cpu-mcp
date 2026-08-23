@@ -37,6 +37,7 @@ export class MapSync implements MapStatus {
     private degradeTimer: ReturnType<typeof setTimeout> | null = null;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private resyncPaused = false;
+    private droppedInFullSnapshot = 0;
     private generation = 0;
 
     constructor(options: MapSyncOptions) {
@@ -64,6 +65,7 @@ export class MapSync implements MapStatus {
             onDisconnect: (reason) => this.handleDisconnect(reason),
             onError: (error) => this.handleError(error),
             onCellUpdate: (cell) => this.handleCellUpdate(cell),
+            onCellUpdateDropped: () => this.handleCellUpdateDropped(),
         });
 
         void this.bootstrapSnapshot();
@@ -108,6 +110,7 @@ export class MapSync implements MapStatus {
 
     async fetchFullSnapshot(): Promise<MapSnapshotResponse> {
         const { snapshot, dropped } = await this.fetchSnapshot(MAP_HTTP_PATH);
+        this.droppedInFullSnapshot = dropped;
         if (dropped > 0) {
             this.logger.warn('dropped invalid cells from map snapshot', { dropped });
         }
@@ -117,6 +120,8 @@ export class MapSync implements MapStatus {
     applyFullSnapshot(snapshot: MapSnapshotResponse): void {
         this.generation += 1;
         this.store.replaceAll(snapshot);
+        this.store.noteDroppedCells(this.droppedInFullSnapshot);
+        this.droppedInFullSnapshot = 0;
         this.logger.info('map replaced from a full snapshot', {
             cells: this.store.size(),
             version: this.store.getSyncVersion(),
@@ -146,6 +151,7 @@ export class MapSync implements MapStatus {
                 return;
             }
             this.store.applySnapshot(snapshot);
+            this.store.noteDroppedCells(dropped);
             if (dropped > 0) {
                 this.logger.warn('dropped invalid cells from map snapshot', { dropped });
             }
@@ -177,6 +183,7 @@ export class MapSync implements MapStatus {
                 return;
             }
             this.store.applySnapshot(snapshot);
+            this.store.noteDroppedCells(dropped);
             this.logger.info('map resynced', {
                 since,
                 changed: snapshot.cells.length,
@@ -227,6 +234,10 @@ export class MapSync implements MapStatus {
         if (this.store.applyCell(cell)) {
             this.logger.debug('cell updated', { tokenId: cell.tokenId, latest: this.store.getLatestUpdated() });
         }
+    }
+
+    private handleCellUpdateDropped(): void {
+        this.store.noteDroppedCells(1);
     }
 
     private markReady(): void {

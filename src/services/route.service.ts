@@ -2,13 +2,15 @@ import { DISTANCE_SCAN_CAP, NEXT_HOPS_NOTE, ROUTE_NETWORK_NOTE } from './route.c
 import {
     componentLabels,
     distancesFrom,
-    effectiveNodeRadius,
-    maxNodeRadius,
+    incompleteSnapshotMessage,
     networkEdges,
     radiusPolicy,
     reachableWaypoints,
+    waypointNodes,
+    waypointResolver,
     waypointTransitFee,
-    type RadiusPolicy,
+    widestReach,
+    type NodeResolver,
     type RouteNode,
 } from './route.utils.js';
 import type {
@@ -24,9 +26,9 @@ import type {
     RouteServiceOptions,
 } from './types.js';
 import { BuildingKind } from '../api/types.js';
-import { tokenIdToPos } from '../geometry/token.utils.js';
+import { parseTokenId, tokenIdToPos } from '../geometry/token.utils.js';
 import type { ILogger } from '../logger/types.js';
-import type { Cell } from '../map/types.js';
+import type { Cell, RoutingSnapshot } from '../map/types.js';
 import { formatUnixSeconds } from '../utils/format.utils.js';
 import type { WalletProvider } from '../wallet/types.js';
 
@@ -44,8 +46,8 @@ export class RouteService {
     }
 
     async nextHops(input: NextHopsInput): Promise<NextHopsResult> {
-        const from = String(input.from);
-        const towards = input.towards === null ? null : String(input.towards);
+        const from = String(parseTokenId(input.from));
+        const towards = input.towards === null ? null : String(parseTokenId(input.towards));
         if (from === towards) {
             throw new Error('`from` and `towards` must be different cells.');
         }
@@ -56,14 +58,16 @@ export class RouteService {
         const address = this.wallet.get().getAddress().toLowerCase();
 
         const policy = radiusPolicy(routing, config.buildings);
-        const cellsByToken = new Map<string, Cell>();
-        const nodes = this.projectNodes(await this.mapReader.allCells(), cellsByToken, address, policy);
+        const snapshot = await this.mapReader.routingSnapshot();
+        this.assertComplete(snapshot);
+        const cellsByToken = new Map(snapshot.cells.map((cell): [string, Cell] => [cell.tokenId, cell]));
+        const nodes = waypointNodes(snapshot.cells, address, policy);
+        const resolve = waypointResolver(nodes, new Set(cellsByToken.keys()), policy);
 
-        this.assertEligible(from, nodes, cellsByToken, config);
-        const fromNode = nodes.get(from) as RouteNode;
-        const fromCell = cellsByToken.get(from) as Cell;
+        const fromNode = this.assertEligible(from, resolve, cellsByToken, config);
+        const fromCell = cellsByToken.get(from) ?? null;
 
-        const reachable = reachableWaypoints(fromNode, nodes, maxNodeRadius(nodes));
+        const reachable = reachableWaypoints(fromNode, resolve, widestReach(nodes, policy));
 
         let targetDistance: number | null = null;
         const toTarget = new Map<number, number>();
@@ -76,19 +80,20 @@ export class RouteService {
         }
 
         const hops: Array<NextHopView> = reachable.map(({ node, hopDistance }) => {
-            const cell = cellsByToken.get(node.tokenId) as Cell;
+            const cell = cellsByToken.get(node.tokenId) ?? null;
             return {
                 tokenId: node.tokenId,
                 pos: tokenIdToPos(node.tokenId),
                 hopDistance,
                 isOwn: node.isOwn,
                 isHub: node.isHub,
-                ready: cell.ready,
-                owner: cell.owner,
+                isVirgin: node.isVirgin,
+                ready: cell === null ? null : cell.ready,
+                owner: cell === null ? null : cell.owner,
                 radius: node.radius,
                 transitFeePerUnit: waypointTransitFee(
                     node,
-                    cell.transitFeeOverrides,
+                    cell === null ? null : cell.transitFeeOverrides,
                     input.resourceId,
                     routing.moveFeeFloors,
                 ),
@@ -102,11 +107,12 @@ export class RouteService {
             return a.hopDistance - b.hopDistance || Number(a.tokenId) - Number(b.tokenId);
         });
 
-        this.logger.info('surveyed next hops', { from, towards, hops: hops.length });
+        this.logger.info('surveyed next hops', { from, towards, hops: hops.length, version: snapshot.version });
         return {
             from,
             fromIsHub: fromNode.isHub,
-            fromReady: fromCell.ready,
+            fromIsVirgin: fromNode.isVirgin,
+            fromReady: fromCell === null ? null : fromCell.ready,
             fromRadius: fromNode.radius,
             towards,
             targetDistance,
@@ -126,8 +132,10 @@ export class RouteService {
         const address = this.wallet.get().getAddress().toLowerCase();
 
         const policy = radiusPolicy(routing, config.buildings);
-        const cellsByToken = new Map<string, Cell>();
-        const nodes = this.projectNodes(await this.mapReader.allCells(), cellsByToken, address, policy);
+        const snapshot = await this.mapReader.routingSnapshot();
+        this.assertComplete(snapshot);
+        const cellsByToken = new Map(snapshot.cells.map((cell): [string, Cell] => [cell.tokenId, cell]));
+        const nodes = waypointNodes(snapshot.cells, address, policy);
 
         const edges = networkEdges(nodes);
         const components = componentLabels(nodes, edges);
@@ -184,28 +192,10 @@ export class RouteService {
         return result;
     }
 
-    private projectNodes(
-        cells: Array<Cell>,
-        cellsByToken: Map<string, Cell>,
-        address: string,
-        policy: RadiusPolicy,
-    ): Map<string, RouteNode> {
-        const nodes = new Map<string, RouteNode>();
-        for (const cell of cells) {
-            cellsByToken.set(cell.tokenId, cell);
-            const isOwn = cell.owner.toLowerCase() === address;
-            const isHub = cell.activeHub;
-            if (cell.revealCount === 0 || (!isOwn && !isHub)) {
-                continue;
-            }
-            nodes.set(cell.tokenId, {
-                tokenId: cell.tokenId,
-                isOwn,
-                isHub,
-                radius: effectiveNodeRadius(cell, policy),
-            });
+    private assertComplete(snapshot: RoutingSnapshot): void {
+        if (!snapshot.complete) {
+            throw new Error(incompleteSnapshotMessage(snapshot.droppedCells));
         }
-        return nodes;
     }
 
     private assertTransportable(resourceId: number, floors: Record<number, string>): void {
@@ -219,20 +209,16 @@ export class RouteService {
 
     private assertEligible(
         tokenId: string,
-        nodes: Map<string, RouteNode>,
+        resolve: NodeResolver,
         cells: Map<string, Cell>,
         config: AppConfig,
-    ): void {
-        if (nodes.has(tokenId)) {
-            return;
+    ): RouteNode {
+        const node = resolve(tokenId);
+        if (node !== null) {
+            return node;
         }
-        const cell = cells.get(tokenId) ?? null;
-        if (cell === null) {
-            throw new Error(`Cell ${tokenId} is not in the current map (unminted or not yet synced).`);
-        }
-        if (cell.revealCount === 0) {
-            throw new Error(`Cell ${tokenId} is not revealed; reveal it first (cpu_reveal).`);
-        }
+        // Only a held row can fail to resolve, and only by being controlled foreign land.
+        const cell = cells.get(tokenId) as Cell;
         const building = cell.building;
         if (building !== null && building.buildFinishAt !== null && cell.ready === false) {
             const view = config.buildings.find((b) => b.type === building.type) ?? null;
@@ -245,7 +231,8 @@ export class RouteService {
             }
         }
         throw new Error(
-            `Cell ${tokenId} is not an eligible waypoint: it must be a cell you own or carry a finished Hub.`,
+            `Cell ${tokenId} is not an eligible waypoint: it is foreign land past its first reveal and carries ` +
+                'no finished Hub. Waypoints are open Virgin ground, cells you own, or any cell with a finished Hub.',
         );
     }
 }

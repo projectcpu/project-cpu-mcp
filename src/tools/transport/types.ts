@@ -36,7 +36,10 @@ export const routeNetworkInputSchema = {
 };
 
 export const nextHopsInputSchema = {
-    from: tokenIdSchema.describe('The cell to hop from (your revealed cell, or a Hub).'),
+    from: tokenIdSchema.describe(
+        'The cell to hop from — where the cargo stands now: your own cell, a cell with a finished Hub, or ' +
+            'Virgin ground (no completed reveal).',
+    ),
     resourceId: z
         .number()
         .int()

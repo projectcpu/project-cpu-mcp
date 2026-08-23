@@ -7,16 +7,20 @@ import {
     hopReachLimit,
     isHopLegal,
     radiusPolicy,
+    waypointNode,
+    waypointNodes,
+    waypointResolver,
     waypointTransitFee,
     type RouteNode,
+    type WaypointCell,
 } from '../route.utils.js';
 
 const FLOORS: Record<number, string> = { 3: '0.1', 9: '0.5' };
 
-const foreignHub: RouteNode = { tokenId: '75', isOwn: false, isHub: true, radius: 5 };
-const ownCell: RouteNode = { tokenId: '72', isOwn: true, isHub: false, radius: 1 };
-const ownHub: RouteNode = { tokenId: '80', isOwn: true, isHub: true, radius: 5 };
-const foreignPlain: RouteNode = { tokenId: '90', isOwn: false, isHub: false, radius: 1 };
+const foreignHub: RouteNode = { tokenId: '75', isOwn: false, isHub: true, isVirgin: false, radius: 5 };
+const ownCell: RouteNode = { tokenId: '72', isOwn: true, isHub: false, isVirgin: false, radius: 1 };
+const ownHub: RouteNode = { tokenId: '80', isOwn: true, isHub: true, isVirgin: false, radius: 5 };
+const foreignPlain: RouteNode = { tokenId: '90', isOwn: false, isHub: false, isVirgin: false, radius: 1 };
 
 const BASE_HUB = 'hub';
 const MID_HUB = 'hub_l2a';
@@ -34,12 +38,48 @@ function policy(moveRadius = 1, hubRadius = 5) {
 }
 
 function node(radius: number, tokenId = '1'): RouteNode {
-    return { tokenId, isOwn: true, isHub: radius > 1, radius };
+    return { tokenId, isOwn: true, isHub: radius > 1, isVirgin: false, radius };
 }
 
 function cell(type: string | null, activeHub: boolean) {
     return { activeHub, building: type === null ? null : { type } };
 }
+
+describe('waypoint membership', () => {
+    const ME = '0xme';
+    const RIVAL = '0xrival';
+
+    function waypoint(over: Partial<WaypointCell> = {}): WaypointCell {
+        return { tokenId: '72', owner: RIVAL, revealCount: 1, activeHub: false, building: null, ...over };
+    }
+
+    it('admits Virgin ground whoever minted it', () => {
+        expect(waypointNode(waypoint({ revealCount: 0 }), ME, policy())).toMatchObject({ isVirgin: true, radius: 1 });
+        expect(waypointNode(waypoint({ owner: ME, revealCount: 0 }), ME, policy())).toMatchObject({
+            isVirgin: true,
+            isOwn: true,
+        });
+    });
+
+    it('admits your own revealed cell and any Active Hub, and refuses controlled foreign land', () => {
+        expect(waypointNode(waypoint({ owner: ME }), ME, policy())).toMatchObject({ isOwn: true, isVirgin: false });
+        expect(waypointNode(waypoint({ activeHub: true, building: { type: MID_HUB } }), ME, policy())).toMatchObject({
+            isHub: true,
+            radius: 8,
+        });
+        expect(waypointNode(waypoint(), ME, policy())).toBeNull();
+    });
+
+    it('resolves an id with no row as unminted Virgin ground and a held foreign row as nothing', () => {
+        const held = waypoint();
+        const nodes = waypointNodes([held], ME, policy());
+        const resolve = waypointResolver(nodes, new Set([held.tokenId]), policy());
+
+        expect(resolve(held.tokenId)).toBeNull();
+        expect(resolve('999')).toMatchObject({ tokenId: '999', isVirgin: true, isOwn: false, isHub: false, radius: 1 });
+        expect(waypointResolver(nodes, new Set([held.tokenId]), policy(2))('999')?.radius).toBe(2);
+    });
+});
 
 describe('effectiveTransitFee', () => {
     it('returns the resource floor when there is no override', () => {

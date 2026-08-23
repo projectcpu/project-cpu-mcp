@@ -1,6 +1,11 @@
-import type { CellProjectionConfig, ProcessOutput, ResourceStorageCaps } from './types.js';
+import { MapReadiness, type CellProjectionConfig, type ProcessOutput, type ResourceStorageCaps } from './types.js';
 import { BuildingKind } from '../api/types.js';
 import type { AppConfig } from '../services/types.js';
+
+/** True once the startup snapshot has landed: every existing cell is held, even if the stream later degrades. */
+export function isBootstrapComplete(readiness: MapReadiness): boolean {
+    return readiness === MapReadiness.Ready || readiness === MapReadiness.Degraded;
+}
 
 export function buildingTypesOfKind(config: AppConfig, kind: BuildingKind): Set<string> {
     return new Set(config.buildings.filter((b) => b.kind === kind).map((b) => b.type as string));

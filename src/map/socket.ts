@@ -34,6 +34,7 @@ export class MapSocketClient implements ISocketClient {
             const cell = parseCell(raw);
             if (cell === null) {
                 this.logger.warn('dropped invalid cell update payload');
+                handlers.onCellUpdateDropped();
                 return;
             }
             handlers.onCellUpdate(cell);

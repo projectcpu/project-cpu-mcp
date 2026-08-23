@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BuildingType } from '../../api/types.js';
 import { FakeAppConfig, makeConfig } from '../../services/__tests__/service-fakes.js';
+import { parseSnapshot } from '../map.utils.js';
 import { MapReader } from '../reader.js';
 import { MapStore } from '../store.js';
 import { MapReadiness, MapScope, type MapStatus, type RawCell } from '../types.js';
@@ -227,5 +228,59 @@ describe('MapReader projection', () => {
         expect(after?.ready).toBe(true);
         expect(after?.activeHub).toBe(true);
         expect(after?.resources[0]?.storage?.cap).toBe('1000');
+    });
+});
+
+describe('MapReader routing snapshot', () => {
+    it('reads cells, bootstrap completion and version as one atomic projection', async () => {
+        const { reader, store } = makeReader([
+            makeCell({ tokenId: '72', owner: '0xme', revealCount: 1, updated: 50 }),
+            makeCell({ tokenId: '73', owner: '0xrival', revealCount: 0, updated: 120 }),
+        ]);
+        store.applyCell(makeCell({ tokenId: '74', owner: '0xme', updated: 300 }));
+
+        const snapshot = await reader.routingSnapshot();
+
+        expect(snapshot.cells.map((c) => c.tokenId).sort()).toEqual(['72', '73', '74']);
+        expect(snapshot.complete).toBe(true);
+        expect(snapshot.version).toBe(300);
+        expect(snapshot.cells.every((c) => typeof c.activeHub === 'boolean')).toBe(true);
+    });
+
+    it('marks the snapshot incomplete while the map is still bootstrapping', async () => {
+        const { reader } = makeReader([makeCell({ tokenId: '72', updated: 50 })], status(MapReadiness.Loading));
+
+        expect((await reader.routingSnapshot()).complete).toBe(false);
+    });
+
+    it('marks a degraded but fully loaded map complete, since every row is present', async () => {
+        const { reader } = makeReader([makeCell({ tokenId: '72', updated: 50 })], status(MapReadiness.Degraded, false));
+
+        expect((await reader.routingSnapshot()).complete).toBe(true);
+    });
+
+    it('marks the snapshot incomplete when a row of the payload could not be read', async () => {
+        const store = new MapStore();
+        const { snapshot, dropped } = parseSnapshot({
+            serverTime: SNAPSHOT_SERVER_TIME,
+            version: 50,
+            cells: [makeCell({ tokenId: '72', updated: 50 }), { tokenId: '73' }],
+        });
+        store.applySnapshot(snapshot);
+        store.noteDroppedCells(dropped);
+        const { reader } = makeReader([], status(), store);
+
+        const routing = await reader.routingSnapshot();
+
+        expect(dropped).toBe(1);
+        expect(routing.cells.map((c) => c.tokenId)).toEqual(['72']);
+        expect(routing.droppedCells).toBe(1);
+        expect(routing.complete).toBe(false);
+    });
+
+    it('marks a stopped map incomplete', async () => {
+        const { reader } = makeReader([makeCell({ tokenId: '72', updated: 50 })], status(MapReadiness.Stopped, false));
+
+        expect((await reader.routingSnapshot()).complete).toBe(false);
     });
 });

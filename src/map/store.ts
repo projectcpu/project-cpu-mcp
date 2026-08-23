@@ -18,6 +18,9 @@ export class MapStore {
     // Offset (serverTime − local seconds) captured at the last snapshot. getServerTime() projects it onto the
     // live local clock, so "reference now" keeps advancing between resyncs instead of freezing at the snapshot.
     private serverTimeOffsetSec: number | null = null;
+    // Rows the tolerant parser could not read. A row we cannot hold is indistinguishable from ground nobody
+    // minted, so readers that must not confuse the two ask for this count before trusting what they see.
+    private droppedCells = 0;
 
     // `nowSec` is injectable so tests get a deterministic clock; production uses wall-clock seconds.
     constructor(private readonly nowSec: () => number = () => Math.floor(Date.now() / 1000)) {}
@@ -54,6 +57,7 @@ export class MapStore {
     replaceAll(snapshot: MapSnapshotResponse): void {
         this.cells.clear();
         this.latestUpdated = 0;
+        this.droppedCells = 0;
         for (const cell of snapshot.cells) {
             this.cells.set(cell.tokenId, cell);
             if (cell.updated > this.latestUpdated) {
@@ -62,6 +66,15 @@ export class MapStore {
         }
         this.syncVersion = snapshot.version;
         this.serverTimeOffsetSec = snapshot.serverTime - this.nowSec();
+    }
+
+    // Sticky: a delta never re-sends a row that was already dropped, so only a full replace clears the count.
+    noteDroppedCells(count: number): void {
+        this.droppedCells += count;
+    }
+
+    getDroppedCells(): number {
+        return this.droppedCells;
     }
 
     get(tokenId: string): RawCell | null {
