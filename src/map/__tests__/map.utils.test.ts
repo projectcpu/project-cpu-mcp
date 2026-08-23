@@ -93,12 +93,12 @@ describe('classifyNeighbors', () => {
 
         expect(refs).toHaveLength(6);
         expect(refs.map((r) => r.tokenId).sort((a, b) => Number(a) - Number(b))).toEqual([
-            '1',
-            '2',
+            '17',
+            '18',
             '71',
             '73',
-            '142',
-            '143',
+            '126',
+            '127',
         ]);
         expect(refs.filter((r) => r.relation === NeighborRelation.Owned).map((r) => r.tokenId)).toEqual(['71']);
         expect(refs.filter((r) => r.relation === NeighborRelation.Other).map((r) => r.tokenId)).toEqual(['73']);

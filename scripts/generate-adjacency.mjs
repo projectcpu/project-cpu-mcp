@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const N = 70;
+const N = 54;
 const RHOMBUS_COUNT = 10;
 const HEXES_PER_RHOMBUS = N * N - 1;
 const HEX_COUNT = RHOMBUS_COUNT * HEXES_PER_RHOMBUS;

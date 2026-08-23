@@ -80,7 +80,7 @@ describe('RouteService.nextHops', () => {
             owner: RIVAL,
             transitFeePerUnit: '0.5',
         });
-        expect(result.hops[1]?.pos).toEqual({ face: 0, i: 1, j: 5 });
+        expect(result.hops[1]?.pos).toEqual({ face: 0, i: 1, j: 21 });
     });
 
     it('resolves the transit fee for the requested resource: override for it, its floor otherwise', async () => {
@@ -225,7 +225,7 @@ describe('RouteService.network', () => {
         expect(byToken.get('72')?.component).toBe(byToken.get('75')?.component);
         expect(byToken.get('220')?.component).not.toBe(byToken.get('72')?.component);
         expect(byToken.get('75')).toMatchObject({ isHub: true, transitFeePerUnit: '0.5', owner: RIVAL });
-        expect(byToken.get('73')?.pos).toEqual({ face: 0, i: 1, j: 3 });
+        expect(byToken.get('73')?.pos).toEqual({ face: 0, i: 1, j: 19 });
     });
 
     it('annotates distance fields when from/towards are given', async () => {

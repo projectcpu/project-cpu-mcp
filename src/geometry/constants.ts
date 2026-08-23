@@ -1,4 +1,4 @@
-export const GRID_FREQUENCY = 70;
+export const GRID_FREQUENCY = 54;
 
 export const RHOMBUS_COUNT = 10;
 
