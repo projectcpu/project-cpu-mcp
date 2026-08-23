@@ -443,7 +443,7 @@ describe('RouteService.nextHops over Virgin ground', () => {
             /could not read every row[\s\S]*Unreadable rows: 1/,
         );
         await expect(unread.nextHops({ from: ORIGIN, towards: null, resourceId: RES })).rejects.toThrow(
-            /update to a client that understands the rows this world serves/,
+            /next whole-map read[\s\S]*update to a client that understands the rows this world serves/,
         );
         await expect(unread.network(exportInput())).rejects.toThrow(/could not read every row/);
     });
@@ -469,6 +469,7 @@ describe('RouteService.nextHops over Virgin ground', () => {
             .catch((error: Error) => error.message);
 
         expect(failure).toMatch(/Unreadable updates: 1/);
+        expect(failure).toMatch(/next whole-map read/);
         expect(failure).not.toMatch(/update to a client/);
         await expect(stale.network(exportInput())).rejects.toThrow(/Unreadable updates: 1/);
     });
@@ -640,18 +641,14 @@ describe('RouteService.network', () => {
         await expect(service.network(exportInput({ towards: Number(at(4)) }))).rejects.toThrow(/no completed reveal/);
     });
 
-    it('carries the whole request into the artifact and into the prefilled quote call', async () => {
+    it('carries the whole request into the artifact and the cargo alone into the quote call', async () => {
         const result = await makeService([own(String(ORIGIN)), own(at(2))]).network(exportInput());
         const graph = graphOf(result);
 
         expect(result.snapshotVersion).toBe(SNAPSHOT_VERSION);
         expect(graph.schemaVersion).toBe(result.schemaVersion);
         expect(graph.request).toEqual({ from: String(ORIGIN), towards: at(2), resourceId: RES, amount: AMOUNT });
-        expect(result.quoteTemplate.arguments).toEqual({
-            path: [String(ORIGIN), at(2)],
-            resourceId: RES,
-            amount: AMOUNT,
-        });
+        expect(result.quoteTemplate.arguments).toEqual({ path: [], resourceId: RES, amount: AMOUNT });
     });
 
     it('makes open Virgin ground a node, so unminted land between two of your cells is no wall', async () => {

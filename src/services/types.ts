@@ -751,7 +751,7 @@ export interface RouteNetworkInput {
     amount: string;
 }
 
-/** The one move the graph was cut for, normalized — the artifact and the quote template both carry it. */
+/** The one move the graph was cut for, normalized — the artifact carries it whole. */
 export interface RouteRequestView {
     from: string;
     towards: string;
@@ -793,6 +793,7 @@ export interface RouteGraphArtifact {
     edges: Array<RouteGraphEdgeView>;
 }
 
+/** `path` stays empty: the chain is the agent's to compute from the graph, and no endpoint pair is a route. */
 export interface QuoteTransportArgumentsView {
     path: Array<string>;
     resourceId: number;

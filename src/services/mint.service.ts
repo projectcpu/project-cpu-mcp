@@ -96,9 +96,6 @@ export class MintService implements IMintService {
         if (drop.endTime !== 0 && now > drop.endTime) {
             throw new Error(`The land public drop has ended (closed at ${formatUnixSeconds(drop.endTime)}).`);
         }
-        if (drop.mintPrice === 0n && drop.startTime === 0 && drop.endTime === 0) {
-            throw new Error('No active land public drop found for the configured land contract.');
-        }
         if (quantity > drop.maxTotalMintableByWallet) {
             throw new Error(
                 `Quantity ${quantity} exceeds the per-wallet mint limit of ${drop.maxTotalMintableByWallet} for this drop.`,

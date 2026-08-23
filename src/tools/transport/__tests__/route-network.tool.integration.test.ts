@@ -490,12 +490,12 @@ describe('cpu_route_network response', () => {
         expect(fs.statSync(descriptor.artifactPath).size).toBeGreaterThan(inline.length * 10);
     });
 
-    it('prefills the quote template with the resource, the amount and both endpoints of the request', async () => {
+    it('prefills the quote template with the resource and the amount, leaving the path for the agent', async () => {
         const descriptor = descriptorOf(await exportGraph(cellsFor()));
 
         expect(descriptor.quoteTemplate).toEqual({
             tool: QUOTE_TOOL_NAME,
-            arguments: { path: [String(ORIGIN), TARGET], resourceId: RES, amount: AMOUNT },
+            arguments: { path: [], resourceId: RES, amount: AMOUNT },
         });
     });
 
@@ -630,7 +630,7 @@ function descriptor(over: Partial<RouteNetworkResult> = {}): RouteNetworkResult 
         nodeCount: 12,
         edgeCount: 24,
         instructions: ['Load the raw route graph with code.'],
-        quoteTemplate: { tool: QUOTE_TOOL_NAME, arguments: { path: ['10', '30'], resourceId: RES, amount: AMOUNT } },
+        quoteTemplate: { tool: QUOTE_TOOL_NAME, arguments: { path: [], resourceId: RES, amount: AMOUNT } },
         note: NOTE,
         ...over,
     };

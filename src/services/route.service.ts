@@ -208,7 +208,7 @@ export class RouteService {
             instructions: ROUTE_GRAPH_INSTRUCTIONS,
             quoteTemplate: {
                 tool: QUOTE_TOOL_NAME,
-                arguments: { path: [from, towards], resourceId: input.resourceId, amount: input.amount },
+                arguments: { path: [], resourceId: input.resourceId, amount: input.amount },
             },
             note: ROUTE_NETWORK_NOTE,
         };

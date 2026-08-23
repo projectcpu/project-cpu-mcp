@@ -85,10 +85,14 @@ export const INCOMPLETE_SNAPSHOT_MESSAGE =
 export const UNREADABLE_UPDATES_MESSAGE =
     'The map loaded whole, but a live cell update arrived in a shape this client could not read, so what it ' +
     'holds for that cell may already be out of date and routing is refused rather than planned over facts ' +
-    'that may have moved. The next whole-map reload repairs it — run any action that refreshes the map, then ' +
-    'retry.';
+    'that may have moved. The next whole-map read repairs it, and this client asks for one whenever it ' +
+    'reconnects to the live feed or acts on the world — a build, a mining start, a craft or a reveal each ' +
+    'drive one. Retry after that.';
 
 export const UNREADABLE_ROWS_MESSAGE =
     'The map loaded, but this client could not read every row of it, so routing is refused: a row it cannot ' +
-    'hold would read as unminted Virgin ground and invent routes that do not exist. Waiting will not help — ' +
-    'update to a client that understands the rows this world serves.';
+    'hold would read as unminted Virgin ground and invent routes that do not exist. The next whole-map read ' +
+    'reads those rows again and clears the gap if they failed only once — this client asks for one whenever ' +
+    'it reconnects to the live feed or acts on the world, so retrying is worth one attempt. If the refusal ' +
+    'outlives a repair, the world is serving a shape this client cannot hold at all: update to a client that ' +
+    'understands the rows this world serves.';

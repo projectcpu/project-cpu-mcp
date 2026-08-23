@@ -38,7 +38,16 @@ const NOT_STARTED_DROP: PublicDropView = { ...ACTIVE_DROP, startTime: 4_000_000_
 
 const ENDED_DROP: PublicDropView = { ...ACTIVE_DROP, startTime: 1, endTime: 2 };
 
-const NO_DROP: PublicDropView = { ...ACTIVE_DROP, mintPrice: 0n, startTime: 0, endTime: 0 };
+const FREE_OPEN_ENDED_DROP: PublicDropView = { ...ACTIVE_DROP, mintPrice: 0n, feeBps: 0, startTime: 0, endTime: 0 };
+
+const UNCONFIGURED_DROP: PublicDropView = {
+    mintPrice: 0n,
+    startTime: 0,
+    endTime: 0,
+    maxTotalMintableByWallet: 0,
+    feeBps: 0,
+    restrictFeeRecipients: false,
+};
 
 class MintWallet implements WalletManager, WalletProvider {
     public readonly sent: Array<TransactionRequest> = [];
@@ -153,6 +162,14 @@ describe('MintService', () => {
             expect(quote.total).toBe('0.75');
         });
 
+        it('quotes a configured free drop that never closes', async () => {
+            const quote = await makeService(new MintWallet(FREE_OPEN_ENDED_DROP)).quote({ quantity: '2' });
+
+            expect(quote.mintPrice).toBe('0');
+            expect(quote.total).toBe('0');
+            expect(quote.maxTotalMintableByWallet).toBe(5);
+        });
+
         it('reads the drop terms from SeaDrop on every quote', async () => {
             const wallet = new MintWallet();
             await makeService(wallet).quote({ quantity: '1' });
@@ -205,6 +222,19 @@ describe('MintService', () => {
             expect(decoded.args).toEqual([LAND, FEE_RECIPIENT, zeroAddress, 2n]);
         });
 
+        it('mints a configured free drop that never closes', async () => {
+            const wallet = new MintWallet(FREE_OPEN_ENDED_DROP);
+            const result = await makeService(wallet).mint({ quantity: '2' });
+
+            expect(wallet.sent).toHaveLength(1);
+            expect(wallet.sent[0]?.value).toBe(0n);
+            expect(result.total).toBe('0');
+
+            const decoded = decodeFunctionData({ abi: SEADROP_ABI, data: wallet.sent[0]?.data as Hex });
+            expect(decoded.functionName).toBe('mintPublic');
+            expect(decoded.args).toEqual([LAND, FEE_RECIPIENT, zeroAddress, 2n]);
+        });
+
         it('throws when the on-chain mint reverts', async () => {
             const wallet = new MintWallet(ACTIVE_DROP, [FEE_RECIPIENT], [TxStatus.Reverted]);
             await expect(makeService(wallet).mint({ quantity: '1' })).rejects.toThrow(/reverted/i);
@@ -244,9 +274,11 @@ describe('MintService', () => {
             expect(wallet.sent).toHaveLength(0);
         });
 
-        it('throws when no public drop is configured', async () => {
-            const wallet = new MintWallet(NO_DROP);
-            await expect(makeService(wallet).quote({ quantity: '1' })).rejects.toThrow(/no active land public drop/i);
+        it('refuses a drop the land contract never configured', async () => {
+            const wallet = new MintWallet(UNCONFIGURED_DROP);
+            await expect(makeService(wallet).quote({ quantity: '1' })).rejects.toThrow(/per-wallet mint limit of 0/i);
+            await expect(makeService(wallet).mint({ quantity: '1' })).rejects.toThrow(/per-wallet mint limit of 0/i);
+            expect(wallet.sent).toHaveLength(0);
         });
 
         it('throws when the drop has no allowed fee recipient', async () => {
