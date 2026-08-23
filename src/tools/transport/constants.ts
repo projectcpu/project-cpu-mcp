@@ -31,8 +31,10 @@ export const ROUTE_NETWORK_DESCRIPTION = [
 
 export const NEXT_HOPS_DESCRIPTION = [
     'Survey the legal next waypoints from a cell (read-only). Lists every eligible waypoint — your revealed cells',
-    'and every finished Hub — within one hop under the reach rule: hop ≤ radius(from)+radius(to)−1 grid steps',
-    '(default balance: own↔own 1 = adjacent only, own↔hub 3, hub↔hub 5). A Hub counts only once its construction',
+    'and every finished Hub — within one hop under the reach rule: hop ≤ radius(from)+radius(to)−1 grid steps.',
+    'Radius is per cell, never global: a plain cell carries the move radius and each finished Hub tier carries',
+    'the radius its own catalog row serves, so `reach` on the origin and on every candidate is what you add up.',
+    'A Hub counts only once its construction',
     'finishes: until then it grants no hub reach and charges no fee, and a foreign one is no waypoint at all —',
     '`fromReady` says whether your own origin is still building, which is why its reach may be smaller than you',
     'expect. Foreign cells are never waypoints, so even a',

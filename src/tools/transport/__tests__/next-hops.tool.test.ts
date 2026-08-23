@@ -37,6 +37,7 @@ function hop(overrides: Partial<NextHopView> = {}): NextHopView {
         isHub: false,
         ready: null,
         owner: '0xowner',
+        radius: 1,
         transitFeePerUnit: null,
         distanceToTarget: null,
         ...overrides,
@@ -48,9 +49,10 @@ function nextHopsResult(overrides: Partial<NextHopsResult> = {}): NextHopsResult
         from: '72',
         fromIsHub: false,
         fromReady: null,
+        fromRadius: 1,
         towards: null,
         targetDistance: null,
-        reach: { moveRadius: 1, hubRadius: 3 },
+        reach: { moveRadius: 1 },
         hops: [hop()],
         note: NOTE,
         ...overrides,
@@ -87,5 +89,28 @@ describe('next_hops origin note', () => {
         const text = await summaryOf(nextHopsResult({ fromReady: false, hops: [] }));
         expect(text).toContain('No eligible waypoints within reach of 72');
         expect(text).toContain('your reach from here is normal cell reach');
+    });
+});
+
+describe('next_hops reach reporting', () => {
+    it('names the origin reach instead of one universal hub radius', async () => {
+        const text = await summaryOf(nextHopsResult({ fromIsHub: true, fromRadius: 8, fromReady: true }));
+
+        expect(text).toContain('reach 8');
+        expect(text).not.toMatch(/hubRadius/);
+    });
+
+    it('reports each candidate with the radius that candidate itself carries', async () => {
+        const text = await summaryOf(
+            nextHopsResult({
+                hops: [
+                    hop({ tokenId: '81', isOwn: false, isHub: true, radius: 5, hopDistance: 5 }),
+                    hop({ tokenId: '82', isOwn: false, isHub: true, radius: 13, hopDistance: 13 }),
+                ],
+            }),
+        );
+
+        expect(text).toContain('81 (hub, reach 5, 5 step hop');
+        expect(text).toContain('82 (hub, reach 13, 13 step hop');
     });
 });

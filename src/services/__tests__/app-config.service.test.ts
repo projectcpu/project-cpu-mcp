@@ -56,6 +56,7 @@ function makeResponse(overrides: Partial<AppConfigFixture> = {}): AppConfigFixtu
                 name: 'Mine',
                 kind: BuildingKind.Extractor,
                 tier: 1,
+                radius: 0,
                 buildCost: '5',
                 buildTimeSec: 120,
                 buildInputs: [],
@@ -527,5 +528,60 @@ describe('AppConfigService load() racing a concurrent replace()', () => {
 
         expect(await pending).toBe(freshConfig);
         expect(await service.load()).toBe(freshConfig);
+    });
+});
+
+describe('AppConfigService building radius', () => {
+    function servedWith(row: Record<string, unknown>): AppConfigFixture {
+        const base = makeResponse();
+        const [mine] = base.buildings;
+        return { ...base, buildings: [{ ...(mine as BuildingView), ...row }] } as AppConfigFixture;
+    }
+
+    async function loadServed(row: Record<string, unknown>): Promise<AppConfig> {
+        return makeService(new FakeApi({ status: 200, data: servedWith(row) })).load();
+    }
+
+    it('reads the routing radius the catalog serves for each building', async () => {
+        const config = await loadServed({ kind: BuildingKind.Hub, radius: 5 });
+
+        expect(config.buildings[0]?.radius).toBe(5);
+    });
+
+    it('keeps the served radius of every hub tier apart instead of collapsing them into one reach', async () => {
+        const base = makeResponse();
+        const [mine] = base.buildings;
+        const ladder = [
+            { type: BuildingType.Hub, onChainId: 23, kind: BuildingKind.Hub, radius: 5 },
+            { type: 'hub_l2a', onChainId: 96, kind: BuildingKind.Hub, radius: 8 },
+            { type: 'hub_l3a', onChainId: 97, kind: BuildingKind.Hub, radius: 13 },
+        ].map((row) => ({ ...(mine as BuildingView), ...row }));
+
+        const config = await makeService(new FakeApi({ status: 200, data: { ...base, buildings: ladder } })).load();
+
+        expect(config.buildings.map((b) => b.radius)).toEqual([5, 8, 13]);
+    });
+
+    it('preserves a zero radius on a building that does not route', async () => {
+        const config = await loadServed({ radius: 0 });
+
+        expect(config.buildings[0]?.radius).toBe(0);
+    });
+
+    it('fails loudly when a catalog row serves no radius at all instead of defaulting one', async () => {
+        const base = makeResponse();
+        const [mine] = base.buildings;
+        const { radius: _dropped, ...withoutRadius } = mine as BuildingView;
+
+        await expect(
+            makeService(new FakeApi({ status: 200, data: { ...base, buildings: [withoutRadius] } })).load(),
+        ).rejects.toThrow(/radius/i);
+    });
+
+    it('rejects a malformed radius rather than falling back to a default reach', async () => {
+        await expect(loadServed({ radius: '5' })).rejects.toThrow(/radius/i);
+        await expect(loadServed({ radius: 2.5 })).rejects.toThrow(/radius/i);
+        await expect(loadServed({ radius: -1 })).rejects.toThrow(/radius/i);
+        await expect(loadServed({ radius: null })).rejects.toThrow(/radius/i);
     });
 });

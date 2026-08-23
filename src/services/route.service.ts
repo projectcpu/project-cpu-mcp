@@ -2,9 +2,13 @@ import { DISTANCE_SCAN_CAP, NEXT_HOPS_NOTE, ROUTE_NETWORK_NOTE } from './route.c
 import {
     componentLabels,
     distancesFrom,
+    effectiveNodeRadius,
+    maxNodeRadius,
     networkEdges,
+    radiusPolicy,
     reachableWaypoints,
     waypointTransitFee,
+    type RadiusPolicy,
     type RouteNode,
 } from './route.utils.js';
 import type {
@@ -51,23 +55,15 @@ export class RouteService {
         this.assertTransportable(input.resourceId, routing.moveFeeFloors);
         const address = this.wallet.get().getAddress().toLowerCase();
 
-        const nodes = new Map<string, RouteNode>();
+        const policy = radiusPolicy(routing, config.buildings);
         const cellsByToken = new Map<string, Cell>();
-        for (const cell of await this.mapReader.allCells()) {
-            cellsByToken.set(cell.tokenId, cell);
-            const isOwn = cell.owner.toLowerCase() === address;
-            const isHub = cell.activeHub;
-            if (cell.revealCount === 0 || (!isOwn && !isHub)) {
-                continue;
-            }
-            nodes.set(cell.tokenId, { tokenId: cell.tokenId, isOwn, isHub });
-        }
+        const nodes = this.projectNodes(await this.mapReader.allCells(), cellsByToken, address, policy);
 
         this.assertEligible(from, nodes, cellsByToken, config);
         const fromNode = nodes.get(from) as RouteNode;
         const fromCell = cellsByToken.get(from) as Cell;
 
-        const reachable = reachableWaypoints(fromNode, nodes, routing.moveRadius, routing.hubRadius);
+        const reachable = reachableWaypoints(fromNode, nodes, maxNodeRadius(nodes));
 
         let targetDistance: number | null = null;
         const toTarget = new Map<number, number>();
@@ -89,6 +85,7 @@ export class RouteService {
                 isHub: node.isHub,
                 ready: cell.ready,
                 owner: cell.owner,
+                radius: node.radius,
                 transitFeePerUnit: waypointTransitFee(
                     node,
                     cell.transitFeeOverrides,
@@ -110,9 +107,10 @@ export class RouteService {
             from,
             fromIsHub: fromNode.isHub,
             fromReady: fromCell.ready,
+            fromRadius: fromNode.radius,
             towards,
             targetDistance,
-            reach: { moveRadius: routing.moveRadius, hubRadius: routing.hubRadius },
+            reach: { moveRadius: routing.moveRadius },
             hops,
             note: NEXT_HOPS_NOTE,
         };
@@ -127,19 +125,11 @@ export class RouteService {
         this.assertTransportable(input.resourceId, routing.moveFeeFloors);
         const address = this.wallet.get().getAddress().toLowerCase();
 
-        const nodes = new Map<string, RouteNode>();
+        const policy = radiusPolicy(routing, config.buildings);
         const cellsByToken = new Map<string, Cell>();
-        for (const cell of await this.mapReader.allCells()) {
-            cellsByToken.set(cell.tokenId, cell);
-            const isOwn = cell.owner.toLowerCase() === address;
-            const isHub = cell.activeHub;
-            if (cell.revealCount === 0 || (!isOwn && !isHub)) {
-                continue;
-            }
-            nodes.set(cell.tokenId, { tokenId: cell.tokenId, isOwn, isHub });
-        }
+        const nodes = this.projectNodes(await this.mapReader.allCells(), cellsByToken, address, policy);
 
-        const edges = networkEdges(nodes, routing.moveRadius, routing.hubRadius);
+        const edges = networkEdges(nodes);
         const components = componentLabels(nodes, edges);
 
         const nodeTokens = new Set<number>([...nodes.keys()].map(Number));
@@ -192,6 +182,30 @@ export class RouteService {
             components: result.components,
         });
         return result;
+    }
+
+    private projectNodes(
+        cells: Array<Cell>,
+        cellsByToken: Map<string, Cell>,
+        address: string,
+        policy: RadiusPolicy,
+    ): Map<string, RouteNode> {
+        const nodes = new Map<string, RouteNode>();
+        for (const cell of cells) {
+            cellsByToken.set(cell.tokenId, cell);
+            const isOwn = cell.owner.toLowerCase() === address;
+            const isHub = cell.activeHub;
+            if (cell.revealCount === 0 || (!isOwn && !isHub)) {
+                continue;
+            }
+            nodes.set(cell.tokenId, {
+                tokenId: cell.tokenId,
+                isOwn,
+                isHub,
+                radius: effectiveNodeRadius(cell, policy),
+            });
+        }
+        return nodes;
     }
 
     private assertTransportable(resourceId: number, floors: Record<number, string>): void {

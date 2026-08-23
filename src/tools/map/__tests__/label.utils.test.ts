@@ -11,6 +11,7 @@ const UPGRADED_CRAFTER = 'oil_power_plant_l2a';
 const catalogEntry: CatalogBuildingView = {
     type: UPGRADED_CRAFTER as CatalogBuildingView['type'],
     onChainId: 47,
+    radius: 0,
     name: 'Oil Power Plant L2A',
     kind: BuildingKind.Crafter,
     tier: 2,

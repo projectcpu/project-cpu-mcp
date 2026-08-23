@@ -65,6 +65,7 @@ const CONFIG: AppConfig = {
         {
             type: BuildingType.Mine,
             onChainId: 4,
+            radius: 0,
             name: 'Mine',
             kind: BuildingKind.Extractor,
             tier: 1,
@@ -87,6 +88,7 @@ const CONFIG: AppConfig = {
         {
             type: BuildingType.SteelMill,
             onChainId: 11,
+            radius: 0,
             name: 'Steel Mill',
             kind: BuildingKind.Crafter,
             tier: 2,
@@ -109,6 +111,7 @@ const CONFIG: AppConfig = {
         {
             type: 'mine_branch_a_l2' as BuildingType,
             onChainId: 46,
+            radius: 0,
             name: 'Mine Branch A L2',
             kind: BuildingKind.Extractor,
             tier: 2,

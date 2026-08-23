@@ -35,6 +35,7 @@ interface ToolResult {
 const MINE: CatalogBuildingView = {
     type: BuildingType.Mine,
     onChainId: 4,
+    radius: 0,
     name: 'Mine',
     kind: BuildingKind.Extractor,
     tier: 1,
@@ -59,6 +60,7 @@ const MINE_L2: CatalogBuildingView = {
     ...MINE,
     type: 'mine_l2' as BuildingType,
     onChainId: 46,
+    radius: 0,
     name: 'Deep Mine',
     tier: 2,
     buildCost: '15',
@@ -73,6 +75,7 @@ const MINE_L2: CatalogBuildingView = {
 const STEEL_MILL: CatalogBuildingView = {
     type: BuildingType.SteelMill,
     onChainId: 11,
+    radius: 0,
     name: 'Steel Mill',
     kind: BuildingKind.Crafter,
     tier: 2,
@@ -97,6 +100,7 @@ const HUB: CatalogBuildingView = {
     ...MINE,
     type: BuildingType.Hub,
     onChainId: 22,
+    radius: 0,
     name: 'Hub',
     kind: BuildingKind.Hub,
     tier: 1,
