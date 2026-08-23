@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_SERVER_TIME, FakeAppConfig, makeConfig, WALLET_ADDRESS } from './service-fakes.js';
 import { BuildingKind, BuildingType, type TransportRoutingView } from '../../api/types.js';
@@ -106,6 +108,12 @@ function hubLadder(base: Array<CatalogBuildingView>): Array<CatalogBuildingView>
 
 const SNAPSHOT_VERSION = 4242;
 
+let artifactDirectory = '';
+
+beforeEach(() => {
+    artifactDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'project-cpu-mcp-test-'));
+});
+
 function makeService(
     cells: Array<RawCell>,
     moveFeeFloors: Record<number, string> = DEFAULT_FLOORS,
@@ -133,6 +141,7 @@ function makeService(
             }),
         },
         logger: new NoopLogger(),
+        artifactDirectory,
     });
 }
 
@@ -153,11 +162,7 @@ function exportInput(over: Partial<RouteNetworkInput> = {}): RouteNetworkInput {
     return { from: ORIGIN, towards: Number(at(2)), resourceId: RES, amount: AMOUNT, ...over };
 }
 
-const written: Array<string> = [];
-
-/** Reads back the graph the export wrote, and marks the file for removal once the test is done with it. */
 function graphOf(result: RouteNetworkResult): RouteGraphArtifact {
-    written.push(result.artifactPath);
     return JSON.parse(fs.readFileSync(result.artifactPath, 'utf8')) as RouteGraphArtifact;
 }
 
@@ -171,10 +176,7 @@ function edgeOf(graph: RouteGraphArtifact, a: string, b: string): boolean {
 }
 
 afterEach(() => {
-    for (const file of written) {
-        fs.rmSync(file, { force: true });
-    }
-    written.length = 0;
+    fs.rmSync(artifactDirectory, { recursive: true, force: true });
 });
 
 describe('RouteService.nextHops', () => {

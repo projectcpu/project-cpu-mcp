@@ -705,6 +705,7 @@ export interface RouteServiceOptions {
     appConfig: IAppConfig;
     mapReader: RouteCellReader;
     logger: ILogger;
+    artifactDirectory: string | null;
 }
 
 export interface NextHopsInput {

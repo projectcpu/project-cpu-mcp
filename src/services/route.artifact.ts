@@ -11,8 +11,12 @@ function artifactName(): string {
     return `${ROUTE_GRAPH_FILE_PREFIX}${randomUUID()}${ROUTE_GRAPH_FILE_EXTENSION}`;
 }
 
-export async function writeRouteGraph(artifact: RouteGraphArtifact): Promise<string> {
-    const target = path.join(os.tmpdir(), artifactName());
+export function defaultRouteGraphDirectory(): string {
+    return os.tmpdir();
+}
+
+export async function writeRouteGraph(artifact: RouteGraphArtifact, directory: string): Promise<string> {
+    const target = path.join(directory, artifactName());
     await writeFile(target, JSON.stringify(artifact), { encoding: 'utf8', flag: 'wx' });
     return target;
 }

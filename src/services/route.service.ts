@@ -1,4 +1,4 @@
-import { writeRouteGraph } from './route.artifact.js';
+import { defaultRouteGraphDirectory, writeRouteGraph } from './route.artifact.js';
 import {
     DISTANCE_SCAN_CAP,
     NEXT_HOPS_NOTE,
@@ -50,12 +50,14 @@ export class RouteService {
     private readonly appConfig: IAppConfig;
     private readonly mapReader: RouteCellReader;
     private readonly logger: ILogger;
+    private readonly artifactDirectory: string;
 
     constructor(options: RouteServiceOptions) {
         this.wallet = options.wallet;
         this.appConfig = options.appConfig;
         this.mapReader = options.mapReader;
         this.logger = options.logger;
+        this.artifactDirectory = options.artifactDirectory ?? defaultRouteGraphDirectory();
     }
 
     async nextHops(input: NextHopsInput): Promise<NextHopsResult> {
@@ -188,7 +190,7 @@ export class RouteService {
             }),
             edges: graph.edges,
         };
-        const artifactPath = await writeRouteGraph(artifact);
+        const artifactPath = await writeRouteGraph(artifact, this.artifactDirectory);
 
         this.logger.info('exported route graph', {
             version: snapshot.version,

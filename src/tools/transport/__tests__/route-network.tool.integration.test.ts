@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { BuildingKind, BuildingType, type TransportRoutingView } from '../../../api/types.js';
@@ -130,6 +130,7 @@ function makeService(
     floors: Record<number, string> = FLOORS,
     transport: Partial<TransportRoutingView> = {},
     complete = true,
+    directory: string | null = artifactDirectory,
 ): RouteService {
     const wallet = { get: () => ({ getAddress: () => WALLET_ADDRESS }) } as unknown as WalletProvider;
     const catalog = makeConfig();
@@ -151,6 +152,7 @@ function makeService(
             }),
         },
         logger: new NoopLogger(),
+        artifactDirectory: directory,
     });
 }
 
@@ -195,12 +197,14 @@ function exportGraph(
     });
 }
 
-const written: Array<string> = [];
+let artifactDirectory = '';
+
+beforeEach(() => {
+    artifactDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'project-cpu-mcp-test-'));
+});
 
 function descriptorOf(result: ToolResult): RouteNetworkResult {
-    const descriptor = JSON.parse(result.content[1]?.text ?? '') as RouteNetworkResult;
-    written.push(descriptor.artifactPath);
-    return descriptor;
+    return JSON.parse(result.content[1]?.text ?? '') as RouteNetworkResult;
 }
 
 function artifactOf(descriptor: RouteNetworkResult): RouteGraphArtifact {
@@ -225,10 +229,7 @@ function instructionsText(descriptor: RouteNetworkResult): string {
 }
 
 afterEach(() => {
-    for (const file of written) {
-        fs.rmSync(file, { force: true });
-    }
-    written.length = 0;
+    fs.rmSync(artifactDirectory, { recursive: true, force: true });
 });
 
 describe('cpu_route_network request', () => {
@@ -259,7 +260,6 @@ describe('cpu_route_network request', () => {
             makeCell({ tokenId: foreign, owner: RIVAL, revealCount: 1 }),
             own(unrevealed, { revealCount: 0 }),
         );
-        const before = fs.readdirSync(os.tmpdir()).length;
 
         await expect(exportGraph(cells, { towards: ORIGIN })).rejects.toThrow(/must be different/);
         await expect(exportGraph(cells, { resourceId: 999 })).rejects.toThrow(/does not exist or is not transportable/);
@@ -268,7 +268,7 @@ describe('cpu_route_network request', () => {
         await expect(exportGraph(cells, { from: Number(unrevealed) })).rejects.toThrow(/no completed reveal/);
         await expect(exportGraph(cells, { towards: Number(unrevealed) })).rejects.toThrow(/no completed reveal/);
 
-        expect(fs.readdirSync(os.tmpdir()).length).toBe(before);
+        expect(fs.readdirSync(artifactDirectory)).toEqual([]);
     });
 
     it('refuses to export before the whole map snapshot has loaded', async () => {
@@ -430,19 +430,32 @@ describe('cpu_route_network artifact', () => {
         expect(artifact.nodes).toHaveLength(MAX_TOKEN_ID - wall.length);
     });
 
-    it('writes each invocation to its own server-chosen unique filename in the operating system temporary directory', async () => {
+    it('writes each invocation to its own server-chosen unique filename in the directory it was given', async () => {
         const cells = cellsFor();
 
         const first = descriptorOf(await exportGraph(cells));
         const second = descriptorOf(await exportGraph(cells));
 
-        expect(path.dirname(first.artifactPath)).toBe(os.tmpdir());
-        expect(path.dirname(second.artifactPath)).toBe(os.tmpdir());
+        expect(path.dirname(first.artifactPath)).toBe(artifactDirectory);
+        expect(path.dirname(second.artifactPath)).toBe(artifactDirectory);
         expect(first.artifactPath).not.toBe(second.artifactPath);
         expect(path.basename(first.artifactPath)).toMatch(/^[\w-]+\.json$/);
         expect(fs.existsSync(first.artifactPath)).toBe(true);
         expect(fs.existsSync(second.artifactPath)).toBe(true);
         expect(Object.keys(routeNetworkInputSchema)).not.toContain('path');
+    });
+
+    it('falls back to the operating system temporary directory when no directory is configured', async () => {
+        const cells = cellsFor();
+        const service = makeService(cells, FLOORS, {}, true, null);
+
+        const descriptor = descriptorOf(await exportGraph(cells, {}, service));
+
+        try {
+            expect(path.dirname(descriptor.artifactPath)).toBe(os.tmpdir());
+        } finally {
+            fs.rmSync(descriptor.artifactPath, { force: true });
+        }
     });
 });
 
