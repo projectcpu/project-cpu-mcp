@@ -256,6 +256,16 @@ export interface MapStatus {
     resyncNow(): Promise<void>;
 }
 
+/**
+ * One atomic projection for routing: the cells, whether the full map bootstrap has finished, and the version
+ * that produced them. Read together so a row missing from a half-loaded map can never pass as open ground.
+ */
+export interface RoutingSnapshot {
+    cells: Array<Cell>;
+    complete: boolean;
+    version: number;
+}
+
 export interface RevealCellReader {
     readRevealCell(tokenId: string): Promise<Cell | null>;
     // The map snapshot's server clock — the reference "now" for maturation, same domain as a process `startAt`.

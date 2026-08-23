@@ -20,7 +20,7 @@ import type {
 import type { Network } from '../config/types.js';
 import type { CellCoord } from '../geometry/types.js';
 import type { ILogger } from '../logger/types.js';
-import type { Cell, RevealCellReader } from '../map/types.js';
+import type { RevealCellReader, RoutingSnapshot } from '../map/types.js';
 import type {
     IFulfilmentClaims,
     IRandomnessStrategyFactory,
@@ -697,7 +697,7 @@ export interface FinalizeResult {
 // ---- Route survey ----
 
 export interface RouteCellReader {
-    allCells(): Promise<Array<Cell>>;
+    routingSnapshot(): Promise<RoutingSnapshot>;
 }
 
 export interface RouteServiceOptions {
@@ -719,8 +719,11 @@ export interface NextHopView {
     hopDistance: number;
     isOwn: boolean;
     isHub: boolean;
+    /** Open ground: no completed reveal, so nobody controls it and anyone's cargo may pass through. */
+    isVirgin: boolean;
     ready: boolean | null;
-    owner: string;
+    /** null on ground nobody has minted yet. */
+    owner: string | null;
     /** Reach this waypoint contributes in grid steps: its Ready hub's own radius, or the move radius. */
     radius: number;
     transitFeePerUnit: string | null;
@@ -730,6 +733,7 @@ export interface NextHopView {
 export interface NextHopsResult {
     from: string;
     fromIsHub: boolean;
+    fromIsVirgin: boolean;
     fromReady: boolean | null;
     /** Reach the origin contributes in grid steps — a hop is legal up to `fromRadius + radius - 1`. */
     fromRadius: number;

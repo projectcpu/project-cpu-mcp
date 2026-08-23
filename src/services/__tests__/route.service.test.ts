@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SERVER_TIME, FakeAppConfig, makeConfig, WALLET_ADDRESS } from './service-fakes.js';
 import { BuildingKind, BuildingType, type TransportRoutingView } from '../../api/types.js';
 import { neighbors } from '../../geometry/adjacency.js';
+import { MAX_TOKEN_ID } from '../../geometry/constants.js';
 import { kRing } from '../../geometry/graph.utils.js';
 import { tokenIdToPos } from '../../geometry/token.utils.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
@@ -13,7 +14,7 @@ import type { RawCell } from '../../map/types.js';
 import { formatUnixSeconds } from '../../utils/format.utils.js';
 import type { WalletProvider } from '../../wallet/types.js';
 import { RouteService } from '../route.service.js';
-import type { CatalogBuildingView, NetworkEdgeView } from '../types.js';
+import type { CatalogBuildingView, NetworkEdgeView, NextHopsResult, NextHopView } from '../types.js';
 
 const RIVAL = '0x000000000000000000000000000000000000beef';
 const RES = 3;
@@ -92,10 +93,13 @@ function hubLadder(base: Array<CatalogBuildingView>): Array<CatalogBuildingView>
     ];
 }
 
+const SNAPSHOT_VERSION = 4242;
+
 function makeService(
     cells: Array<RawCell>,
     moveFeeFloors: Record<number, string> = DEFAULT_FLOORS,
     transport: Partial<TransportRoutingView> = {},
+    complete = true,
 ): RouteService {
     const wallet = { get: () => ({ getAddress: () => WALLET_ADDRESS }) } as unknown as WalletProvider;
     const base = makeConfig();
@@ -108,13 +112,28 @@ function makeService(
     return new RouteService({
         wallet,
         appConfig: new FakeAppConfig(config),
-        mapReader: { allCells: async () => cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)) },
+        mapReader: {
+            routingSnapshot: async () => ({
+                cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
+                complete,
+                version: SNAPSHOT_VERSION,
+            }),
+        },
         logger: new NoopLogger(),
     });
 }
 
 function survey(cells: Array<RawCell>, from: number, towards: number | null = null, resourceId = RES) {
     return makeService(cells).nextHops({ from, towards, resourceId });
+}
+
+/** Token ids of the candidates that are not open Virgin ground — the cells an assertion names one by one. */
+function settled(result: NextHopsResult): Array<string> {
+    return result.hops.filter((hop) => !hop.isVirgin).map((hop) => hop.tokenId);
+}
+
+function hopFor(result: NextHopsResult, tokenId: string): NextHopView | null {
+    return result.hops.find((hop) => hop.tokenId === tokenId) ?? null;
 }
 
 function edgeKeys(edges: Array<NetworkEdgeView>): Array<string> {
@@ -138,15 +157,15 @@ describe('RouteService.nextHops', () => {
         expect(result.fromIsHub).toBe(false);
         expect(result.fromRadius).toBe(1);
         expect(result.reach).toEqual({ moveRadius: 1 });
-        expect(result.hops.map((h) => h.tokenId)).toEqual([neighbour, hubCell]);
-        expect(result.hops[0]).toMatchObject({
+        expect(settled(result)).toEqual([neighbour, hubCell]);
+        expect(hopFor(result, neighbour)).toMatchObject({
             tokenId: neighbour,
             hopDistance: 1,
             isOwn: true,
             radius: 1,
             transitFeePerUnit: null,
         });
-        expect(result.hops[1]).toMatchObject({
+        expect(hopFor(result, hubCell)).toMatchObject({
             tokenId: hubCell,
             hopDistance: BASE_HUB_RADIUS,
             isHub: true,
@@ -154,7 +173,7 @@ describe('RouteService.nextHops', () => {
             owner: RIVAL,
             transitFeePerUnit: '0.5',
         });
-        expect(result.hops[1]?.pos).toEqual(tokenIdToPos(hubCell));
+        expect(hopFor(result, hubCell)?.pos).toEqual(tokenIdToPos(hubCell));
     });
 
     it('resolves the transit fee for the requested resource: override for it, its floor otherwise', async () => {
@@ -192,11 +211,11 @@ describe('RouteService.nextHops', () => {
         expect([...remaining].sort((a, b) => a - b)).toEqual(remaining);
     });
 
-    it('returns an empty list when nothing is within reach — the agent decides what to do', async () => {
+    it('returns no settled waypoint when nothing is within reach — the agent decides what to do', async () => {
         const target = farAway();
         const result = await survey([own(String(ORIGIN)), own(target)], ORIGIN, Number(target));
 
-        expect(result.hops).toEqual([]);
+        expect(settled(result)).toEqual([]);
         expect(result.targetDistance).toBe(gridDistance(String(ORIGIN), target));
     });
 
@@ -210,8 +229,9 @@ describe('RouteService.nextHops', () => {
         expect(result.fromIsHub).toBe(true);
         expect(result.fromReady).toBe(true);
         expect(result.fromRadius).toBe(BASE_HUB_RADIUS);
-        expect(result.hops.map((h) => h.tokenId)).toEqual([inReach]);
-        expect(result.hops[0]?.hopDistance).toBe(BASE_HUB_RADIUS);
+        expect(settled(result)).toEqual([inReach]);
+        expect(hopFor(result, inReach)?.hopDistance).toBe(BASE_HUB_RADIUS);
+        expect(result.hops.map((h) => h.tokenId)).not.toContain(outOfReach);
     });
 
     it('reaches a ready hub upgrade with the radius that upgrade carries, not the base hub radius', async () => {
@@ -222,15 +242,15 @@ describe('RouteService.nextHops', () => {
         const withUpgrade = await survey([own(String(ORIGIN)), upgraded], ORIGIN);
         const withBase = await survey([own(String(ORIGIN)), base], ORIGIN);
 
-        expect(withUpgrade.hops.map((h) => h.tokenId)).toEqual([beyondBase]);
-        expect(withUpgrade.hops[0]).toMatchObject({
+        expect(settled(withUpgrade)).toEqual([beyondBase]);
+        expect(hopFor(withUpgrade, beyondBase)).toMatchObject({
             hopDistance: MID_HUB_RADIUS,
             radius: MID_HUB_RADIUS,
             isHub: true,
             ready: true,
             transitFeePerUnit: '0.5',
         });
-        expect(withBase.hops).toEqual([]);
+        expect(settled(withBase)).toEqual([]);
     });
 
     it('keeps every rung of the hub ladder apart instead of granting one shared hub reach', async () => {
@@ -239,8 +259,9 @@ describe('RouteService.nextHops', () => {
         const top = await survey([own(String(ORIGIN)), foreignHub(topOnly, '0.5', TOP_HUB)], ORIGIN);
         const mid = await survey([own(String(ORIGIN)), foreignHub(topOnly, '0.5', MID_HUB)], ORIGIN);
 
-        expect(top.hops.map((h) => h.radius)).toEqual([TOP_HUB_RADIUS]);
-        expect(mid.hops).toEqual([]);
+        expect(settled(top)).toEqual([topOnly]);
+        expect(hopFor(top, topOnly)?.radius).toBe(TOP_HUB_RADIUS);
+        expect(settled(mid)).toEqual([]);
     });
 
     it('holds the two-endpoint reach rule exactly at the limit and one step beyond it', async () => {
@@ -251,8 +272,9 @@ describe('RouteService.nextHops', () => {
 
         const result = await survey([origin, foreignHub(atLimit, '0.5'), foreignHub(beyondLimit, '0.5')], ORIGIN);
 
-        expect(result.hops.map((h) => h.tokenId)).toEqual([atLimit]);
-        expect(result.hops[0]?.hopDistance).toBe(limit);
+        expect(settled(result)).toEqual([atLimit]);
+        expect(hopFor(result, atLimit)?.hopDistance).toBe(limit);
+        expect(result.hops.map((h) => h.tokenId)).not.toContain(beyondLimit);
     });
 
     it('follows a move radius that is not the launch value', async () => {
@@ -266,7 +288,8 @@ describe('RouteService.nextHops', () => {
 
         expect(result.fromRadius).toBe(2);
         expect(result.reach).toEqual({ moveRadius: 2 });
-        expect(result.hops.map((h) => h.tokenId)).toEqual([at(3)]);
+        expect(settled(result)).toEqual([at(3)]);
+        expect(result.hops.map((h) => h.tokenId)).not.toContain(at(4));
     });
 
     it('saturates a zero move radius at no reach while a hub still reaches out of it', async () => {
@@ -290,7 +313,7 @@ describe('RouteService.nextHops', () => {
 
         const result = await survey([own(String(ORIGIN)), unfinished], ORIGIN);
 
-        expect(result.hops).toEqual([]);
+        expect(settled(result)).toEqual([]);
     });
 
     it('denies a hub upgrade under construction both its reach and its fee until it is ready', async () => {
@@ -298,13 +321,14 @@ describe('RouteService.nextHops', () => {
         const goingUp = own(spot, { ...withBuilding(MID_HUB, UNFINISHED_AT), transitFeeOverrides: { [RES]: '0.5' } });
 
         const unfinished = await survey([own(String(ORIGIN)), goingUp], ORIGIN);
-        expect(unfinished.hops).toEqual([]);
+        expect(settled(unfinished)).toEqual([]);
 
         const finished = await survey(
             [own(String(ORIGIN)), own(spot, { ...withBuilding(MID_HUB), transitFeeOverrides: { [RES]: '0.5' } })],
             ORIGIN,
         );
-        expect(finished.hops.map((h) => h.radius)).toEqual([MID_HUB_RADIUS]);
+        expect(settled(finished)).toEqual([spot]);
+        expect(hopFor(finished, spot)?.radius).toBe(MID_HUB_RADIUS);
     });
 
     it('keeps an owned cell whose hub is still going up as an origin, with normal reach and no hub bonus', async () => {
@@ -320,7 +344,7 @@ describe('RouteService.nextHops', () => {
         expect(result.fromIsHub).toBe(false);
         expect(result.fromReady).toBe(false);
         expect(result.fromRadius).toBe(1);
-        expect(result.hops.map((h) => h.tokenId)).toEqual([neighbour]);
+        expect(settled(result)).toEqual([neighbour]);
     });
 
     it('states the reach rule as the two-endpoint sum instead of one universal hub reach', async () => {
@@ -334,7 +358,7 @@ describe('RouteService.nextHops', () => {
         const result = await survey([own(String(ORIGIN)), own(at(1))], ORIGIN);
 
         expect(result.fromReady).toBeNull();
-        expect(result.hops[0]?.ready).toBeNull();
+        expect(hopFor(result, at(1))?.ready).toBeNull();
     });
 
     it('rejects routing from a hub still under construction, naming when it will be ready', async () => {
@@ -347,7 +371,7 @@ describe('RouteService.nextHops', () => {
         );
     });
 
-    it('rejects ineligible or unknown origins with specific errors', async () => {
+    it('rejects ineligible origins and token ids outside the world with specific errors', async () => {
         const foreign = at(1);
         const unrevealed = at(2);
         const cells = [
@@ -356,10 +380,138 @@ describe('RouteService.nextHops', () => {
             own(unrevealed, { revealCount: 0 }),
         ];
 
-        await expect(survey(cells, Number(farAway()))).rejects.toThrow(/not in the current map/);
+        await expect(survey(cells, MAX_TOKEN_ID + 1)).rejects.toThrow(/tokenId must be an integer/);
         await expect(survey(cells, Number(foreign))).rejects.toThrow(/not an eligible waypoint/);
-        await expect(survey(cells, Number(unrevealed))).rejects.toThrow(/not revealed/);
         await expect(survey(cells, ORIGIN, ORIGIN)).rejects.toThrow(/must be different/);
+        await expect(survey(cells, Number(unrevealed))).resolves.toMatchObject({ fromIsVirgin: true });
+    });
+});
+
+describe('RouteService.nextHops over Virgin ground', () => {
+    it('refuses to route until the full map bootstrap is complete', async () => {
+        const loading = makeService([own(String(ORIGIN))], DEFAULT_FLOORS, {}, false);
+
+        await expect(loading.nextHops({ from: ORIGIN, towards: null, resourceId: RES })).rejects.toThrow(
+            /map bootstrap/,
+        );
+    });
+
+    it('refuses the same way on an incomplete snapshot before surveying the network', async () => {
+        const loading = makeService([own(String(ORIGIN))], DEFAULT_FLOORS, {}, false);
+
+        await expect(loading.network({ from: null, towards: null, resourceId: RES })).rejects.toThrow(/map bootstrap/);
+    });
+
+    it('treats a valid token id absent from a complete snapshot as unminted Virgin ground', async () => {
+        const result = await survey([own(String(ORIGIN))], ORIGIN);
+
+        expect(result.hops.map((h) => h.tokenId).sort()).toEqual(neighbors(ORIGIN).map(String).sort());
+        expect(hopFor(result, at(1))).toMatchObject({
+            isVirgin: true,
+            isOwn: false,
+            isHub: false,
+            owner: null,
+            ready: null,
+            radius: 1,
+            hopDistance: 1,
+            transitFeePerUnit: null,
+        });
+    });
+
+    it('keeps a minted cell with no completed reveal Virgin, a pending first reveal included', async () => {
+        const mine = at(1, 0);
+        const rivals = at(1, 1);
+        const cells = [
+            own(String(ORIGIN)),
+            own(mine, { revealCount: 0 }),
+            makeCell({ tokenId: rivals, owner: RIVAL, revealCount: 0, revealPending: true }),
+        ];
+
+        const result = await survey(cells, ORIGIN);
+
+        expect(hopFor(result, mine)).toMatchObject({ isVirgin: true, isOwn: true, owner: WALLET_ADDRESS });
+        expect(hopFor(result, rivals)).toMatchObject({ isVirgin: true, isOwn: false, owner: RIVAL });
+        expect(settled(result)).toEqual([]);
+    });
+
+    it('surveys from a Virgin cell, since goods can stand on open ground mid-route', async () => {
+        const standing = at(1);
+
+        const result = await survey([own(String(ORIGIN))], Number(standing));
+
+        expect(result.fromIsVirgin).toBe(true);
+        expect(result.fromRadius).toBe(1);
+        expect(settled(result)).toEqual([String(ORIGIN)]);
+    });
+
+    it('keeps own cells and foreign Active Hubs as Intermediate waypoints and drops a foreign revealed cell', async () => {
+        const mine = at(1, 0);
+        const controlled = at(1, 1);
+        const hubCell = at(BASE_HUB_RADIUS);
+        const cells = [
+            own(String(ORIGIN)),
+            own(mine),
+            makeCell({ tokenId: controlled, owner: RIVAL, revealCount: 1 }),
+            foreignHub(hubCell, '0.5'),
+        ];
+
+        const result = await survey(cells, ORIGIN);
+
+        expect(settled(result)).toEqual([mine, hubCell]);
+        expect(result.hops.map((h) => h.tokenId)).not.toContain(controlled);
+        expect(hopFor(result, hubCell)).toMatchObject({ isVirgin: false, isHub: true, transitFeePerUnit: '0.5' });
+    });
+
+    it('excludes a foreign Hub still under construction while the same finished Hub is a waypoint', async () => {
+        const spot = at(BASE_HUB_RADIUS + 1);
+        const origin = hub(String(ORIGIN), WALLET_ADDRESS, MID_HUB);
+
+        const finished = await survey([origin, foreignHub(spot, '0.5')], ORIGIN);
+        const goingUp = await survey(
+            [origin, foreignHub(spot, '0.5', BASE_HUB, withBuilding(BASE_HUB, UNFINISHED_AT))],
+            ORIGIN,
+        );
+
+        expect(settled(finished)).toEqual([spot]);
+        expect(goingUp.hops.map((h) => h.tokenId)).not.toContain(spot);
+    });
+
+    it('keeps an owned cell whose Hub is unfinished — under construction — on ordinary move reach', async () => {
+        const goingUp = at(1);
+        const cells = [
+            own(String(ORIGIN)),
+            own(goingUp, { ...withBuilding(MID_HUB, UNFINISHED_AT), transitFeeOverrides: { [RES]: '0.5' } }),
+        ];
+
+        const result = await survey(cells, ORIGIN);
+
+        expect(hopFor(result, goingUp)).toMatchObject({
+            isOwn: true,
+            isHub: false,
+            ready: false,
+            radius: 1,
+            transitFeePerUnit: null,
+        });
+    });
+
+    it('emits exactly the candidates waypoint membership admits, so hops cannot drift from the rules', async () => {
+        const controlled = at(3);
+        const cells = [
+            hub(String(ORIGIN), WALLET_ADDRESS, BASE_HUB),
+            own(at(2)),
+            makeCell({ tokenId: controlled, owner: RIVAL, revealCount: 1 }),
+        ];
+
+        const result = await survey(cells, ORIGIN);
+
+        const eligible = [...kRing(ORIGIN, BASE_HUB_RADIUS)]
+            .filter(([token, step]) => step > 0 && String(token) !== controlled)
+            .map(([token]) => String(token))
+            .sort();
+        expect(result.hops.map((h) => h.tokenId).sort()).toEqual(eligible);
+        for (const candidate of result.hops) {
+            expect(candidate.isVirgin || candidate.isOwn || candidate.isHub).toBe(true);
+        }
     });
 });
 

@@ -4,6 +4,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import type { NextHopsResult, NextHopView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
+import { NEXT_HOPS_SUMMARY_LIMIT } from '../next-hops/constants.js';
 import { registerNextHopsTool } from '../next-hops/next-hops.js';
 
 interface ToolResult {
@@ -35,6 +36,7 @@ function hop(overrides: Partial<NextHopView> = {}): NextHopView {
         hopDistance: 1,
         isOwn: true,
         isHub: false,
+        isVirgin: false,
         ready: null,
         owner: '0xowner',
         radius: 1,
@@ -48,6 +50,7 @@ function nextHopsResult(overrides: Partial<NextHopsResult> = {}): NextHopsResult
     return {
         from: '72',
         fromIsHub: false,
+        fromIsVirgin: false,
         fromReady: null,
         fromRadius: 1,
         towards: null,
@@ -112,5 +115,52 @@ describe('next_hops reach reporting', () => {
 
         expect(text).toContain('81 (hub, reach 5, 5 step hop');
         expect(text).toContain('82 (hub, reach 13, 13 step hop');
+    });
+
+    it('reports the resource-specific fee only where one is charged', async () => {
+        const text = await summaryOf(
+            nextHopsResult({
+                hops: [
+                    hop({ tokenId: '81', isOwn: false, isHub: true, radius: 5, transitFeePerUnit: '0.5' }),
+                    hop({ tokenId: '82', isOwn: false, isVirgin: true, owner: null }),
+                    hop({ tokenId: '83' }),
+                ],
+            }),
+        );
+
+        expect(text).toContain('81 (hub, reach 5, 1 step hop, fee 0.5 $CPU/u)');
+        expect(text).toContain('82 (virgin, reach 1, 1 step hop)');
+        expect(text).toContain('83 (own, reach 1, 1 step hop)');
+    });
+});
+
+describe('next_hops candidate listing', () => {
+    function manyHops(count: number): Array<NextHopView> {
+        return Array.from({ length: count }, (_, index) =>
+            hop({ tokenId: String(100 + index), isOwn: false, isVirgin: true, owner: null }),
+        );
+    }
+
+    it('keeps every legal candidate in the payload while the summary stays short', async () => {
+        const hops = manyHops(NEXT_HOPS_SUMMARY_LIMIT + 5);
+        const handler = capture(nextHopsResult({ hops }));
+
+        const out = await handler({ from: 72, resourceId: 3, towards: null } as never);
+        const summary = out.content[0]?.text ?? '';
+        const payload = JSON.parse(out.content[1]?.text ?? '{}') as NextHopsResult;
+
+        expect(payload.hops).toHaveLength(hops.length);
+        expect(summary).toContain(`${hops.length} legal next hop(s)`);
+        expect(summary).toContain('5 more in the JSON payload');
+        expect(summary).not.toContain(String(100 + NEXT_HOPS_SUMMARY_LIMIT));
+    });
+
+    it('lists every candidate when they fit under the limit', async () => {
+        const hops = manyHops(NEXT_HOPS_SUMMARY_LIMIT);
+
+        const summary = await summaryOf(nextHopsResult({ hops }));
+
+        expect(summary).not.toContain('more in the JSON payload');
+        expect(summary).toContain(String(100 + NEXT_HOPS_SUMMARY_LIMIT - 1));
     });
 });
