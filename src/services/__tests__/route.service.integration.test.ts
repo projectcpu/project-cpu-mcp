@@ -190,7 +190,6 @@ describe('RouteService.nextHops', () => {
         expect(result.from).toBe(String(ORIGIN));
         expect(result.fromIsHub).toBe(false);
         expect(result.fromRadius).toBe(1);
-        expect(result.reach).toEqual({ moveRadius: 1 });
         expect(settled(result)).toEqual([neighbour, hubCell]);
         expect(hopFor(result, neighbour)).toMatchObject({
             tokenId: neighbour,
@@ -321,7 +320,6 @@ describe('RouteService.nextHops', () => {
         });
 
         expect(result.fromRadius).toBe(2);
-        expect(result.reach).toEqual({ moveRadius: 2 });
         expect(settled(result)).toEqual([at(3)]);
         expect(result.hops.map((h) => h.tokenId)).not.toContain(at(4));
     });

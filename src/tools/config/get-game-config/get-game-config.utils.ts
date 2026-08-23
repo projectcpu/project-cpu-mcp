@@ -20,7 +20,7 @@ import {
     TRANSIT_FEE_FLOOR_SUMMARY,
 } from './constants.js';
 import type { GameConfigReferenceView } from './types.js';
-import { type RandomnessDescriptor, RandomnessKind, type RevealPaymentView } from '../../../api/types.js';
+import { BuildingKind, type RandomnessDescriptor, RandomnessKind, type RevealPaymentView } from '../../../api/types.js';
 import type { AppConfig } from '../../../services/types.js';
 import { INDEX_COLUMNS_LEGEND } from '../find-buildings/constants.js';
 import { renderBuildingIndexLine } from '../find-buildings/find-buildings.utils.js';
@@ -44,11 +44,18 @@ function renderPairs(entries: Array<[string, string]>): string {
     return entries.length > 0 ? entries.map(([key, value]) => `${key}:${value}`).join(', ') : NONE_LABEL;
 }
 
+function describeHubRadii(config: AppConfig): string {
+    const tiers = config.buildings
+        .filter((building) => building.kind === BuildingKind.Hub)
+        .map((building): [string, string] => [building.type, String(building.radius)]);
+    return renderPairs(tiers);
+}
+
 function describeTransit(config: AppConfig): string {
     const floors = renderPairs(Object.entries(config.transport.moveFeeFloors));
     return (
-        `radii in cells — move ${config.transport.moveRadius} everywhere; hub reach is set per Hub tier, ` +
-        `${config.transport.hubRadius} by default for a tier without its own; ` +
+        `radii in cells — move ${config.transport.moveRadius} everywhere; hub reach is set per Hub tier — ` +
+        `${describeHubRadii(config)}, ${config.transport.hubRadius} by default for a tier without its own; ` +
         `${config.transport.moveTimePerCellSec}s per cell; ${TRANSIT_FEE_FLOOR_SUMMARY} — ${floors}`
     );
 }

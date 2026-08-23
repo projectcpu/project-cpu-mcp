@@ -535,6 +535,17 @@ describe('cpu_route_network response', () => {
         expect(text).not.toMatch(/guarantees the transfer|guarantees the transport/i);
     });
 
+    it('instructs: every candidate reported with its distance, nominal fee, waypoint count and foreign Hubs', async () => {
+        const descriptor = descriptorOf(await exportGraph(cellsFor()));
+        const text = instructionsText(descriptor);
+
+        expect(text).toMatch(/with every candidate/i);
+        expect(text).toMatch(/total distance/i);
+        expect(text).toMatch(/total nominal fee/i);
+        expect(text).toMatch(/waypoint count/i);
+        expect(text).toMatch(/foreign Hubs it routes through/i);
+    });
+
     it('tells the agent to report a disconnected pair instead of inventing a chain', async () => {
         const descriptor = descriptorOf(await exportGraph(cellsFor(...walledOff(String(ORIGIN)))));
 

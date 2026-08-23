@@ -1,7 +1,8 @@
 export const NEXT_HOPS_NOTE =
     'These are the legal next waypoints only — choosing the route is up to you. A hop is legal up to ' +
     'radius(from)+radius(to)\u22121 grid steps, and every cell brings its own radius: a plain cell the move ' +
-    'radius, a finished Hub the radius its own tier serves (`reach` per candidate — hub tiers differ). ' +
+    'radius, a finished Hub the radius its own tier serves (`fromRadius` for the cell you start from, ' +
+    '`radius` per candidate — hub tiers differ). ' +
     'Waypoints are open Virgin ground (`isVirgin` — no completed reveal, minted or not, so nobody controls the ' +
     'ground and the ground itself charges nothing, but a foreign finished Hub standing on Virgin ground still ' +
     'charges its transit fee, while a Hub of your own on it charges you nothing — `transitFeePerUnit` per ' +
@@ -54,8 +55,11 @@ export const ROUTE_GRAPH_INSTRUCTIONS: ReadonlyArray<string> = [
         'read the cost off the flags — a foreign Active Hub charges its fee even where `isVirgin` is true, so no ' +
         'flag on its own makes a node free. Sum the decimal strings with exact decimal or scaled-integer ' +
         'arithmetic — binary floating point reorders candidates that sit close together.',
-    'Report the waypoint count with every candidate: a longer chain is more calldata and more work to ' +
-        'execute, so it is a tie-breaker and a gas-risk proxy, never a gas quote.',
+    'Report with every candidate its total distance, its total nominal fee, its waypoint count and the ' +
+        'foreign Hubs it routes through — the nodes carrying `isHub` true, `isOwn` false and a ' +
+        '`transitFeePerUnit`, named by tokenId. A longer chain is more calldata and more work to execute, so ' +
+        'the waypoint count is a tie-breaker and a gas-risk proxy, never a gas quote; a foreign Hub is a fee ' +
+        'handed to another player, and a live Syndicate discount can reorder candidates around it.',
     'Quote the relevant shortlist with cpu_quote_transport before the player chooses: live Syndicate ' +
         'discounts can reorder paths that the nominal graph fees rank the other way.',
     'A successful quote validates route mechanics and economics at quote time. It does not promise the later ' +

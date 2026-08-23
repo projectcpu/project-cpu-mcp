@@ -56,7 +56,6 @@ function nextHopsResult(overrides: Partial<NextHopsResult> = {}): NextHopsResult
         fromRadius: 1,
         towards: null,
         targetDistance: null,
-        reach: { moveRadius: 1 },
         hops: [hop()],
         note: NOTE,
         ...overrides,
@@ -100,7 +99,7 @@ describe('next_hops reach reporting', () => {
     it('names the origin reach instead of one universal hub radius', async () => {
         const text = await summaryOf(nextHopsResult({ fromIsHub: true, fromRadius: 8, fromReady: true }));
 
-        expect(text).toContain('reach 8');
+        expect(text).toContain('radius 8');
         expect(text).not.toMatch(/hubRadius/);
     });
 
@@ -114,8 +113,8 @@ describe('next_hops reach reporting', () => {
             }),
         );
 
-        expect(text).toContain('81 (hub, reach 5, 5 step hop');
-        expect(text).toContain('82 (hub, reach 13, 13 step hop');
+        expect(text).toContain('81 (hub, radius 5, 5 step hop');
+        expect(text).toContain('82 (hub, radius 13, 13 step hop');
     });
 
     it('reports the resource-specific fee only where one is charged', async () => {
@@ -129,9 +128,9 @@ describe('next_hops reach reporting', () => {
             }),
         );
 
-        expect(text).toContain('81 (hub, reach 5, 1 step hop, fee 0.5 $CPU/u)');
-        expect(text).toContain('82 (virgin, reach 1, 1 step hop)');
-        expect(text).toContain('83 (own, reach 1, 1 step hop)');
+        expect(text).toContain('81 (hub, radius 5, 1 step hop, fee 0.5 $CPU/u)');
+        expect(text).toContain('82 (virgin, radius 1, 1 step hop)');
+        expect(text).toContain('83 (own, radius 1, 1 step hop)');
     });
 });
 

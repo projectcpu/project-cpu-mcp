@@ -292,12 +292,35 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(section).toContain(
             'sale fee up to 100% (the structural bound — a hub owner can set any rate up to this maximum)',
         );
-        expect(section).toContain('radii in cells — move 1 everywhere; hub reach is set per Hub tier, 3 by default');
+        expect(section).toContain('radii in cells — move 1 everywhere; hub reach is set per Hub tier —');
+        expect(section).toContain('3 by default for a tier without its own');
         expect(section).toContain('2s per cell');
         expect(section).toContain("every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override");
         expect(section).toContain('5:0.1');
         expect(section).toContain('storage caps are explicit per-resource cell/hub shelf pairs');
         expect(section).toContain('`0` means unlimited');
+    });
+
+    it('serves the radius of every Hub tier, so hops can be chained without a code runner', async () => {
+        const [base] = CONFIG.buildings;
+        if (base === undefined) {
+            throw new Error('the fixture carries no catalog building to build a Hub tier from');
+        }
+        const hub = (type: string, tier: number, radius: number): AppConfig['buildings'][number] => ({
+            ...base,
+            type: type as BuildingType,
+            name: type,
+            kind: BuildingKind.Hub,
+            tier,
+            radius,
+        });
+        const section = sectionOf(
+            await prose({ ...CONFIG, buildings: [hub('hub', 1, 5), hub('hub_l3', 3, 13)] }),
+            STATIC_SECTION_TITLE,
+        );
+
+        expect(section).toContain('hub reach is set per Hub tier — hub:5, hub_l3:13');
+        expect(section).toContain('3 by default for a tier without its own');
     });
 
     it('holds the static and not the index rows or the routing map', async () => {

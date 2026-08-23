@@ -740,7 +740,6 @@ export interface NextHopsResult {
     fromRadius: number;
     towards: string | null;
     targetDistance: number | null;
-    reach: { moveRadius: number };
     hops: Array<NextHopView>;
     note: string;
 }
