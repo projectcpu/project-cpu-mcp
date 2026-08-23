@@ -49,10 +49,11 @@ export const ROUTE_GRAPH_INSTRUCTIONS: ReadonlyArray<string> = [
         'yours to choose — this server does not pick the route.',
     'With no preference stated, compare three distinct candidates — fastest, nominal-cheapest and balanced — ' +
         'found with Dijkstra, A* or another search that does not enumerate every path, and drop duplicates.',
-    'Nominal fee is a node cost: every foreign Active Hub on the path costs its `transitFeePerUnit` times ' +
-        '`request.amount`, while your own cells and Virgin ground cost nothing. Sum the decimal strings with ' +
-        'exact decimal or scaled-integer arithmetic — binary floating point reorders candidates that sit close ' +
-        'together.',
+    'Nominal fee is a node cost, and `transitFeePerUnit` is the only field that decides it: a node carrying a ' +
+        'fee costs that fee times `request.amount`, a node with `transitFeePerUnit: null` costs nothing. Never ' +
+        'read the cost off the flags — a foreign Active Hub charges its fee even where `isVirgin` is true, so no ' +
+        'flag on its own makes a node free. Sum the decimal strings with exact decimal or scaled-integer ' +
+        'arithmetic — binary floating point reorders candidates that sit close together.',
     'Report the waypoint count with every candidate: a longer chain is more calldata and more work to ' +
         'execute, so it is a tie-breaker and a gas-risk proxy, never a gas quote.',
     'Quote the relevant shortlist with cpu_quote_transport before the player chooses: live Syndicate ' +

@@ -10,8 +10,9 @@ export const TRANSPORT_DESCRIPTION = [
     'chain them yourself → `cpu_quote_transport` (verify fee/ETA) →',
     '`cpu_transport`. Returns the',
     'deliveryId and arrival time; the goods credit to the target only after arrival, when you call',
-    '`cpu_finalize_delivery` (`cpu_list_my_transports` shows what is ready). A route over only your own cells and',
-    'open Virgin ground pays no fee.',
+    '`cpu_finalize_delivery` (`cpu_list_my_transports` shows what is ready). Every foreign finished Hub on the',
+    'route charges its fee, one standing on ground with no completed reveal included; a route over only your own',
+    'cells and bare Virgin ground pays none.',
 ].join(' ');
 
 export const ROUTE_NETWORK_DESCRIPTION = [

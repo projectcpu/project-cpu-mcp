@@ -43,7 +43,7 @@ import {
 } from '../../../utils/panel.constants.js';
 import type { WalletProvider } from '../../../wallet/types.js';
 import type { ToolRegistrar } from '../../types.js';
-import { ROUTE_NETWORK_LABELS, ROUTE_NETWORK_TITLE } from '../network/constants.js';
+import { ROUTE_NETWORK_DESCRIPTION, ROUTE_NETWORK_LABELS, ROUTE_NETWORK_TITLE } from '../network/constants.js';
 import { registerRouteNetworkTool } from '../network/route-network.js';
 import { routeNetworkInputSchema } from '../types.js';
 
@@ -252,13 +252,21 @@ describe('cpu_route_network request', () => {
         expect(schema.safeParse({ ...full, amount: 'lots' }).success).toBe(false);
     });
 
-    it('validates the request before it builds any graph: distinct endpoints and a transportable resource', async () => {
+    it('validates the whole request before it writes any graph: the move, the resource and both endpoints', async () => {
+        const foreign = at(3);
+        const unrevealed = at(4);
+        const cells = cellsFor(
+            makeCell({ tokenId: foreign, owner: RIVAL, revealCount: 1 }),
+            own(unrevealed, { revealCount: 0 }),
+        );
         const before = fs.readdirSync(os.tmpdir()).length;
 
-        await expect(exportGraph(cellsFor(), { towards: ORIGIN })).rejects.toThrow(/must be different/);
-        await expect(exportGraph(cellsFor(), { resourceId: 999 })).rejects.toThrow(
-            /does not exist or is not transportable/,
-        );
+        await expect(exportGraph(cells, { towards: ORIGIN })).rejects.toThrow(/must be different/);
+        await expect(exportGraph(cells, { resourceId: 999 })).rejects.toThrow(/does not exist or is not transportable/);
+        await expect(exportGraph(cells, { from: Number(foreign) })).rejects.toThrow(/is not yours/);
+        await expect(exportGraph(cells, { towards: Number(foreign) })).rejects.toThrow(/is not yours/);
+        await expect(exportGraph(cells, { from: Number(unrevealed) })).rejects.toThrow(/no completed reveal/);
+        await expect(exportGraph(cells, { towards: Number(unrevealed) })).rejects.toThrow(/no completed reveal/);
 
         expect(fs.readdirSync(os.tmpdir()).length).toBe(before);
     });
@@ -519,6 +527,41 @@ describe('cpu_route_network response', () => {
 
         expect(descriptor.connected).toBe(false);
         expect(instructionsText(descriptor)).toMatch(/no chain exists/i);
+    });
+
+    it('never calls a node free in the instructions while the same artifact bills a fee for it', async () => {
+        const fee = '17';
+        const standing = at(1);
+        const descriptor = descriptorOf(
+            await exportGraph(cellsFor(foreignHub(standing, fee, BASE_HUB, { revealCount: 0 }))),
+        );
+        const artifact = artifactOf(descriptor);
+        const billed = artifact.nodes.filter((node) => node.isVirgin && node.transitFeePerUnit !== null);
+        const text = instructionsText(descriptor);
+
+        expect(nodeOf(artifact, standing)).toMatchObject({ isVirgin: true, isHub: true, transitFeePerUnit: fee });
+        expect(billed).toHaveLength(1);
+        expect(text).toMatch(/`transitFeePerUnit: null` costs nothing/);
+        expect(text).not.toMatch(/Virgin ground costs? nothing/);
+    });
+});
+
+describe('route_network description', () => {
+    it('states reach per cell and per Hub tier, never the one global balance the old world had', () => {
+        expect(ROUTE_NETWORK_DESCRIPTION).toMatch(/radius\(a\)\+radius\(b\)−1 grid steps/);
+        expect(ROUTE_NETWORK_DESCRIPTION).toMatch(/a finished Hub tier reaches as far as its own catalog row serves/);
+        expect(ROUTE_NETWORK_DESCRIPTION).toMatch(/its own reach\s+radius/);
+        expect(ROUTE_NETWORK_DESCRIPTION).not.toMatch(/own↔own 1|own↔hub 3|hub↔hub 5/);
+    });
+
+    it('states which cells are nodes: Virgin ground, your own, any finished Hub — foreign revealed land closed', () => {
+        expect(ROUTE_NETWORK_DESCRIPTION).toMatch(/Virgin ground \(no completed reveal, minted\s+or not/);
+        expect(ROUTE_NETWORK_DESCRIPTION).toMatch(/any cell with a finished Hub, foreign\s+ones included/);
+        expect(ROUTE_NETWORK_DESCRIPTION).toMatch(
+            /only foreign land past its first reveal without a finished Hub is closed/,
+        );
+        expect(ROUTE_NETWORK_DESCRIPTION).not.toContain('Foreign cells are never nodes');
+        expect(ROUTE_NETWORK_DESCRIPTION).not.toMatch(/your own cells stay nodes/);
     });
 });
 

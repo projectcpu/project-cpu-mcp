@@ -6,6 +6,7 @@ import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
 import { ToolEventType } from '../../types.js';
 import type { ToolRegistrar } from '../../types.js';
+import { TRANSPORT_DESCRIPTION } from '../constants.js';
 import { registerFinalizeDeliveryTool } from '../finalize/finalize-delivery.js';
 import { registerGetTransportStatusTool } from '../get-status/get-transport-status.js';
 import { registerListMyTransportsTool } from '../list-mine/list-my-transports.js';
@@ -187,5 +188,31 @@ describe('finalize_delivery tool', () => {
         const out = await handler({ ids: ['55'] } as never);
         const parsed = JSON.parse(out.content[1]?.text ?? '{}') as { eventType: string };
         expect(parsed.eventType).toBe(ToolEventType.DeliveryFinalized);
+    });
+});
+
+describe('transport tool description', () => {
+    it('states reach per cell and per Hub tier, never the one global balance the old world had', () => {
+        expect(TRANSPORT_DESCRIPTION).toMatch(/within radius\(from\)\+radius\(to\)−1 grid steps/);
+        expect(TRANSPORT_DESCRIPTION).toMatch(
+            /radius is per cell: a plain cell reaches\s+the move radius, a finished Hub the radius its own tier serves/,
+        );
+        expect(TRANSPORT_DESCRIPTION).not.toMatch(/own↔own 1|own↔hub 3|hub↔hub 5/);
+    });
+
+    it('states which cells a shipment may cross and which two cells it may start and end on', () => {
+        expect(TRANSPORT_DESCRIPTION).toMatch(
+            /Source and target must\s+be your own cells past their first completed reveal/,
+        );
+        expect(TRANSPORT_DESCRIPTION).toMatch(
+            /waypoints between them may be Virgin ground \(no\s+completed reveal, minted or not\)/,
+        );
+        expect(TRANSPORT_DESCRIPTION).toMatch(/cells of yours, or any cell with a finished Hub, foreign ones included/);
+        expect(TRANSPORT_DESCRIPTION).not.toContain('Every waypoint must be revealed and yours-or-a-finished-Hub');
+    });
+
+    it('never calls a route free where a foreign Hub on the same ground still charges', () => {
+        expect(TRANSPORT_DESCRIPTION).toMatch(/foreign finished Hub on the route charges its fee/);
+        expect(TRANSPORT_DESCRIPTION).not.toMatch(/Virgin ground pays no fee/);
     });
 });
