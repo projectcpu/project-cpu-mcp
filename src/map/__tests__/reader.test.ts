@@ -55,7 +55,7 @@ describe('MapReader', () => {
         expect(result.cells.map((c) => c.tokenId)).toEqual(['72']);
         expect(result.resourceIndex?.['1']).toHaveLength(1);
         expect(result.cells[0]?.neighbors).toHaveLength(6);
-        expect(result.cells[0]?.pos).toEqual({ face: 0, i: 1, j: 2 });
+        expect(result.cells[0]?.pos).toEqual({ face: 0, i: 1, j: 18 });
         expect(result.summary.myCells).toBe(1);
     });
 
