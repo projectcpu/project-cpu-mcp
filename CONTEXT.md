@@ -22,8 +22,8 @@ them.
   (finished) — so a fresh waypoint, a building going up, and a finished building never collapse into
   one flag.
 - **Active hub** — a hub-kind building (any hub kind, including an upgrade) that is Ready. The mere
-  presence of a hub grants routing or fee activity by itself: only an active hub charges transit and
-  sale fees and makes its cell usable as a routing waypoint.
+  presence of a hub grants no routing or fee activity by itself: only an active hub extends routing
+  reach and charges transit and sale fees.
 - **Cell shelf** — a resource's ordinary per-cell storage ceiling. In config, numeric `0` means unlimited;
   on the map the corresponding shelf is `null`, meaning uncapped.
 - **Hub shelf** — the separate storage ceiling for the same resource at a qualifying hub. It applies to
@@ -146,6 +146,27 @@ terms themselves ever blurring together.
 - **Fill** — one executed purchase against a lot, whole or partial; a lot has many of them, and the
   last one buys the lot out.
   *Avoid*: trade, settlement, sale.
+
+## Routing
+
+Routing has two different eligibility rules, and they must not be blurred together: a broad rule for
+what may sit *inside* a route, and a stricter rule for what may sit at its *ends* in an ordinary user
+move.
+
+- **Virgin cell** — a cell whose count of completed reveals is zero. Minting, ownership, and a pending
+  first reveal do not end virginity; the first completed reveal does.
+  *Avoid*: empty cell, unminted cell, unrevealed cell.
+- **Intermediate waypoint** — a cell eligible to sit strictly between a shipment's source and target.
+  Eligibility here is generic and permissive: a Virgin cell, the payer's own cell, or a cell carrying an
+  Active hub — including a foreign one, whose extended reach the payer may choose to pay for — may be an
+  Intermediate waypoint. Only a foreign cell past its first completed reveal and carrying no Active hub
+  is closed to transit.
+  *Avoid*: route endpoint, destination.
+- **Route endpoint** — the source or the target of an ordinary user move. Eligibility here is strict and
+  narrower than Intermediate waypoint eligibility: both the source and the target must be payer-owned
+  AND have at least one completed reveal. A foreign Active hub is never a valid endpoint — it is an
+  Intermediate waypoint only. A Virgin cell is never a valid endpoint either.
+  *Avoid*: intermediate waypoint, foreign Active hub.
 
 ## Fees
 
