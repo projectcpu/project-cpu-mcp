@@ -14,12 +14,13 @@ import {
     type WalletManager,
     type WalletProvider,
 } from '../../wallet/types.js';
-import { SEADROP_ADDRESS } from '../mint.constants.js';
+import { NO_PUBLIC_DROP_MESSAGE, SEADROP_ADDRESS } from '../mint.constants.js';
 import { MintService } from '../mint.service.js';
 import { type AppConfig, type AppContracts, type PublicDropView } from '../types.js';
 
 const BASE_CHAIN_ID = 8453;
 const FEE_RECIPIENT = '0x0000a26b00c1F0DF003000390027140000fAa719' as Address;
+const OVER_LIMIT_MESSAGE = /Quantity 6 exceeds the per-wallet mint limit of 5 for this drop\./i;
 
 const ACTIVE_DROP: PublicDropView = {
     mintPrice: parseEther('0.01'),
@@ -235,6 +236,21 @@ describe('MintService', () => {
             expect(decoded.args).toEqual([LAND, FEE_RECIPIENT, zeroAddress, 2n]);
         });
 
+        it('quotes and mints a quantity equal to the per-wallet limit', async () => {
+            const quote = await makeService(new MintWallet()).quote({ quantity: '5' });
+
+            expect(quote.quantity).toBe(5);
+            expect(quote.total).toBe('0.05');
+
+            const wallet = new MintWallet();
+            const result = await makeService(wallet).mint({ quantity: '5' });
+
+            expect(wallet.sent).toHaveLength(1);
+            const decoded = decodeFunctionData({ abi: SEADROP_ABI, data: wallet.sent[0]?.data as Hex });
+            expect(decoded.args).toEqual([LAND, FEE_RECIPIENT, zeroAddress, 5n]);
+            expect(result.status).toBe(TxStatus.Success);
+        });
+
         it('throws when the on-chain mint reverts', async () => {
             const wallet = new MintWallet(ACTIVE_DROP, [FEE_RECIPIENT], [TxStatus.Reverted]);
             await expect(makeService(wallet).mint({ quantity: '1' })).rejects.toThrow(/reverted/i);
@@ -249,13 +265,9 @@ describe('MintService', () => {
 
         it('throws when quantity exceeds the per-wallet limit', async () => {
             const quoteWallet = new MintWallet();
-            await expect(makeService(quoteWallet).quote({ quantity: '6' })).rejects.toThrow(
-                /Quantity 6 exceeds the per-wallet mint limit of 5 for this drop\./i,
-            );
+            await expect(makeService(quoteWallet).quote({ quantity: '6' })).rejects.toThrow(OVER_LIMIT_MESSAGE);
             const mintWallet = new MintWallet();
-            await expect(makeService(mintWallet).mint({ quantity: '6' })).rejects.toThrow(
-                /Quantity 6 exceeds the per-wallet mint limit of 5 for this drop\./i,
-            );
+            await expect(makeService(mintWallet).mint({ quantity: '6' })).rejects.toThrow(OVER_LIMIT_MESSAGE);
             expect(quoteWallet.sent).toHaveLength(0);
             expect(mintWallet.sent).toHaveLength(0);
         });
@@ -295,8 +307,8 @@ describe('MintService', () => {
                     () => null,
                     (error: Error) => error,
                 );
-            expect(quoteError?.message).toMatch(/no public drop configured/i);
-            expect(mintError?.message).toMatch(/no public drop configured/i);
+            expect(quoteError?.message).toBe(NO_PUBLIC_DROP_MESSAGE);
+            expect(mintError?.message).toBe(NO_PUBLIC_DROP_MESSAGE);
             expect(quoteError?.message).not.toMatch(/exceeds/i);
             expect(mintError?.message).not.toMatch(/exceeds/i);
             expect(wallet.sent).toHaveLength(0);

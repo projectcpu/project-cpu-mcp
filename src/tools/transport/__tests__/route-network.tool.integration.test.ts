@@ -500,7 +500,10 @@ describe('cpu_route_network response', () => {
 
         const text = instructionsText(descriptor);
         expect(text).toMatch(/quoteTemplate/);
-        expect(text).toMatch(/path/i);
+        const templateLines = descriptor.instructions.filter(
+            (line) => line.includes('`quoteTemplate`') && line.includes('`arguments.path`'),
+        );
+        expect(templateLines).toHaveLength(1);
     });
 
     it('instructs: a raw graph loaded with code, never printed, no repeated node, re-export when stale', async () => {
