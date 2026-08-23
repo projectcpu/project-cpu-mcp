@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { tokenIdSchema } from '../../geometry/types.js';
+import { ROUTE_AMOUNT_PATTERN } from '../../services/route.constants.js';
 import { DeliveryFilter } from '../../services/types.js';
 
 export const transportInputSchema = {
@@ -8,10 +9,13 @@ export const transportInputSchema = {
         .array(tokenIdSchema)
         .min(2)
         .describe(
-            'Waypoint chain of cell tokenIds [source, ...intermediate, target]. Every waypoint must be revealed ' +
-                'and eligible (your own cell, or a Hub); each hop must span at most radius(from)+radius(to)−1 grid ' +
-                'steps (a plain cell reaches moveRadius, a Hub hubRadius — see get_game_config transport). ' +
-                'Scout legal hops with cpu_next_hops and chain them yourself; the Transport contract validates.',
+            'Waypoint chain of cell tokenIds [source, ...intermediate, target]. Source and target must be your ' +
+                'own cells past their first completed reveal; every cell between them may be Virgin ground (no ' +
+                'completed reveal, minted or not), a cell of yours, or any cell carrying a finished Hub, foreign ' +
+                'ones included. Each hop must span at most radius(from)+radius(to)−1 grid steps, and radius is ' +
+                'per cell: a plain cell reaches the move radius, a finished Hub the radius its own tier serves ' +
+                '(see get_game_config). Scout legal hops with cpu_next_hops and chain them yourself; the ' +
+                'Transport contract validates.',
         ),
     resourceId: z.number().int().describe('Resource type id to move (must have a balance at the source cell).'),
     amount: z
@@ -21,18 +25,25 @@ export const transportInputSchema = {
 };
 
 export const routeNetworkInputSchema = {
+    from: tokenIdSchema.describe(
+        'Source cell tokenId — where the cargo stands now. Must be your own cell past its first completed ' +
+            'reveal; a foreign Hub is passage, never an end of a shipment.',
+    ),
+    towards: tokenIdSchema.describe(
+        'Target cell tokenId — where the cargo must end up. Must be your own cell past its first completed ' +
+            'reveal, and a different cell from `from`.',
+    ),
     resourceId: z
         .number()
         .int()
-        .describe('The cargo resource id — every foreign-hub waypoint shows its exact per-unit transit fee for it.'),
-    from: tokenIdSchema
-        .nullable()
-        .default(null)
-        .describe('Optional source cell — annotates every waypoint with its grid distance from here.'),
-    towards: tokenIdSchema
-        .nullable()
-        .default(null)
-        .describe('Optional destination cell — annotates every waypoint with its remaining grid distance.'),
+        .describe('The cargo resource id — every foreign-Hub node carries its exact per-unit transit fee for it.'),
+    amount: z
+        .string()
+        .regex(ROUTE_AMOUNT_PATTERN)
+        .describe(
+            'Units to move, as a positive integer string (matches on-map resource balances). Carried through ' +
+                'the graph and into the prefilled quote call unchanged.',
+        ),
 };
 
 export const nextHopsInputSchema = {

@@ -745,38 +745,75 @@ export interface NextHopsResult {
 }
 
 export interface RouteNetworkInput {
-    from: number | null;
-    towards: number | null;
+    from: number;
+    towards: number;
     resourceId: number;
+    amount: string;
 }
 
-export interface NetworkNodeView {
+/** The one move the graph was cut for, normalized — the artifact and the quote template both carry it. */
+export interface RouteRequestView {
+    from: string;
+    towards: string;
+    resourceId: number;
+    amount: string;
+}
+
+/**
+ * Membership is the eligibility statement: a node in the artifact is an Intermediate waypoint the contract
+ * accepts, so no separate eligibility flag is carried.
+ */
+export interface RouteGraphNodeView {
     tokenId: string;
-    pos: CellCoord;
+    /** null on ground nobody has minted yet. */
+    owner: string | null;
+    /** Open ground: no completed reveal, so nobody controls it and any payer may route through it. */
+    isVirgin: boolean;
     isOwn: boolean;
+    /** An Active Hub: a Hub-kind building whose construction has finished, not merely one placed. */
     isHub: boolean;
-    ready: boolean | null;
-    owner: string;
+    /** Reach this node contributes in grid steps — a hop is legal up to radius(a)+radius(b)−1. */
+    radius: number;
+    /** Nominal per-unit transit fee for the requested resource; null where passage costs nothing. */
     transitFeePerUnit: string | null;
-    distFromSource: number | null;
-    distToTarget: number | null;
-    component: number;
 }
 
-export interface NetworkEdgeView {
+export interface RouteGraphEdgeView {
     a: string;
     b: string;
     distance: number;
 }
 
+export interface RouteGraphArtifact {
+    schemaVersion: number;
+    snapshotVersion: number;
+    request: RouteRequestView;
+    connected: boolean;
+    nodes: Array<RouteGraphNodeView>;
+    edges: Array<RouteGraphEdgeView>;
+}
+
+export interface QuoteTransportArgumentsView {
+    path: Array<string>;
+    resourceId: number;
+    amount: string;
+}
+
+export interface QuoteTransportCallView {
+    tool: string;
+    arguments: QuoteTransportArgumentsView;
+}
+
 export interface RouteNetworkResult {
-    from: string | null;
-    towards: string | null;
-    fromToTarget: number | null;
-    reach: { moveRadius: number; hubRadius: number };
-    components: number;
-    nodes: Array<NetworkNodeView>;
-    edges: Array<NetworkEdgeView>;
+    artifactPath: string;
+    schemaVersion: number;
+    snapshotVersion: number;
+    request: RouteRequestView;
+    connected: boolean;
+    nodeCount: number;
+    edgeCount: number;
+    instructions: ReadonlyArray<string>;
+    quoteTemplate: QuoteTransportCallView;
     note: string;
 }
 

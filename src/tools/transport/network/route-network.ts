@@ -13,6 +13,7 @@ export function registerRouteNetworkTool(server: ToolRegistrar, context: AppCont
                 from: args.from,
                 towards: args.towards,
                 resourceId: args.resourceId,
+                amount: args.amount,
             });
 
             return {

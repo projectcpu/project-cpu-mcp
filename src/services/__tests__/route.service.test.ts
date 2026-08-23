@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_SERVER_TIME, FakeAppConfig, makeConfig, WALLET_ADDRESS } from './service-fakes.js';
 import { BuildingKind, BuildingType, type TransportRoutingView } from '../../api/types.js';
@@ -14,10 +16,19 @@ import type { RawCell } from '../../map/types.js';
 import { formatUnixSeconds } from '../../utils/format.utils.js';
 import type { WalletProvider } from '../../wallet/types.js';
 import { RouteService } from '../route.service.js';
-import type { CatalogBuildingView, NetworkEdgeView, NextHopsResult, NextHopView } from '../types.js';
+import type {
+    CatalogBuildingView,
+    NextHopsResult,
+    NextHopView,
+    RouteGraphArtifact,
+    RouteGraphNodeView,
+    RouteNetworkInput,
+    RouteNetworkResult,
+} from '../types.js';
 
 const RIVAL = '0x000000000000000000000000000000000000beef';
 const RES = 3;
+const AMOUNT = '250';
 const DEFAULT_FLOORS: Record<number, string> = { 3: '0', 9: '0' };
 const UNFINISHED_AT = DEFAULT_SERVER_TIME + 1000;
 
@@ -138,14 +149,33 @@ function hopFor(result: NextHopsResult, tokenId: string): NextHopView | null {
     return result.hops.find((hop) => hop.tokenId === tokenId) ?? null;
 }
 
-function edgeKeys(edges: Array<NetworkEdgeView>): Array<string> {
-    return edges.map((edge) => `${edge.a}-${edge.b}:${edge.distance}`).sort();
+function exportInput(over: Partial<RouteNetworkInput> = {}): RouteNetworkInput {
+    return { from: ORIGIN, towards: Number(at(2)), resourceId: RES, amount: AMOUNT, ...over };
 }
 
-function expectedEdge(a: string, b: string): string {
-    const [low, high] = Number(a) < Number(b) ? [a, b] : [b, a];
-    return `${low}-${high}:${gridDistance(a, b)}`;
+const written: Array<string> = [];
+
+/** Reads back the graph the export wrote, and marks the file for removal once the test is done with it. */
+function graphOf(result: RouteNetworkResult): RouteGraphArtifact {
+    written.push(result.artifactPath);
+    return JSON.parse(fs.readFileSync(result.artifactPath, 'utf8')) as RouteGraphArtifact;
 }
+
+function nodeOf(graph: RouteGraphArtifact, tokenId: string): RouteGraphNodeView | null {
+    return graph.nodes.find((node) => node.tokenId === tokenId) ?? null;
+}
+
+function edgeOf(graph: RouteGraphArtifact, a: string, b: string): boolean {
+    const [low, high] = Number(a) < Number(b) ? [a, b] : [b, a];
+    return graph.edges.some((edge) => edge.a === low && edge.b === high && edge.distance === gridDistance(a, b));
+}
+
+afterEach(() => {
+    for (const file of written) {
+        fs.rmSync(file, { force: true });
+    }
+    written.length = 0;
+});
 
 describe('RouteService.nextHops', () => {
     it('lists own cells within move reach and hubs within their own reach, with their facts', async () => {
@@ -401,7 +431,7 @@ describe('RouteService.nextHops over Virgin ground', () => {
     it('refuses the same way on an incomplete snapshot before surveying the network', async () => {
         const loading = makeService([own(String(ORIGIN))], DEFAULT_FLOORS, {}, false);
 
-        await expect(loading.network({ from: null, towards: null, resourceId: RES })).rejects.toThrow(/map bootstrap/);
+        await expect(loading.network(exportInput())).rejects.toThrow(/map bootstrap/);
     });
 
     it('refuses on a map whose rows it could not all read, instead of reading the gap as Virgin ground', async () => {
@@ -410,9 +440,7 @@ describe('RouteService.nextHops over Virgin ground', () => {
         await expect(unread.nextHops({ from: ORIGIN, towards: null, resourceId: RES })).rejects.toThrow(
             /could not read every row[\s\S]*Unreadable rows: 1/,
         );
-        await expect(unread.network({ from: null, towards: null, resourceId: RES })).rejects.toThrow(
-            /could not read every row/,
-        );
+        await expect(unread.network(exportInput())).rejects.toThrow(/could not read every row/);
     });
 
     it('treats a valid token id absent from a complete snapshot as unminted Virgin ground', async () => {
@@ -561,145 +589,136 @@ describe('RouteService.nextHops over Virgin ground', () => {
 });
 
 describe('RouteService.network', () => {
-    it('returns nodes with facts, legal edges and component labels', async () => {
-        const neighbour = at(1);
+    it('validates the request before it touches the map: distinct endpoints, whole units, a transportable resource', async () => {
+        const service = makeService([own(String(ORIGIN)), own(at(2))]);
+
+        await expect(service.network(exportInput({ towards: ORIGIN }))).rejects.toThrow(/must be different/);
+        await expect(service.network(exportInput({ amount: '0' }))).rejects.toThrow(/positive integer/);
+        await expect(service.network(exportInput({ resourceId: 999 }))).rejects.toThrow(
+            /does not exist or is not transportable/,
+        );
+    });
+
+    it('refuses an endpoint that is not a revealed cell of the payer, foreign Active Hub included', async () => {
         const hubCell = at(BASE_HUB_RADIUS);
-        const distant = farAway();
-        const distantNeighbour = String(neighbors(Number(distant))[0]);
+        const cells = [own(String(ORIGIN)), own(at(2)), own(at(3), { revealCount: 0 }), foreignHub(hubCell, '0.5')];
+        const service = makeService(cells);
+
+        await expect(service.network(exportInput({ towards: Number(hubCell) }))).rejects.toThrow(/is not yours/);
+        await expect(service.network(exportInput({ from: Number(hubCell) }))).rejects.toThrow(/is not yours/);
+        await expect(service.network(exportInput({ towards: Number(at(3)) }))).rejects.toThrow(/no completed reveal/);
+        await expect(service.network(exportInput({ towards: Number(at(4)) }))).rejects.toThrow(/no completed reveal/);
+    });
+
+    it('carries the whole request into the artifact and into the prefilled quote call', async () => {
+        const result = await makeService([own(String(ORIGIN)), own(at(2))]).network(exportInput());
+        const graph = graphOf(result);
+
+        expect(result.snapshotVersion).toBe(SNAPSHOT_VERSION);
+        expect(graph.schemaVersion).toBe(result.schemaVersion);
+        expect(graph.request).toEqual({ from: String(ORIGIN), towards: at(2), resourceId: RES, amount: AMOUNT });
+        expect(result.quoteTemplate.arguments).toEqual({
+            path: [String(ORIGIN), at(2)],
+            resourceId: RES,
+            amount: AMOUNT,
+        });
+    });
+
+    it('makes open Virgin ground a node, so unminted land between two of your cells is no wall', async () => {
+        const target = at(2);
+        const between = at(1);
+        const result = await makeService([own(String(ORIGIN)), own(target)]).network(exportInput());
+        const graph = graphOf(result);
+
+        expect(result.connected).toBe(true);
+        expect(nodeOf(graph, between)).toMatchObject({ owner: null, isVirgin: true, isOwn: false, radius: 1 });
+        expect(edgeOf(graph, String(ORIGIN), between)).toBe(true);
+        expect(edgeOf(graph, between, target)).toBe(true);
+    });
+
+    it('keeps foreign Active Hubs and drops foreign land past its first reveal that carries none', async () => {
+        const hubCell = at(BASE_HUB_RADIUS);
+        const controlled = at(3);
         const cells = [
             own(String(ORIGIN)),
-            own(neighbour),
+            own(at(2)),
             foreignHub(hubCell, '0.5'),
-            own(distant),
-            own(distantNeighbour),
+            makeCell({ tokenId: controlled, owner: RIVAL, revealCount: 1 }),
         ];
 
-        const result = await makeService(cells).network({ from: null, towards: null, resourceId: RES });
+        const graph = graphOf(await makeService(cells).network(exportInput()));
 
-        expect(new Set(result.nodes.map((n) => n.tokenId))).toEqual(
-            new Set([String(ORIGIN), neighbour, hubCell, distant, distantNeighbour]),
+        expect(nodeOf(graph, hubCell)).toMatchObject({ isHub: true, isOwn: false, transitFeePerUnit: '0.5' });
+        expect(nodeOf(graph, controlled)).toBeNull();
+        expect(edgeOf(graph, String(ORIGIN), hubCell)).toBe(true);
+    });
+
+    it('gives a foreign Hub still under construction neither its reach nor a node', async () => {
+        const spot = at(BASE_HUB_RADIUS);
+        const unfinished = foreignHub(spot, '0.5', BASE_HUB, withBuilding(BASE_HUB, UNFINISHED_AT));
+
+        const graph = graphOf(await makeService([own(String(ORIGIN)), own(at(2)), unfinished]).network(exportInput()));
+
+        expect(nodeOf(graph, spot)).toBeNull();
+    });
+
+    it('spans each Ready Hub tier with the radius that tier serves instead of one shared hub reach', async () => {
+        const top = at(TOP_HUB_RADIUS);
+        const mid = at(MID_HUB_RADIUS);
+        const cells = (type: string): Array<RawCell> => [
+            own(String(ORIGIN), withBuilding(type)),
+            own(at(2)),
+            own(top),
+            own(mid),
+        ];
+
+        const upgraded = graphOf(await makeService(cells(TOP_HUB)).network(exportInput()));
+        const base = graphOf(await makeService(cells(BASE_HUB)).network(exportInput()));
+
+        expect(nodeOf(upgraded, String(ORIGIN))?.radius).toBe(TOP_HUB_RADIUS);
+        expect(edgeOf(upgraded, String(ORIGIN), top)).toBe(true);
+        expect(edgeOf(upgraded, String(ORIGIN), mid)).toBe(true);
+        expect(nodeOf(base, String(ORIGIN))?.radius).toBe(BASE_HUB_RADIUS);
+        expect(edgeOf(base, String(ORIGIN), top)).toBe(false);
+        expect(edgeOf(base, String(ORIGIN), mid)).toBe(false);
+    });
+
+    it('follows a move radius that is not the launch value when it decides which hops are legal', async () => {
+        const wide = await makeService([own(String(ORIGIN)), own(at(2))], DEFAULT_FLOORS, {
+            moveRadius: 2,
+        }).network(exportInput());
+        const graph = graphOf(wide);
+
+        expect(nodeOf(graph, String(ORIGIN))?.radius).toBe(2);
+        expect(edgeOf(graph, String(ORIGIN), at(3))).toBe(true);
+        expect(edgeOf(graph, String(ORIGIN), at(4))).toBe(false);
+    });
+
+    it('marks the graph disconnected and keeps both ends when a foreign belt seals one of them in', async () => {
+        const sealed = neighbors(ORIGIN).map((token) =>
+            makeCell({ tokenId: String(token), owner: RIVAL, revealCount: 1 }),
         );
-        expect(edgeKeys(result.edges)).toEqual(
-            [
-                expectedEdge(String(ORIGIN), neighbour),
-                expectedEdge(String(ORIGIN), hubCell),
-                expectedEdge(neighbour, hubCell),
-                expectedEdge(distant, distantNeighbour),
-            ].sort(),
+        const target = farAway();
+
+        const result = await makeService([own(String(ORIGIN)), own(target), ...sealed]).network(
+            exportInput({ towards: Number(target) }),
         );
-        expect(result.components).toBe(2);
-        const byToken = new Map(result.nodes.map((n) => [n.tokenId, n]));
-        expect(byToken.get(String(ORIGIN))?.component).toBe(byToken.get(hubCell)?.component);
-        expect(byToken.get(distant)?.component).not.toBe(byToken.get(String(ORIGIN))?.component);
-        expect(byToken.get(hubCell)).toMatchObject({ isHub: true, transitFeePerUnit: '0.5', owner: RIVAL });
-        expect(byToken.get(neighbour)?.pos).toEqual(tokenIdToPos(neighbour));
+        const graph = graphOf(result);
+
+        expect(result.connected).toBe(false);
+        expect(graph.connected).toBe(false);
+        expect(nodeOf(graph, String(ORIGIN))).not.toBeNull();
+        expect(nodeOf(graph, target)).not.toBeNull();
+        expect(graph.nodes).toHaveLength(MAX_TOKEN_ID - sealed.length);
     });
 
-    it('annotates distance fields when from/towards are given', async () => {
-        const neighbour = at(1);
-        const hubCell = at(BASE_HUB_RADIUS);
-        const target = at(BASE_HUB_RADIUS + 1);
-        const cells = [own(String(ORIGIN)), own(neighbour), foreignHub(hubCell, '0.5'), own(target)];
+    it('reports the artifact counts it wrote without ever putting the graph in the answer', async () => {
+        const result = await makeService([own(String(ORIGIN)), own(at(2))]).network(exportInput());
+        const graph = graphOf(result);
 
-        const result = await makeService(cells).network({ from: ORIGIN, towards: Number(target), resourceId: RES });
-
-        expect(result.fromToTarget).toBe(gridDistance(String(ORIGIN), target));
-        const byToken = new Map(result.nodes.map((n) => [n.tokenId, n]));
-        expect(byToken.get(hubCell)).toMatchObject({
-            distFromSource: gridDistance(String(ORIGIN), hubCell),
-            distToTarget: gridDistance(hubCell, target),
-        });
-        expect(byToken.get(String(ORIGIN))).toMatchObject({ distFromSource: 0 });
-    });
-
-    it('a foreign belt between plain cells is a wall; a hub reaches across', async () => {
-        const between = at(1);
-        const far = at(2);
-        const rival = makeCell({ tokenId: between, owner: RIVAL, revealCount: 1 });
-
-        const walled = await makeService([own(String(ORIGIN)), rival, own(far)]).network({
-            from: null,
-            towards: null,
-            resourceId: RES,
-        });
-        expect(new Set(walled.nodes.map((n) => n.tokenId))).toEqual(new Set([String(ORIGIN), far]));
-        expect(walled.edges).toEqual([]);
-        expect(walled.components).toBe(2);
-
-        const bridged = await makeService([hub(String(ORIGIN), WALLET_ADDRESS), rival, own(far)]).network({
-            from: null,
-            towards: null,
-            resourceId: RES,
-        });
-        expect(edgeKeys(bridged.edges)).toEqual([expectedEdge(String(ORIGIN), far)]);
-        expect(bridged.components).toBe(1);
-    });
-
-    it('drops a foreign hub that is still under construction from the network', async () => {
-        const unfinished = foreignHub(at(BASE_HUB_RADIUS), '0.5', BASE_HUB, withBuilding(BASE_HUB, UNFINISHED_AT));
-
-        const result = await makeService([own(String(ORIGIN)), unfinished]).network({
-            from: null,
-            towards: null,
-            resourceId: RES,
-        });
-
-        expect(result.nodes.map((n) => n.tokenId)).toEqual([String(ORIGIN)]);
-    });
-
-    it('a ready hub upgrade spans an edge the base hub radius could not', async () => {
-        const landing = at(MID_HUB_RADIUS);
-        const upgraded = own(String(ORIGIN), withBuilding(MID_HUB));
-
-        const result = await makeService([upgraded, own(landing)]).network({
-            from: null,
-            towards: null,
-            resourceId: RES,
-        });
-
-        expect(result.nodes.find((n) => n.tokenId === String(ORIGIN))).toMatchObject({ isHub: true, ready: true });
-        expect(edgeKeys(result.edges)).toEqual([expectedEdge(String(ORIGIN), landing)]);
-    });
-
-    it('an owned cell whose hub is unfinished stays a node with normal reach and no transit fee', async () => {
-        const landing = at(BASE_HUB_RADIUS);
-        const goingUp = own(String(ORIGIN), {
-            ...withBuilding(BASE_HUB, UNFINISHED_AT),
-            transitFeeOverrides: { [RES]: '0.5' },
-        });
-
-        const result = await makeService([goingUp, own(landing)]).network({
-            from: null,
-            towards: null,
-            resourceId: RES,
-        });
-
-        expect(result.nodes.find((n) => n.tokenId === String(ORIGIN))).toMatchObject({
-            isHub: false,
-            ready: false,
-            transitFeePerUnit: null,
-        });
-        expect(result.edges).toEqual([]);
-    });
-
-    it('rejects a resource id with no floor row before surveying the network', async () => {
-        await expect(
-            makeService([own(String(ORIGIN)), foreignHub(at(3), '0.5')]).network({
-                from: null,
-                towards: null,
-                resourceId: 999,
-            }),
-        ).rejects.toThrow(/does not exist or is not transportable/);
-    });
-
-    it('shows a disconnected target as a separate component', async () => {
-        const distant = farAway();
-        const cells = [own(String(ORIGIN)), own(at(1)), own(distant)];
-
-        const result = await makeService(cells).network({ from: ORIGIN, towards: Number(distant), resourceId: RES });
-
-        const byToken = new Map(result.nodes.map((n) => [n.tokenId, n]));
-        expect(byToken.get(String(ORIGIN))?.component).not.toBe(byToken.get(distant)?.component);
-        expect(result.fromToTarget).toBeGreaterThan(0);
+        expect(result.nodeCount).toBe(graph.nodes.length);
+        expect(result.edgeCount).toBe(graph.edges.length);
+        expect(JSON.stringify(result)).not.toContain('"nodes"');
+        expect(result.note).toMatch(/raw route graph/);
     });
 });

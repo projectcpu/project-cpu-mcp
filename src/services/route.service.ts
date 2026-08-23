@@ -1,11 +1,23 @@
-import { DISTANCE_SCAN_CAP, NEXT_HOPS_NOTE, ROUTE_NETWORK_NOTE } from './route.constants.js';
+import { writeRouteGraph } from './route.artifact.js';
 import {
-    componentLabels,
+    DISTANCE_SCAN_CAP,
+    NEXT_HOPS_NOTE,
+    QUOTE_TOOL_NAME,
+    ROUTE_AMOUNT_PATTERN,
+    ROUTE_GRAPH_INSTRUCTIONS,
+    ROUTE_GRAPH_SCHEMA_VERSION,
+    ROUTE_NETWORK_NOTE,
+} from './route.constants.js';
+import {
     distancesFrom,
+    endpointRefusal,
     incompleteSnapshotMessage,
-    networkEdges,
     radiusPolicy,
     reachableWaypoints,
+    relevantSubgraph,
+    routeGraphEdges,
+    routeGraphNodes,
+    RouteEndpointRole,
     waypointNodes,
     waypointResolver,
     waypointTransitFee,
@@ -16,13 +28,14 @@ import {
 import type {
     AppConfig,
     IAppConfig,
-    NetworkNodeView,
     NextHopsInput,
     NextHopsResult,
     NextHopView,
     RouteCellReader,
+    RouteGraphArtifact,
     RouteNetworkInput,
     RouteNetworkResult,
+    RouteRequestView,
     RouteServiceOptions,
 } from './types.js';
 import { BuildingKind } from '../api/types.js';
@@ -123,8 +136,12 @@ export class RouteService {
     }
 
     async network(input: RouteNetworkInput): Promise<RouteNetworkResult> {
-        const from = input.from === null ? null : String(input.from);
-        const towards = input.towards === null ? null : String(input.towards);
+        const from = String(parseTokenId(input.from));
+        const towards = String(parseTokenId(input.towards));
+        if (from === towards) {
+            throw new Error('`from` and `towards` must be different cells.');
+        }
+        this.assertAmount(input.amount);
 
         const config = await this.appConfig.load();
         const routing = config.transport;
@@ -135,66 +152,83 @@ export class RouteService {
         const snapshot = await this.mapReader.routingSnapshot();
         this.assertComplete(snapshot);
         const cellsByToken = new Map(snapshot.cells.map((cell): [string, Cell] => [cell.tokenId, cell]));
-        const nodes = waypointNodes(snapshot.cells, address, policy);
+        this.assertEndpoint(from, RouteEndpointRole.Source, cellsByToken, address);
+        this.assertEndpoint(towards, RouteEndpointRole.Target, cellsByToken, address);
 
-        const edges = networkEdges(nodes);
-        const components = componentLabels(nodes, edges);
+        const nodes = routeGraphNodes(snapshot.cells, address, policy);
+        const graph = relevantSubgraph(nodes, routeGraphEdges(nodes, policy), from, towards);
 
-        const nodeTokens = new Set<number>([...nodes.keys()].map(Number));
-        const fromSource = from === null ? null : distancesFrom(Number(from), nodeTokens, DISTANCE_SCAN_CAP);
-        const toTarget =
-            towards === null
-                ? null
-                : distancesFrom(
-                      Number(towards),
-                      new Set([...nodeTokens, ...(from === null ? [] : [Number(from)])]),
-                      DISTANCE_SCAN_CAP,
-                  );
-
-        const views: Array<NetworkNodeView> = [...nodes.values()]
-            .sort((a, b) => Number(a.tokenId) - Number(b.tokenId))
-            .map((node) => {
-                const cell = cellsByToken.get(node.tokenId) as Cell;
+        const request: RouteRequestView = {
+            from,
+            towards,
+            resourceId: input.resourceId,
+            amount: input.amount,
+        };
+        const artifact: RouteGraphArtifact = {
+            schemaVersion: ROUTE_GRAPH_SCHEMA_VERSION,
+            snapshotVersion: snapshot.version,
+            request,
+            connected: graph.connected,
+            nodes: graph.nodes.map((node) => {
+                const cell = cellsByToken.get(node.tokenId) ?? null;
                 return {
                     tokenId: node.tokenId,
-                    pos: tokenIdToPos(node.tokenId),
+                    owner: cell === null ? null : cell.owner,
+                    isVirgin: node.isVirgin,
                     isOwn: node.isOwn,
                     isHub: node.isHub,
-                    ready: cell.ready,
-                    owner: cell.owner,
+                    radius: node.radius,
                     transitFeePerUnit: waypointTransitFee(
                         node,
-                        cell.transitFeeOverrides,
+                        cell === null ? null : cell.transitFeeOverrides,
                         input.resourceId,
                         routing.moveFeeFloors,
                     ),
-                    distFromSource: fromSource === null ? null : (fromSource.get(Number(node.tokenId)) ?? null),
-                    distToTarget: toTarget === null ? null : (toTarget.get(Number(node.tokenId)) ?? null),
-                    component: components.get(node.tokenId) as number,
                 };
-            });
+            }),
+            edges: graph.edges,
+        };
+        const artifactPath = await writeRouteGraph(artifact);
 
-        const result: RouteNetworkResult = {
-            from,
-            towards,
-            fromToTarget: from === null || toTarget === null ? null : (toTarget.get(Number(from)) ?? null),
-            reach: { moveRadius: routing.moveRadius, hubRadius: routing.hubRadius },
-            components: new Set(components.values()).size,
-            nodes: views,
-            edges,
+        this.logger.info('exported route graph', {
+            version: snapshot.version,
+            nodes: artifact.nodes.length,
+            edges: artifact.edges.length,
+            connected: artifact.connected,
+        });
+        return {
+            artifactPath,
+            schemaVersion: artifact.schemaVersion,
+            snapshotVersion: artifact.snapshotVersion,
+            request,
+            connected: artifact.connected,
+            nodeCount: artifact.nodes.length,
+            edgeCount: artifact.edges.length,
+            instructions: ROUTE_GRAPH_INSTRUCTIONS,
+            quoteTemplate: {
+                tool: QUOTE_TOOL_NAME,
+                arguments: { path: [from, towards], resourceId: input.resourceId, amount: input.amount },
+            },
             note: ROUTE_NETWORK_NOTE,
         };
-        this.logger.info('surveyed route network', {
-            nodes: views.length,
-            edges: edges.length,
-            components: result.components,
-        });
-        return result;
     }
 
     private assertComplete(snapshot: RoutingSnapshot): void {
         if (!snapshot.complete) {
             throw new Error(incompleteSnapshotMessage(snapshot.droppedCells));
+        }
+    }
+
+    private assertAmount(amount: string): void {
+        if (!ROUTE_AMOUNT_PATTERN.test(amount)) {
+            throw new Error(`\`amount\` must be a positive integer string of units, got "${amount}".`);
+        }
+    }
+
+    private assertEndpoint(tokenId: string, role: RouteEndpointRole, cells: Map<string, Cell>, address: string): void {
+        const refusal = endpointRefusal(tokenId, role, cells.get(tokenId) ?? null, address);
+        if (refusal !== null) {
+            throw new Error(refusal);
         }
     }
 

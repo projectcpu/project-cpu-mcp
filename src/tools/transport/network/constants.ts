@@ -1,21 +1,20 @@
 export { ROUTE_NETWORK_DESCRIPTION } from '../constants.js';
 
-export const ROUTE_NETWORK_TITLE = 'ROUTE NETWORK';
+export const ROUTE_NETWORK_TITLE = 'ROUTE GRAPH';
 
 export const ROUTE_NETWORK_LABELS = {
+    graph: 'Graph file',
+    schema: 'Schema',
+    snapshot: 'Snapshot',
     waypoints: 'Waypoints',
-    own: 'Yours',
-    hubs: 'Hubs',
     hops: 'Legal hops',
-    components: 'Components',
-    reach: 'Reach',
-    paid: 'Paid waypoints',
     from: 'From',
     towards: 'Towards',
-    steps: 'Grid steps',
+    cargo: 'Cargo',
     link: 'Link',
+    next: 'Next',
     note: 'Note',
 };
 
-export const ROUTE_NETWORK_LINKED = 'one component holds both ends — a chain exists, build it from the hops';
-export const ROUTE_NETWORK_SPLIT = 'the ends are NOT connected through this network — a gap to bridge first';
+export const ROUTE_NETWORK_LINKED = 'one graph holds both ends — compute the chain from the file';
+export const ROUTE_NETWORK_SPLIT = 'the ends are NOT connected in this graph — a gap to bridge first';

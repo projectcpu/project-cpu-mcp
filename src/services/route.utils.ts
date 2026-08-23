@@ -1,6 +1,7 @@
 import { INCOMPLETE_SNAPSHOT_MESSAGE, UNREADABLE_ROWS_MESSAGE } from './route.constants.js';
 import { BuildingKind } from '../api/types.js';
 import { neighbors } from '../geometry/adjacency.js';
+import { MAX_TOKEN_ID, MIN_TOKEN_ID } from '../geometry/constants.js';
 import { kRing } from '../geometry/graph.utils.js';
 
 export interface RouteNode {
@@ -200,21 +201,61 @@ export interface NetworkEdge {
     distance: number;
 }
 
-export function networkEdges(nodes: Map<string, RouteNode>): Array<NetworkEdge> {
-    const widest = maxNodeRadius(nodes);
-    const resolve: NodeResolver = (tokenId) => nodes.get(tokenId) ?? null;
-    const edges: Array<NetworkEdge> = [];
-    for (const node of nodes.values()) {
-        for (const { node: other, hopDistance } of reachableWaypoints(node, resolve, widest)) {
-            if (Number(other.tokenId) > Number(node.tokenId)) {
-                edges.push({ a: node.tokenId, b: other.tokenId, distance: hopDistance });
-            }
+/**
+ * Every Intermediate waypoint in the world, the payer's view of it: the snapshot's own rows where it holds
+ * one, and unminted Virgin ground everywhere else. Safe only on a complete snapshot — a missing row would
+ * otherwise pass for open ground.
+ */
+export function routeGraphNodes(
+    cells: ReadonlyArray<WaypointCell>,
+    address: string,
+    policy: RadiusPolicy,
+): Map<string, RouteNode> {
+    const nodes = waypointNodes(cells, address, policy);
+    const minted = new Set(cells.map((cell) => cell.tokenId));
+    for (let token = MIN_TOKEN_ID; token <= MAX_TOKEN_ID; token++) {
+        const tokenId = String(token);
+        if (!minted.has(tokenId)) {
+            nodes.set(tokenId, unmintedNode(tokenId, policy));
         }
     }
-    return edges.sort((x, y) => Number(x.a) - Number(y.a) || Number(x.b) - Number(y.b));
+    return nodes;
 }
 
-export function componentLabels(nodes: Map<string, RouteNode>, edges: Array<NetworkEdge>): Map<string, number> {
+/**
+ * Every legal hop between the given nodes, once per unordered pair. The two scans are an optimization over
+ * the whole world — ordinary move reach for all of them, the far wider Active-Hub reach only from the nodes
+ * that carry it — but every pair emitted is still checked against the exact per-node reach rule.
+ */
+export function routeGraphEdges(nodes: ReadonlyMap<string, RouteNode>, policy: RadiusPolicy): Array<NetworkEdge> {
+    const widest = widestReach(nodes, policy);
+    const moveScan = Math.max(0, 2 * policy.moveRadius - 1);
+    const found = new Map<string, NetworkEdge>();
+    const collect = (node: RouteNode, scan: number): void => {
+        for (const [token, distance] of kRing(Number(node.tokenId), scan)) {
+            if (distance === 0) {
+                continue;
+            }
+            const other = nodes.get(String(token));
+            if (other === undefined || !isHopLegal(node, other, distance)) {
+                continue;
+            }
+            const ascending = Number(other.tokenId) > Number(node.tokenId);
+            const a = ascending ? node.tokenId : other.tokenId;
+            const b = ascending ? other.tokenId : node.tokenId;
+            found.set(`${a}:${b}`, { a, b, distance });
+        }
+    };
+    for (const node of nodes.values()) {
+        collect(node, moveScan);
+        if (node.radius > policy.moveRadius) {
+            collect(node, Math.max(0, node.radius + widest - 1));
+        }
+    }
+    return [...found.values()].sort((x, y) => Number(x.a) - Number(y.a) || Number(x.b) - Number(y.b));
+}
+
+export function edgeAdjacency(edges: ReadonlyArray<NetworkEdge>): Map<string, Array<string>> {
     const adjacency = new Map<string, Array<string>>();
     const link = (from: string, to: string): void => {
         const list = adjacency.get(from);
@@ -228,30 +269,55 @@ export function componentLabels(nodes: Map<string, RouteNode>, edges: Array<Netw
         link(edge.a, edge.b);
         link(edge.b, edge.a);
     }
-    const labels = new Map<string, number>();
-    let component = 0;
-    const tokens = [...nodes.keys()].sort((x, y) => Number(x) - Number(y));
-    for (const token of tokens) {
-        if (labels.has(token)) {
-            continue;
-        }
-        let frontier = [token];
-        labels.set(token, component);
-        while (frontier.length > 0) {
-            const next: Array<string> = [];
-            for (const current of frontier) {
-                for (const neighbor of adjacency.get(current) ?? []) {
-                    if (!labels.has(neighbor)) {
-                        labels.set(neighbor, component);
-                        next.push(neighbor);
-                    }
+    return adjacency;
+}
+
+export function componentOf(adjacency: ReadonlyMap<string, ReadonlyArray<string>>, start: string): Set<string> {
+    const seen = new Set<string>([start]);
+    let frontier = [start];
+    while (frontier.length > 0) {
+        const next: Array<string> = [];
+        for (const current of frontier) {
+            for (const neighbor of adjacency.get(current) ?? []) {
+                if (!seen.has(neighbor)) {
+                    seen.add(neighbor);
+                    next.push(neighbor);
                 }
             }
-            frontier = next;
         }
-        component += 1;
+        frontier = next;
     }
-    return labels;
+    return seen;
+}
+
+export interface RouteSubgraph {
+    nodes: Array<RouteNode>;
+    edges: Array<NetworkEdge>;
+    connected: boolean;
+}
+
+/**
+ * Cuts the world down to what the requested move can reach: the one component both endpoints share, or the
+ * union of their two when nothing joins them. Topology relevant to neither endpoint is left out.
+ */
+export function relevantSubgraph(
+    nodes: ReadonlyMap<string, RouteNode>,
+    edges: ReadonlyArray<NetworkEdge>,
+    from: string,
+    towards: string,
+): RouteSubgraph {
+    const adjacency = edgeAdjacency(edges);
+    const reached = componentOf(adjacency, from);
+    const connected = reached.has(towards);
+    if (!connected) {
+        for (const token of componentOf(adjacency, towards)) {
+            reached.add(token);
+        }
+    }
+    const kept = [...nodes.values()]
+        .filter((node) => reached.has(node.tokenId))
+        .sort((x, y) => Number(x.tokenId) - Number(y.tokenId));
+    return { nodes: kept, edges: edges.filter((edge) => reached.has(edge.a)), connected };
 }
 
 export function distancesFrom(origin: number, targets: ReadonlySet<number>, maxSteps: number): Map<number, number> {
@@ -281,6 +347,43 @@ export function distancesFrom(origin: number, targets: ReadonlySet<number>, maxS
         frontier = next;
     }
     return found;
+}
+
+export enum RouteEndpointRole {
+    Source = 'source',
+    Target = 'target',
+}
+
+/** What a cell must expose to be judged as an endpoint. null stands for ground nobody has minted. */
+export interface EndpointCell {
+    owner: string;
+    revealCount: number;
+}
+
+/**
+ * The Route-endpoint rule, stricter than Intermediate-waypoint eligibility: the payer's own land, past its
+ * first completed reveal. Returns the refusal, or null when the cell may carry an end of the shipment.
+ */
+export function endpointRefusal(
+    tokenId: string,
+    role: RouteEndpointRole,
+    cell: EndpointCell | null,
+    address: string,
+): string | null {
+    if (cell === null || isVirginCell(cell)) {
+        return (
+            `Cell ${tokenId} cannot be the ${role} of this shipment: it is Virgin ground with no completed ` +
+            'reveal. A shipment starts and ends on your own revealed cells — Virgin ground is passage only.'
+        );
+    }
+    if (cell.owner.toLowerCase() !== address) {
+        return (
+            `Cell ${tokenId} cannot be the ${role} of this shipment: it is not yours (owner ${cell.owner}). A ` +
+            'shipment starts and ends on your own revealed cells — a foreign Active Hub is an Intermediate ' +
+            'waypoint only, never an endpoint.'
+        );
+    }
+    return null;
 }
 
 /** Tells a half-loaded map apart from one whose rows this client could not read — the remedies differ. */
