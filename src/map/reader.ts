@@ -126,9 +126,11 @@ export class MapReader {
 
     async routingSnapshot(): Promise<RoutingSnapshot> {
         const project = await this.projector();
+        const droppedCells = this.store.getDroppedCells();
         return {
             cells: [...this.store.values()].map(project),
-            complete: isBootstrapComplete(this.status.getReadiness()),
+            complete: isBootstrapComplete(this.status.getReadiness()) && droppedCells === 0,
+            droppedCells,
             version: this.store.getLatestUpdated(),
         };
     }

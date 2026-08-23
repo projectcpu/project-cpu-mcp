@@ -4,6 +4,7 @@ import { NoopLogger } from '../../../logger/noop.logger.js';
 import type { NextHopsResult, NextHopView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
+import { NEXT_HOPS_DESCRIPTION } from '../constants.js';
 import { NEXT_HOPS_SUMMARY_LIMIT } from '../next-hops/constants.js';
 import { registerNextHopsTool } from '../next-hops/next-hops.js';
 
@@ -162,5 +163,17 @@ describe('next_hops candidate listing', () => {
 
         expect(summary).not.toContain('more in the JSON payload');
         expect(summary).toContain(String(100 + NEXT_HOPS_SUMMARY_LIMIT - 1));
+    });
+});
+
+describe('next_hops fee documentation', () => {
+    it('does not promise open ground is free when a Hub can stand on it', async () => {
+        const text = await summaryOf(
+            nextHopsResult({ hops: [hop({ isVirgin: true, isHub: true, owner: '0xrival', transitFeePerUnit: '17' })] }),
+        );
+
+        expect(text).toContain('fee 17 $CPU/u');
+        expect(NEXT_HOPS_DESCRIPTION).toMatch(/finished Hub charges its fee even on a cell with no completed reveal/);
+        expect(NEXT_HOPS_DESCRIPTION).not.toContain('Virgin ground and your own cells charge none');
     });
 });

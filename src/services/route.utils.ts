@@ -1,3 +1,4 @@
+import { INCOMPLETE_SNAPSHOT_MESSAGE, UNREADABLE_ROWS_MESSAGE } from './route.constants.js';
 import { BuildingKind } from '../api/types.js';
 import { neighbors } from '../geometry/adjacency.js';
 import { kRing } from '../geometry/graph.utils.js';
@@ -280,4 +281,12 @@ export function distancesFrom(origin: number, targets: ReadonlySet<number>, maxS
         frontier = next;
     }
     return found;
+}
+
+/** Tells a half-loaded map apart from one whose rows this client could not read — the remedies differ. */
+export function incompleteSnapshotMessage(droppedCells: number): string {
+    if (droppedCells > 0) {
+        return `${UNREADABLE_ROWS_MESSAGE} Unreadable rows: ${droppedCells}.`;
+    }
+    return INCOMPLETE_SNAPSHOT_MESSAGE;
 }

@@ -99,6 +99,18 @@ describe('MapSync', () => {
         expect(store.size()).toBe(1);
     });
 
+    it('remembers the snapshot rows it could not read, so a reader can refuse to guess at them', async () => {
+        const { sync, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+
+        expect(store.size()).toBe(1);
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
     it('checks the source build before it asks for the first snapshot', async () => {
         const { sync, backendVersion, trace } = setup([makeCell({ tokenId: '1', updated: 50 })]);
         sync.start();

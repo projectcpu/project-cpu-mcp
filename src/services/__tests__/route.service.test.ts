@@ -100,6 +100,7 @@ function makeService(
     moveFeeFloors: Record<number, string> = DEFAULT_FLOORS,
     transport: Partial<TransportRoutingView> = {},
     complete = true,
+    droppedCells = 0,
 ): RouteService {
     const wallet = { get: () => ({ getAddress: () => WALLET_ADDRESS }) } as unknown as WalletProvider;
     const base = makeConfig();
@@ -116,6 +117,7 @@ function makeService(
             routingSnapshot: async () => ({
                 cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
                 complete,
+                droppedCells,
                 version: SNAPSHOT_VERSION,
             }),
         },
@@ -402,6 +404,17 @@ describe('RouteService.nextHops over Virgin ground', () => {
         await expect(loading.network({ from: null, towards: null, resourceId: RES })).rejects.toThrow(/map bootstrap/);
     });
 
+    it('refuses on a map whose rows it could not all read, instead of reading the gap as Virgin ground', async () => {
+        const unread = makeService([own(String(ORIGIN))], DEFAULT_FLOORS, {}, false, 1);
+
+        await expect(unread.nextHops({ from: ORIGIN, towards: null, resourceId: RES })).rejects.toThrow(
+            /could not read every row[\s\S]*Unreadable rows: 1/,
+        );
+        await expect(unread.network({ from: null, towards: null, resourceId: RES })).rejects.toThrow(
+            /could not read every row/,
+        );
+    });
+
     it('treats a valid token id absent from a complete snapshot as unminted Virgin ground', async () => {
         const result = await survey([own(String(ORIGIN))], ORIGIN);
 
@@ -432,6 +445,20 @@ describe('RouteService.nextHops over Virgin ground', () => {
         expect(hopFor(result, mine)).toMatchObject({ isVirgin: true, isOwn: true, owner: WALLET_ADDRESS });
         expect(hopFor(result, rivals)).toMatchObject({ isVirgin: true, isOwn: false, owner: RIVAL });
         expect(settled(result)).toEqual([]);
+    });
+
+    it('never calls a waypoint free in the note while the same result bills a fee for it', async () => {
+        const fee = '17';
+        const standing = at(1);
+        const cells = [own(String(ORIGIN)), foreignHub(standing, fee, BASE_HUB, { revealCount: 0 })];
+
+        const result = await survey(cells, ORIGIN);
+        const billed = result.hops.filter((h) => h.isVirgin && h.transitFeePerUnit !== null);
+
+        expect(hopFor(result, standing)).toMatchObject({ isVirgin: true, isHub: true, transitFeePerUnit: fee });
+        expect(billed).toHaveLength(1);
+        expect(result.note).toMatch(/Hub standing on Virgin ground still charges/);
+        expect(result.note).not.toMatch(/nobody controls it and it charges nothing/);
     });
 
     it('surveys from a Virgin cell, since goods can stand on open ground mid-route', async () => {

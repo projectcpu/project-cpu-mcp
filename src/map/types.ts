@@ -262,7 +262,10 @@ export interface MapStatus {
  */
 export interface RoutingSnapshot {
     cells: Array<Cell>;
+    /** True only when every existing row is held: the bootstrap has finished and no row was left unread. */
     complete: boolean;
+    /** Rows this client could not read; each one would otherwise pass for ground nobody has minted. */
+    droppedCells: number;
     version: number;
 }
 

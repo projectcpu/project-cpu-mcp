@@ -1,12 +1,8 @@
-import {
-    DISTANCE_SCAN_CAP,
-    INCOMPLETE_SNAPSHOT_MESSAGE,
-    NEXT_HOPS_NOTE,
-    ROUTE_NETWORK_NOTE,
-} from './route.constants.js';
+import { DISTANCE_SCAN_CAP, NEXT_HOPS_NOTE, ROUTE_NETWORK_NOTE } from './route.constants.js';
 import {
     componentLabels,
     distancesFrom,
+    incompleteSnapshotMessage,
     networkEdges,
     radiusPolicy,
     reachableWaypoints,
@@ -198,7 +194,7 @@ export class RouteService {
 
     private assertComplete(snapshot: RoutingSnapshot): void {
         if (!snapshot.complete) {
-            throw new Error(INCOMPLETE_SNAPSHOT_MESSAGE);
+            throw new Error(incompleteSnapshotMessage(snapshot.droppedCells));
         }
     }
 

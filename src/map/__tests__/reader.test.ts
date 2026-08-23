@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BuildingType } from '../../api/types.js';
 import { FakeAppConfig, makeConfig } from '../../services/__tests__/service-fakes.js';
+import { parseSnapshot } from '../map.utils.js';
 import { MapReader } from '../reader.js';
 import { MapStore } from '../store.js';
 import { MapReadiness, MapScope, type MapStatus, type RawCell } from '../types.js';
@@ -256,6 +257,25 @@ describe('MapReader routing snapshot', () => {
         const { reader } = makeReader([makeCell({ tokenId: '72', updated: 50 })], status(MapReadiness.Degraded, false));
 
         expect((await reader.routingSnapshot()).complete).toBe(true);
+    });
+
+    it('marks the snapshot incomplete when a row of the payload could not be read', async () => {
+        const store = new MapStore();
+        const { snapshot, dropped } = parseSnapshot({
+            serverTime: SNAPSHOT_SERVER_TIME,
+            version: 50,
+            cells: [makeCell({ tokenId: '72', updated: 50 }), { tokenId: '73' }],
+        });
+        store.applySnapshot(snapshot);
+        store.noteDroppedCells(dropped);
+        const { reader } = makeReader([], status(), store);
+
+        const routing = await reader.routingSnapshot();
+
+        expect(dropped).toBe(1);
+        expect(routing.cells.map((c) => c.tokenId)).toEqual(['72']);
+        expect(routing.droppedCells).toBe(1);
+        expect(routing.complete).toBe(false);
     });
 
     it('marks a stopped map incomplete', async () => {
