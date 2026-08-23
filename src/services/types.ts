@@ -1206,12 +1206,12 @@ export interface MintInput {
 
 /** The active SeaDrop public-drop terms for the land collection, read on-chain. */
 export interface PublicDropView {
-    /** ETH price per cell, in wei. */
+    /** Per-cell amount in native ETH, in wei, as the drop sets it — may be zero. */
     mintPrice: bigint;
     startTime: number;
     endTime: number;
     maxTotalMintableByWallet: number;
-    /** OpenSea fee, in basis points of the (inclusive) mint price. */
+    /** OpenSea fee, in basis points of the (inclusive) per-cell amount. */
     feeBps: number;
     restrictFeeRecipients: boolean;
 }
@@ -1222,16 +1222,16 @@ export interface PreparedMint {
     land: Address;
     drop: PublicDropView;
     quantity: number;
-    /** quantity × mintPrice, in wei — the exact ETH the mint must pay. */
+    /** quantity × the live per-cell amount, in wei — the value the mint transaction sends. */
     totalWei: bigint;
 }
 
 export interface MintQuote {
     land: Address;
     quantity: number;
-    /** Per-cell price in native ETH (decimal). */
+    /** Live per-cell amount in native ETH (decimal), as read from the drop terms. */
     mintPrice: string;
-    /** quantity × mintPrice in native ETH (decimal). */
+    /** quantity × the live per-cell amount, in native ETH (decimal). */
     total: string;
     feeBps: number;
     startTime: number;
@@ -1239,11 +1239,11 @@ export interface MintQuote {
     maxTotalMintableByWallet: number;
 }
 
-/** A confirmed mint — the on-chain SeaDrop public-drop purchase of `quantity` cells, paid in ETH. */
+/** A confirmed mint — `quantity` cells issued on-chain through the SeaDrop public drop. */
 export interface MintResult {
     land: Address;
     quantity: number;
-    /** quantity × mintPrice in native ETH (decimal). */
+    /** quantity × the live per-cell amount, in native ETH (decimal). */
     total: string;
     txHash: Hash;
     status: TxStatus;

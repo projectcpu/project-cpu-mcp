@@ -4,6 +4,7 @@ import { DEFAULT_SERVER_TIME, FakeAppConfig, makeConfig, WALLET_ADDRESS } from '
 import { BuildingKind, BuildingType, type TransportRoutingView } from '../../api/types.js';
 import { neighbors } from '../../geometry/adjacency.js';
 import { kRing } from '../../geometry/graph.utils.js';
+import { tokenIdToPos } from '../../geometry/token.utils.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import { makeCell } from '../../map/__tests__/fixtures.js';
 import { toCell } from '../../map/cell-view.utils.js';
@@ -153,6 +154,7 @@ describe('RouteService.nextHops', () => {
             owner: RIVAL,
             transitFeePerUnit: '0.5',
         });
+        expect(result.hops[1]?.pos).toEqual(tokenIdToPos(hubCell));
     });
 
     it('resolves the transit fee for the requested resource: override for it, its floor otherwise', async () => {
@@ -393,6 +395,7 @@ describe('RouteService.network', () => {
         expect(byToken.get(String(ORIGIN))?.component).toBe(byToken.get(hubCell)?.component);
         expect(byToken.get(distant)?.component).not.toBe(byToken.get(String(ORIGIN))?.component);
         expect(byToken.get(hubCell)).toMatchObject({ isHub: true, transitFeePerUnit: '0.5', owner: RIVAL });
+        expect(byToken.get(neighbour)?.pos).toEqual(tokenIdToPos(neighbour));
     });
 
     it('annotates distance fields when from/towards are given', async () => {
