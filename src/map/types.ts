@@ -223,6 +223,9 @@ export interface SocketLifecycleHandlers {
     onDisconnect: (reason: string) => void;
     onError: (error: Error) => void;
     onCellUpdate: (cell: RawCell) => void;
+    // A realtime update this client could not read. Reported separately so the row is accounted for the same
+    // way a dropped snapshot row is, instead of vanishing and leaving unknown ground looking unminted.
+    onCellUpdateDropped: () => void;
 }
 
 // Abstraction over the realtime socket so tests can drive lifecycle events with a fake.

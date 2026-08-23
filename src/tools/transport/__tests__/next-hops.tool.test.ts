@@ -176,4 +176,15 @@ describe('next_hops fee documentation', () => {
         expect(NEXT_HOPS_DESCRIPTION).toMatch(/finished Hub charges its fee even on a cell with no completed reveal/);
         expect(NEXT_HOPS_DESCRIPTION).not.toContain('Virgin ground and your own cells charge none');
     });
+
+    it('does not promise a fee for a Hub of your own standing on open ground', async () => {
+        const text = await summaryOf(
+            nextHopsResult({
+                hops: [hop({ isOwn: true, isVirgin: true, isHub: true, transitFeePerUnit: null })],
+            }),
+        );
+
+        expect(text).not.toContain('fee');
+        expect(NEXT_HOPS_DESCRIPTION).toMatch(/your own cells charge none, a Hub of your own on them included/);
+    });
 });

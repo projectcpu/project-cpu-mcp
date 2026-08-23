@@ -461,6 +461,24 @@ describe('RouteService.nextHops over Virgin ground', () => {
         expect(result.note).not.toMatch(/nobody controls it and it charges nothing/);
     });
 
+    it('charges nothing for your own Hub on your own unrevealed cell, and says so in the note', async () => {
+        const standing = at(1);
+        const cells = [
+            own(String(ORIGIN)),
+            hub(standing, WALLET_ADDRESS, BASE_HUB, { revealCount: 0, transitFeeOverrides: { [RES]: '17' } }),
+        ];
+
+        const result = await survey(cells, ORIGIN);
+
+        expect(hopFor(result, standing)).toMatchObject({
+            isVirgin: true,
+            isHub: true,
+            isOwn: true,
+            transitFeePerUnit: null,
+        });
+        expect(result.note).toMatch(/Hub of your own on it charges you nothing/);
+    });
+
     it('surveys from a Virgin cell, since goods can stand on open ground mid-route', async () => {
         const standing = at(1);
 

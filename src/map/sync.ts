@@ -65,6 +65,7 @@ export class MapSync implements MapStatus {
             onDisconnect: (reason) => this.handleDisconnect(reason),
             onError: (error) => this.handleError(error),
             onCellUpdate: (cell) => this.handleCellUpdate(cell),
+            onCellUpdateDropped: () => this.handleCellUpdateDropped(),
         });
 
         void this.bootstrapSnapshot();
@@ -233,6 +234,10 @@ export class MapSync implements MapStatus {
         if (this.store.applyCell(cell)) {
             this.logger.debug('cell updated', { tokenId: cell.tokenId, latest: this.store.getLatestUpdated() });
         }
+    }
+
+    private handleCellUpdateDropped(): void {
+        this.store.noteDroppedCells(1);
     }
 
     private markReady(): void {

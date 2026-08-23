@@ -121,6 +121,23 @@ describe('MapStore', () => {
         });
     });
 
+    describe('unreadable rows', () => {
+        it('keeps the count once a row has been missed, so a later clean sync cannot hide it', () => {
+            store.noteDroppedCells(1);
+            store.noteDroppedCells(0);
+
+            expect(store.getDroppedCells()).toBe(1);
+        });
+
+        it('clears the count when the whole map is replaced, so a new world starts unblemished', () => {
+            store.noteDroppedCells(2);
+
+            store.replaceAll(makeSnapshot({ version: 10, serverTime: 5, cells: [makeCell({ updated: 10 })] }));
+
+            expect(store.getDroppedCells()).toBe(0);
+        });
+    });
+
     it('looks cells up by owner case-insensitively', () => {
         store.applyCell(makeCell({ tokenId: '1', owner: '0xME' }));
         store.applyCell(makeCell({ tokenId: '2', owner: '0xrival' }));

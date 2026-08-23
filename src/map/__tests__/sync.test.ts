@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeMapSocket } from '../../__mocks__/in-memory-socket.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
+import { FakeAppConfig, makeConfig } from '../../services/__tests__/service-fakes.js';
 import { BackendVersion, createBackendVersionGate } from '../../version/backend-version.js';
 import { BACKEND_RESET_NOTICE, BACKEND_VERSION_TTL_MS } from '../../version/constants.js';
 import { createNoticeBuffer, guardToolHandler } from '../../version/tool-guard.js';
 import type { IBackendVersion } from '../../version/types.js';
 import { STARTUP_FETCH_RETRY_MS } from '../constants.js';
+import { MapReader } from '../reader.js';
 import { MapStore } from '../store.js';
 import { MapSync } from '../sync.js';
 import { type IMapApi, MapReadiness, type RawCell } from '../types.js';
@@ -21,6 +23,7 @@ class FakeApi implements IMapApi {
     public readonly calls: Array<string> = [];
     public snapshotVersion = 50;
     public snapshotCells: Array<RawCell>;
+    public resyncCells: Array<RawCell> = [];
 
     constructor(
         snapshotCells: Array<RawCell>,
@@ -32,7 +35,7 @@ class FakeApi implements IMapApi {
     async request<T>(path: string): Promise<{ status: number; data: T }> {
         this.calls.push(path);
         this.trace.push('map-request');
-        const cells = path.includes('since=') ? [] : this.snapshotCells;
+        const cells = path.includes('since=') ? this.resyncCells : this.snapshotCells;
         const data = makeSnapshot({ version: this.snapshotVersion, serverTime: 1000, cells }) as T;
         return { status: 200, data };
     }
@@ -109,6 +112,58 @@ describe('MapSync', () => {
 
         expect(store.size()).toBe(1);
         expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('counts a realtime update it could not read, so a loaded map stops passing for whole', async () => {
+        const { sync, socket, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        expect((await reader.routingSnapshot()).complete).toBe(true);
+
+        socket.emitUnreadableCell();
+
+        const routing = await reader.routingSnapshot();
+        expect(routing.droppedCells).toBe(1);
+        expect(routing.complete).toBe(false);
+    });
+
+    it('counts the resync rows it could not read', async () => {
+        const { sync, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        expect(store.getDroppedCells()).toBe(0);
+
+        api.resyncCells = [{ tokenId: '2' } as unknown as RawCell];
+        await sync.resyncNow();
+
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('counts the rows it could not read while replacing the whole map', async () => {
+        const { sync, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+
+        api.snapshotCells = [makeCell({ tokenId: '2', updated: 2 }), { tokenId: '3' } as unknown as RawCell];
+        sync.applyFullSnapshot(await sync.fetchFullSnapshot());
+
+        expect(store.size()).toBe(1);
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('does not carry an unreadable-row count from one full replacement into the next', async () => {
+        const { sync, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        api.snapshotCells = [makeCell({ tokenId: '2', updated: 2 }), { tokenId: '3' } as unknown as RawCell];
+        sync.applyFullSnapshot(await sync.fetchFullSnapshot());
+        expect(store.getDroppedCells()).toBe(1);
+
+        api.snapshotCells = [makeCell({ tokenId: '4', updated: 4 })];
+        sync.applyFullSnapshot(await sync.fetchFullSnapshot());
+
+        expect(store.getDroppedCells()).toBe(0);
     });
 
     it('checks the source build before it asks for the first snapshot', async () => {

@@ -3,8 +3,9 @@ export const NEXT_HOPS_NOTE =
     'radius(from)+radius(to)\u22121 grid steps, and every cell brings its own radius: a plain cell the move ' +
     'radius, a finished Hub the radius its own tier serves (`reach` per candidate — hub tiers differ). ' +
     'Waypoints are open Virgin ground (`isVirgin` — no completed reveal, minted or not, so nobody controls the ' +
-    'ground and the ground itself charges nothing, but a finished Hub standing on Virgin ground still charges ' +
-    'its transit fee — `transitFeePerUnit` per candidate is what you pay), your own cells, and any cell with a ' +
+    'ground and the ground itself charges nothing, but a foreign finished Hub standing on Virgin ground still ' +
+    'charges its transit fee, while a Hub of your own on it charges you nothing — `transitFeePerUnit` per ' +
+    'candidate is what you pay), your own cells, and any cell with a ' +
     'finished Hub; only foreign land past its first reveal without a finished Hub is closed. A Hub ' +
     'counts only once its construction finishes: until then it grants no hub reach and charges no fee, and a ' +
     'foreign one is no waypoint at all (`ready` says which). A shipment still starts and ends on your own ' +

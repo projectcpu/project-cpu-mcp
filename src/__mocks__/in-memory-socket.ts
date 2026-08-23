@@ -41,6 +41,10 @@ export class FakeMapSocket implements ISocketClient {
         this.handlers?.onCellUpdate(cell);
     }
 
+    emitUnreadableCell(): void {
+        this.handlers?.onCellUpdateDropped();
+    }
+
     emitError(error: Error): void {
         this.handlers?.onError(error);
     }
