@@ -51,7 +51,9 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run typecheck
       - run: pnpm run build
-      - run: pnpm run test:unit
+      # Full suite, not test:unit — the *.integration.test.ts suites touch only the local
+      # filesystem or a loopback mock RPC server, so they are safe to run in CI too.
+      - run: pnpm run test
 
       # Ensure npm is recent enough for OIDC trusted publishing. Pinned to 11: the npm 12.0.0
       # tarball is missing the `sigstore` module libnpmpublish requires, so
