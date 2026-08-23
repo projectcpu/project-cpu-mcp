@@ -274,6 +274,53 @@ describe('MapSync', () => {
         expect((await reader.routingSnapshot()).complete).toBe(false);
     });
 
+    it('goes on reading the map after a repairing read finished, so a later gap is repaired too', async () => {
+        const { sync, socket, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        socket.emitUnreadableCell();
+
+        await sync.resyncNow();
+        expect(store.getDroppedUpdates()).toBe(0);
+
+        api.calls.length = 0;
+        await sync.resyncNow();
+        await sync.resyncNow();
+        expect(api.calls).toEqual([`${MAP_HTTP_PATH}?since=50`, `${MAP_HTTP_PATH}?since=50`]);
+
+        socket.emitUnreadableCell();
+        api.calls.length = 0;
+        await sync.resyncNow();
+
+        expect(api.calls).toEqual([MAP_HTTP_PATH]);
+        expect(store.getDroppedUpdates()).toBe(0);
+        expect((await reader.routingSnapshot()).complete).toBe(true);
+    });
+
+    it('holds a resync that rides the repairing read until that read has answered', async () => {
+        const { sync, api, socket } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        socket.emitUnreadableCell();
+
+        api.gate = true;
+        const owner = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+
+        let riderReturned = false;
+        const rider = sync.resyncNow().then(() => {
+            riderReturned = true;
+        });
+        await flush();
+        expect(riderReturned).toBe(false);
+
+        api.answerOldest([makeCell({ tokenId: '1', updated: 50 })]);
+        await Promise.all([owner, rider]);
+
+        expect(riderReturned).toBe(true);
+    });
+
     it('asks for a delta while nothing is missing', async () => {
         const { sync, api } = setup([makeCell({ tokenId: '1', updated: 50 })]);
         sync.start();
