@@ -721,6 +721,8 @@ export interface NextHopView {
     isHub: boolean;
     ready: boolean | null;
     owner: string;
+    /** Reach this waypoint contributes in grid steps: its Ready hub's own radius, or the move radius. */
+    radius: number;
     transitFeePerUnit: string | null;
     distanceToTarget: number | null;
 }
@@ -729,9 +731,11 @@ export interface NextHopsResult {
     from: string;
     fromIsHub: boolean;
     fromReady: boolean | null;
+    /** Reach the origin contributes in grid steps — a hop is legal up to `fromRadius + radius - 1`. */
+    fromRadius: number;
     towards: string | null;
     targetDistance: number | null;
-    reach: { moveRadius: number; hubRadius: number };
+    reach: { moveRadius: number };
     hops: Array<NextHopView>;
     note: string;
 }

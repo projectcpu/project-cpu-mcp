@@ -17,7 +17,8 @@ function originNote(result: NextHopsResult): string {
 function summarizeHops(result: NextHopsResult): string {
     if (result.hops.length === 0) {
         return (
-            `No eligible waypoints within reach of ${result.from} — the route ends here.` +
+            `No eligible waypoints within reach of ${result.from} (reach ${result.fromRadius}) — the route ends ` +
+            'here.' +
             `${originNote(result)} ` +
             'Build a Hub to bridge the gap, use closer cells, or reveal what you own nearby.'
         );
@@ -28,10 +29,11 @@ function summarizeHops(result: NextHopsResult): string {
         const kind = hop.isOwn ? 'own' : 'hub';
         const fee = hop.transitFeePerUnit !== null ? `, fee ${hop.transitFeePerUnit} $CPU/u` : '';
         const remaining = hop.distanceToTarget !== null ? `, ${hop.distanceToTarget} steps to target` : '';
-        return `${hop.tokenId} (${kind}, ${hop.hopDistance} step hop${fee}${remaining})`;
+        return `${hop.tokenId} (${kind}, reach ${hop.radius}, ${hop.hopDistance} step hop${fee}${remaining})`;
     });
     return (
-        `${result.hops.length} legal next hop(s) from ${result.from}${towards}: ${lines.join('; ')}.` +
+        `${result.hops.length} legal next hop(s) from ${result.from} (reach ${result.fromRadius})${towards}: ` +
+        `${lines.join('; ')}.` +
         `${originNote(result)} ${result.note}`
     );
 }

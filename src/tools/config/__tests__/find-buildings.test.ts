@@ -38,6 +38,7 @@ type FindArgs = Partial<FindBuildingsArgs>;
 const MINE: CatalogBuildingView = {
     type: BuildingType.Mine,
     onChainId: 4,
+    radius: 0,
     name: 'Mine',
     kind: BuildingKind.Extractor,
     tier: 1,
@@ -62,6 +63,7 @@ const MINE_L2: CatalogBuildingView = {
     ...MINE,
     type: 'mine_l2' as BuildingType,
     onChainId: 46,
+    radius: 0,
     name: 'Deep Mine',
     tier: 2,
     buildCost: '15',
@@ -75,6 +77,7 @@ const MINE_L2: CatalogBuildingView = {
 const STEEL_MILL: CatalogBuildingView = {
     type: BuildingType.SteelMill,
     onChainId: 11,
+    radius: 0,
     name: 'Steel Mill',
     kind: BuildingKind.Crafter,
     tier: 2,
@@ -99,6 +102,7 @@ const COPPER_SMELTER: CatalogBuildingView = {
     ...STEEL_MILL,
     type: BuildingType.CopperSmelter,
     onChainId: 12,
+    radius: 0,
     name: 'Copper Smelter',
     tier: 2,
     buildCost: '18',
@@ -109,6 +113,7 @@ const HEATSINK_PLANT: CatalogBuildingView = {
     ...STEEL_MILL,
     type: BuildingType.HeatsinkPlant,
     onChainId: 13,
+    radius: 0,
     name: 'Heatsink Plant',
     tier: 3,
     buildCost: '40',
@@ -121,6 +126,7 @@ const HUB: CatalogBuildingView = {
     ...MINE,
     type: BuildingType.Hub,
     onChainId: 22,
+    radius: 0,
     name: 'Hub',
     kind: BuildingKind.Hub,
     tier: 1,
@@ -243,6 +249,7 @@ function manyCrafters(count: number): AppConfig {
         ...STEEL_MILL,
         type: `mill_${index}` as BuildingType,
         onChainId: 200 + index,
+        radius: 0,
         name: `Mill ${index}`,
     }));
     return { ...CONFIG, buildings: [...buildings, MINE, HUB] };

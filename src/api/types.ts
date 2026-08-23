@@ -163,6 +163,11 @@ export interface BuildingView {
     name: string;
     kind: BuildingKind;
     tier: number;
+    /**
+     * Routing reach in grid steps this exact building grants the cell it stands on, once it is Ready. Each
+     * hub tier serves its own value; anything that does not route serves `0`.
+     */
+    radius: number;
     /** $CPU per build, human-readable decimal (`'0'` = free). */
     buildCost: string;
     buildTimeSec: number;
@@ -278,6 +283,17 @@ export const buildingConfigSchema = z
         name: z.string(),
         kind: z.nativeEnum(BuildingKind),
         tier: z.number(),
+        radius: z
+            .number({
+                required_error:
+                    'buildings[].radius is missing: every building row must serve its routing radius in grid ' +
+                    'steps, because routing reach is read per building and never defaulted.',
+                invalid_type_error:
+                    'buildings[].radius must be a number of grid steps: routing reach is read per building ' +
+                    'and never defaulted.',
+            })
+            .int('buildings[].radius must be a whole number of grid steps.')
+            .nonnegative('buildings[].radius must not be negative.'),
         buildCost: z.string(),
         buildTimeSec: z.number(),
         buildInputs: z.array(craftStackSchema),
