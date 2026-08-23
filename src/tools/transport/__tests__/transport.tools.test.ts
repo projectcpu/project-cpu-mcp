@@ -212,7 +212,8 @@ describe('transport tool description', () => {
     });
 
     it('never calls a route free where a foreign Hub on the same ground still charges', () => {
-        expect(TRANSPORT_DESCRIPTION).toMatch(/foreign finished Hub on the route charges its fee/);
+        expect(TRANSPORT_DESCRIPTION).toMatch(/foreign finished Hub on the\s+route charges its fee/);
+        expect(TRANSPORT_DESCRIPTION).toMatch(/one standing on ground with no completed reveal included/);
         expect(TRANSPORT_DESCRIPTION).not.toMatch(/Virgin ground pays no fee/);
     });
 });

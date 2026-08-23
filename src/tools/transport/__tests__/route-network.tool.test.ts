@@ -542,6 +542,8 @@ describe('cpu_route_network response', () => {
         expect(nodeOf(artifact, standing)).toMatchObject({ isVirgin: true, isHub: true, transitFeePerUnit: fee });
         expect(billed).toHaveLength(1);
         expect(text).toMatch(/`transitFeePerUnit: null` costs nothing/);
+        expect(text).toMatch(/charges its fee even where `isVirgin` is true/);
+        expect(text).toMatch(/no\s+flag on its own makes a node free/);
         expect(text).not.toMatch(/Virgin ground costs? nothing/);
     });
 });
