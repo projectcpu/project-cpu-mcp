@@ -546,6 +546,32 @@ describe('cpu_route_network response', () => {
         expect(text).toMatch(/foreign Hubs it routes through/i);
     });
 
+    it('describes the fee-charging Hubs by flags that select exactly those nodes in the artifact', async () => {
+        const mine = at(1);
+        const rival = at(1, 1);
+        const descriptor = descriptorOf(
+            await exportGraph(cellsFor(hub(mine, WALLET_ADDRESS), foreignHub(rival, '0.5'))),
+        );
+        const artifact = artifactOf(descriptor);
+        const sentence = descriptor.instructions.find((line) => line.includes('foreign Hubs it routes through')) ?? '';
+        const claimed = new Map(
+            [...sentence.matchAll(/`(isHub|isOwn)` (true|false)/g)].map((match) => [match[1], match[2] === 'true']),
+        );
+        const selected = artifact.nodes
+            .filter(
+                (node) =>
+                    node.isHub === claimed.get('isHub') &&
+                    node.isOwn === claimed.get('isOwn') &&
+                    node.transitFeePerUnit !== null,
+            )
+            .map((node) => node.tokenId);
+
+        expect([...claimed.keys()].sort()).toEqual(['isHub', 'isOwn']);
+        expect(nodeOf(artifact, mine)).toMatchObject({ isHub: true, isOwn: true, transitFeePerUnit: null });
+        expect(nodeOf(artifact, rival)).toMatchObject({ isHub: true, isOwn: false, transitFeePerUnit: '0.5' });
+        expect(selected).toEqual([rival]);
+    });
+
     it('tells the agent to report a disconnected pair instead of inventing a chain', async () => {
         const descriptor = descriptorOf(await exportGraph(cellsFor(...walledOff(String(ORIGIN)))));
 

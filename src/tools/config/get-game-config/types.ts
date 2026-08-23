@@ -7,6 +7,17 @@ import type {
 import type { Network } from '../../../config/types.js';
 import type { AppContracts, TradeConfigView } from '../../../services/types.js';
 
+/** One Hub tier's routing reach, so a structured reader never has to treat `hubRadius` as universal. */
+export interface HubTierRadiusView {
+    type: string;
+    tier: number;
+    radius: number;
+}
+
+export interface TransportReferenceView extends TransportRoutingView {
+    hubRadii: Array<HubTierRadiusView>;
+}
+
 export interface CatalogSizeView {
     buildingCount: number;
     recipeCount: number;
@@ -26,7 +37,7 @@ export interface GameConfigReferenceView {
     randomness: RandomnessDescriptor;
     resources: Record<number, string>;
     reveal: RevealPaymentView | null;
-    transport: TransportRoutingView;
+    transport: TransportReferenceView;
     trade: TradeConfigView;
     storage: StorageConfigView;
     catalog: CatalogSizeView;

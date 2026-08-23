@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { NEXT_HOPS_NOTE } from '../../../services/route.constants.js';
+import { hopReachLimit, type RouteNode } from '../../../services/route.utils.js';
 import type { NextHopsResult, NextHopView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { NEXT_HOPS_DESCRIPTION } from '../constants.js';
 import { NEXT_HOPS_SUMMARY_LIMIT } from '../next-hops/constants.js';
 import { registerNextHopsTool } from '../next-hops/next-hops.js';
+import { nextHopsInputSchema, transportInputSchema } from '../types.js';
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -185,5 +188,62 @@ describe('next_hops fee documentation', () => {
 
         expect(text).not.toContain('fee');
         expect(NEXT_HOPS_DESCRIPTION).toMatch(/your own cells charge none, a Hub of your own on them included/);
+    });
+});
+
+describe('next_hops strings name the fields the payload really carries', () => {
+    function backtickedNames(text: string): Array<string> {
+        return [...text.matchAll(/`([A-Za-z][A-Za-z0-9]*)`/g)].map((match) => match[1] ?? '');
+    }
+
+    function servedNames(): Set<string> {
+        const result = nextHopsResult();
+        const candidate = result.hops[0];
+        if (candidate === undefined) {
+            throw new Error('the fixture carries no candidate to read field names off');
+        }
+        return new Set([
+            ...Object.keys(result),
+            ...Object.keys(candidate),
+            ...Object.keys(nextHopsInputSchema),
+            ...Object.keys(transportInputSchema),
+        ]);
+    }
+
+    function plainNode(radius: number): RouteNode {
+        return { tokenId: '1', isOwn: true, isHub: false, isVirgin: false, radius };
+    }
+
+    it.each([
+        ['the note returned in the payload', NEXT_HOPS_NOTE],
+        ['the tool description', NEXT_HOPS_DESCRIPTION],
+    ])('%s points at no field the answer does not carry', (_name, text) => {
+        const served = servedNames();
+        const named = backtickedNames(text);
+
+        expect(named.length).toBeGreaterThan(0);
+        expect(named.filter((name) => !served.has(name))).toEqual([]);
+    });
+
+    it.each([
+        ['the note returned in the payload', NEXT_HOPS_NOTE],
+        ['the tool description', NEXT_HOPS_DESCRIPTION],
+    ])('%s names the origin reach and the candidate reach by their own field names', (_name, text) => {
+        const result = nextHopsResult();
+        const candidate = result.hops[0];
+        const named = backtickedNames(text);
+        const originFields = Object.keys(result).filter((key) => key.toLowerCase().endsWith('radius'));
+        const candidateFields = Object.keys(candidate ?? {}).filter((key) => key.toLowerCase().endsWith('radius'));
+
+        expect(originFields.every((field) => named.includes(field))).toBe(true);
+        expect(candidateFields.every((field) => named.includes(field))).toBe(true);
+    });
+
+    it('states the hop rule with the offset the reach helper actually applies', () => {
+        const [from, to] = [5, 8];
+        const offset = hopReachLimit(plainNode(from), plainNode(to)) - (from + to);
+
+        expect(offset).toBeLessThan(0);
+        expect(NEXT_HOPS_DESCRIPTION).toContain(`radius(from)+radius(to)\u2212${String(-offset)} grid steps`);
     });
 });
