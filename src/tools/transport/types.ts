@@ -14,7 +14,8 @@ export const transportInputSchema = {
                 'completed reveal, minted or not), a cell of yours, or any cell carrying a finished Hub, foreign ' +
                 'ones included. Each hop must span at most radius(from)+radius(to)−1 grid steps, and radius is ' +
                 'per cell: a plain cell reaches the move radius, a finished Hub the radius its own tier serves ' +
-                '(see get_game_config). Scout legal hops with cpu_next_hops and chain them yourself; the ' +
+                '(cpu_get_game_config lists the radius of every Hub tier). Scout legal hops with cpu_next_hops ' +
+                'and chain them yourself; the ' +
                 'Transport contract validates.',
         ),
     resourceId: z.number().int().describe('Resource type id to move (must have a balance at the source cell).'),

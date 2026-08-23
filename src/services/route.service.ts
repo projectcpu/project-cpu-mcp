@@ -131,7 +131,6 @@ export class RouteService {
             fromRadius: fromNode.radius,
             towards,
             targetDistance,
-            reach: { moveRadius: routing.moveRadius },
             hops,
             note: NEXT_HOPS_NOTE,
         };
