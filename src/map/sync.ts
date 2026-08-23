@@ -177,15 +177,25 @@ export class MapSync implements MapStatus {
         }
         const generation = this.generation;
         const since = this.store.getSyncVersion();
+        // A delta never re-sends a row the parser already dropped, so while a gap is open the only read that
+        // can close it is one of the whole map.
+        const repairCells = this.store.getDroppedCells();
+        const repairUpdates = this.store.getDroppedUpdates();
+        const repairing = repairCells > 0 || repairUpdates > 0;
         try {
-            const { snapshot, dropped } = await this.fetchSnapshot(`${MAP_HTTP_PATH}?since=${since}`);
+            const { snapshot, dropped } = await this.fetchSnapshot(
+                repairing ? MAP_HTTP_PATH : `${MAP_HTTP_PATH}?since=${since}`,
+            );
             if (generation !== this.generation) {
                 return;
             }
             this.store.applySnapshot(snapshot);
+            if (repairing) {
+                this.store.clearRepairedGaps(repairCells, repairUpdates);
+            }
             this.store.noteDroppedCells(dropped);
             this.logger.info('map resynced', {
-                since,
+                since: repairing ? 0 : since,
                 changed: snapshot.cells.length,
                 dropped,
                 version: this.store.getSyncVersion(),
@@ -237,7 +247,7 @@ export class MapSync implements MapStatus {
     }
 
     private handleCellUpdateDropped(): void {
-        this.store.noteDroppedCells(1);
+        this.store.noteDroppedUpdates(1);
     }
 
     private markReady(): void {

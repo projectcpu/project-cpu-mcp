@@ -148,6 +148,7 @@ function makeService(
                 cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
                 complete,
                 droppedCells: 0,
+                droppedUpdates: 0,
                 version: SNAPSHOT_VERSION,
             }),
         },

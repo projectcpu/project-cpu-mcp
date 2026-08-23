@@ -1,4 +1,4 @@
-import { INCOMPLETE_SNAPSHOT_MESSAGE, UNREADABLE_ROWS_MESSAGE } from './route.constants.js';
+import { INCOMPLETE_SNAPSHOT_MESSAGE, UNREADABLE_ROWS_MESSAGE, UNREADABLE_UPDATES_MESSAGE } from './route.constants.js';
 import { BuildingKind } from '../api/types.js';
 import { neighbors } from '../geometry/adjacency.js';
 import { MAX_TOKEN_ID, MIN_TOKEN_ID } from '../geometry/constants.js';
@@ -387,9 +387,12 @@ export function endpointRefusal(
 }
 
 /** Tells a half-loaded map apart from one whose rows this client could not read — the remedies differ. */
-export function incompleteSnapshotMessage(droppedCells: number): string {
+export function incompleteSnapshotMessage(droppedCells: number, droppedUpdates: number): string {
     if (droppedCells > 0) {
         return `${UNREADABLE_ROWS_MESSAGE} Unreadable rows: ${droppedCells}.`;
+    }
+    if (droppedUpdates > 0) {
+        return `${UNREADABLE_UPDATES_MESSAGE} Unreadable updates: ${droppedUpdates}.`;
     }
     return INCOMPLETE_SNAPSHOT_MESSAGE;
 }

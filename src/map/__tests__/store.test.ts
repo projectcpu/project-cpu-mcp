@@ -131,10 +131,38 @@ describe('MapStore', () => {
 
         it('clears the count when the whole map is replaced, so a new world starts unblemished', () => {
             store.noteDroppedCells(2);
+            store.noteDroppedUpdates(1);
 
             store.replaceAll(makeSnapshot({ version: 10, serverTime: 5, cells: [makeCell({ updated: 10 })] }));
 
             expect(store.getDroppedCells()).toBe(0);
+            expect(store.getDroppedUpdates()).toBe(0);
+        });
+
+        it('counts an unreadable live update apart from an unreadable row', () => {
+            store.noteDroppedUpdates(1);
+
+            expect(store.getDroppedUpdates()).toBe(1);
+            expect(store.getDroppedCells()).toBe(0);
+        });
+
+        it('clears only the gaps a repairing whole-map read covered', () => {
+            store.noteDroppedCells(1);
+            store.noteDroppedUpdates(2);
+
+            store.clearRepairedGaps(1, 1);
+
+            expect(store.getDroppedCells()).toBe(0);
+            expect(store.getDroppedUpdates()).toBe(1);
+        });
+
+        it('never lets a repair drive a count below zero', () => {
+            store.noteDroppedCells(1);
+
+            store.clearRepairedGaps(5, 5);
+
+            expect(store.getDroppedCells()).toBe(0);
+            expect(store.getDroppedUpdates()).toBe(0);
         });
     });
 

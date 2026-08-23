@@ -278,6 +278,19 @@ describe('MapReader routing snapshot', () => {
         expect(routing.complete).toBe(false);
     });
 
+    it('marks the snapshot incomplete while a live update it could not read is unrepaired', async () => {
+        const store = new MapStore();
+        store.applyCell(makeCell({ tokenId: '72', updated: 50 }));
+        store.noteDroppedUpdates(1);
+        const { reader } = makeReader([], status(), store);
+
+        const routing = await reader.routingSnapshot();
+
+        expect(routing.droppedUpdates).toBe(1);
+        expect(routing.droppedCells).toBe(0);
+        expect(routing.complete).toBe(false);
+    });
+
     it('marks a stopped map incomplete', async () => {
         const { reader } = makeReader([makeCell({ tokenId: '72', updated: 50 })], status(MapReadiness.Stopped, false));
 

@@ -8,7 +8,7 @@ import { BackendVersion, createBackendVersionGate } from '../../version/backend-
 import { BACKEND_RESET_NOTICE, BACKEND_VERSION_TTL_MS } from '../../version/constants.js';
 import { createNoticeBuffer, guardToolHandler } from '../../version/tool-guard.js';
 import type { IBackendVersion } from '../../version/types.js';
-import { STARTUP_FETCH_RETRY_MS } from '../constants.js';
+import { MAP_HTTP_PATH, STARTUP_FETCH_RETRY_MS } from '../constants.js';
 import { MapReader } from '../reader.js';
 import { MapStore } from '../store.js';
 import { MapSync } from '../sync.js';
@@ -124,8 +124,64 @@ describe('MapSync', () => {
         socket.emitUnreadableCell();
 
         const routing = await reader.routingSnapshot();
-        expect(routing.droppedCells).toBe(1);
+        expect(routing.droppedUpdates).toBe(1);
+        expect(routing.droppedCells).toBe(0);
         expect(routing.complete).toBe(false);
+    });
+
+    it('repairs a missed update with a whole-map read, so routing recovers without a restart', async () => {
+        const { sync, socket, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        socket.emitUnreadableCell();
+        expect((await reader.routingSnapshot()).complete).toBe(false);
+
+        api.calls.length = 0;
+        await sync.resyncNow();
+
+        expect(api.calls).toEqual([MAP_HTTP_PATH]);
+        expect((await reader.routingSnapshot()).complete).toBe(true);
+    });
+
+    it('repairs the snapshot rows it could not read once a whole-map read comes back clean', async () => {
+        const { sync, api, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+        expect(store.getDroppedCells()).toBe(1);
+
+        api.snapshotCells = [makeCell({ tokenId: '1', updated: 50 }), makeCell({ tokenId: '2', updated: 60 })];
+        await sync.resyncNow();
+
+        expect(store.getDroppedCells()).toBe(0);
+        expect(store.size()).toBe(2);
+    });
+
+    it('keeps the gap when the repairing whole-map read still cannot read a row', async () => {
+        const { sync, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+
+        await sync.resyncNow();
+
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('asks for a delta while nothing is missing', async () => {
+        const { sync, api } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+
+        api.calls.length = 0;
+        await sync.resyncNow();
+
+        expect(api.calls).toEqual([`${MAP_HTTP_PATH}?since=50`]);
     });
 
     it('counts the resync rows it could not read', async () => {

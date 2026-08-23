@@ -216,7 +216,7 @@ export class RouteService {
 
     private assertComplete(snapshot: RoutingSnapshot): void {
         if (!snapshot.complete) {
-            throw new Error(incompleteSnapshotMessage(snapshot.droppedCells));
+            throw new Error(incompleteSnapshotMessage(snapshot.droppedCells, snapshot.droppedUpdates));
         }
     }
 

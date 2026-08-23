@@ -120,6 +120,7 @@ function makeService(
     transport: Partial<TransportRoutingView> = {},
     complete = true,
     droppedCells = 0,
+    droppedUpdates = 0,
 ): RouteService {
     const wallet = { get: () => ({ getAddress: () => WALLET_ADDRESS }) } as unknown as WalletProvider;
     const base = makeConfig();
@@ -137,6 +138,7 @@ function makeService(
                 cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
                 complete,
                 droppedCells,
+                droppedUpdates,
                 version: SNAPSHOT_VERSION,
             }),
         },
@@ -441,6 +443,19 @@ describe('RouteService.nextHops over Virgin ground', () => {
             /could not read every row[\s\S]*Unreadable rows: 1/,
         );
         await expect(unread.network(exportInput())).rejects.toThrow(/could not read every row/);
+    });
+
+    it('blames staleness, not an out-of-date client, when a live update was the thing it could not read', async () => {
+        const stale = makeService([own(String(ORIGIN))], DEFAULT_FLOORS, {}, false, 0, 1);
+
+        const failure = await stale
+            .nextHops({ from: ORIGIN, towards: null, resourceId: RES })
+            .then(() => null)
+            .catch((error: Error) => error.message);
+
+        expect(failure).toMatch(/Unreadable updates: 1/);
+        expect(failure).not.toMatch(/update to a client/);
+        await expect(stale.network(exportInput())).rejects.toThrow(/Unreadable updates: 1/);
     });
 
     it('treats a valid token id absent from a complete snapshot as unminted Virgin ground', async () => {

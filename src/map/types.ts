@@ -269,6 +269,8 @@ export interface RoutingSnapshot {
     complete: boolean;
     /** Rows this client could not read; each one would otherwise pass for ground nobody has minted. */
     droppedCells: number;
+    /** Live updates this client could not read; the rows they carried are held, but may have moved on. */
+    droppedUpdates: number;
     version: number;
 }
 
