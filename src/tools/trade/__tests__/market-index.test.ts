@@ -125,4 +125,24 @@ describe('get_market_index tool', () => {
         expect(json.resources[0]?.spark).toEqual(spark);
         expect(json.resources.at(-1)?.spark).toEqual(spark);
     });
+
+    it('states that the index is settled history a later eviction cannot revise', () => {
+        const { description } = captureTool(registerGetMarketIndexTool, {
+            trade: { getMarketIndex: async () => marketIndex },
+        });
+        expect(description).toMatch(/settled/i);
+        expect(description).toMatch(/evicted/i);
+    });
+
+    it('renders a priced resource whose lots have all left the book', async () => {
+        const settledOnly: MarketIndex = {
+            computedAt: 1700000000,
+            resources: [{ resourceId: 3, priceCpu: '0.5', changePct: 0, volume: '120', spark: [] }],
+        };
+        const handler = capture(registerGetMarketIndexTool, { trade: { getMarketIndex: async () => settledOnly } });
+        const result = await handler({} as never);
+        expect(result.content[0]?.text).toMatch(/Silica \(#3\): 0\.5 \$CPU\/u/);
+        const json = JSON.parse(result.content[1]?.text ?? '{}') as MarketIndex;
+        expect(json.resources).toHaveLength(1);
+    });
 });

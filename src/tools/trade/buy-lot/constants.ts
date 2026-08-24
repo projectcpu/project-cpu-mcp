@@ -10,4 +10,6 @@ export const BUY_LOT_DESCRIPTION = [
     'debited for the sale (= `sale` − `discount`, the syndicate discount when buyer and seller share a syndicate),',
     "while `tax` is the clan tax carved from the hub fee to the owner's syndicate manager and `ownerNet` is the hub",
     "owner's net proceeds.",
+    'The lot state is re-read first: anything other than open — evicted, still delivering, sold out, cancelled —',
+    'stops the call before a single token is approved and before any transaction is sent.',
 ].join(' ');
