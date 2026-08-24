@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
+import type { ILogger } from '../../../logger/types.js';
 import { type AttentionItem, AttentionSeverity } from '../../../map/types.js';
+import type { IAppConfig, ITradeClient } from '../../../services/types.js';
 import type { ResourceNames } from '../../../utils/format.utils.js';
+import type { WalletProvider } from '../../../wallet/types.js';
 
 export const getAttentionInputSchema = {
     minSeverity: z
@@ -18,6 +21,23 @@ export const getAttentionInputSchema = {
                 'public). Omit to get your own to-do list. Deliveries are only surfaced for yourself.',
         ),
 };
+
+/** `count: null` means the chain could not be asked — never that the hub is clear. */
+export interface EvictedHubCount {
+    hubTokenId: string;
+    count: number | null;
+}
+
+export interface IEvictedLotCounts {
+    forHubs(hubTokenIds: ReadonlyArray<string>): Promise<Array<EvictedHubCount>>;
+}
+
+export interface EvictedLotCountServiceOptions {
+    appConfig: IAppConfig;
+    wallet: WalletProvider;
+    tradeClient: ITradeClient;
+    logger: ILogger;
+}
 
 export interface WarehousePressureInput {
     scouting: boolean;

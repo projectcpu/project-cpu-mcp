@@ -6,10 +6,14 @@ export const GET_ATTENTION_DESCRIPTION = [
     'cycle, so nothing settles and the wait burns); a reveal request of yours still open long after the client',
     'should have settled it in the background, and a cell locked by a reveal request opened at a randomness',
     'source the chain config has since replaced — that one no call of yours can clear, only an admin cleanup of',
-    'the contracts (critical); a near-full warehouse on an actively-produced',
+    'the contracts; and every lot of yours a hub has evicted — it sells to nobody, it still holds one of your',
+    'per-seller lot slots, and it blocks you from listing any resource on that hub until the outstanding count',
+    'reaches zero, so it is reconciled against the count the Trade contract itself reports (critical);',
+    'a near-full warehouse on an actively-produced',
     'resource, a job that has run its scheduled cycles and now idles the cell until claimed, an arrived delivery',
     'ready to finalize, an extractor on a depleted deposit, or one of your open lots frozen because the hub',
-    'raised its live sale fee above your tolerance (buys revert; cancel stays fee-free) (warning);',
+    'raised its live sale fee above your tolerance (buys revert; getting the goods back is a lot return and pays',
+    'the Transit fee for that move) (warning);',
     'revealed-but-unbuilt cells, cells in a post-demolish rebuild cooldown, and an open lot whose live sale fee',
     'now sits exactly at your tolerance so the next hike freezes it (info — on a `demolish_cooldown` item',
     '`arrivalAt` marks when rebuild reopens and `demolishingType` names what is coming down, `null` when that',
@@ -36,8 +40,28 @@ export const WAREHOUSE_PRESSURE_LABELS = {
     nearFull: 'Near full',
     peakFill: 'Peak fill',
     stalled: 'Stalled',
+    evicted: 'Evicted',
     note: 'Note',
 };
+
+export const LOT_RETURN_COST_NOTE =
+    'Getting the goods back is a lot return: it moves the remainder over the network to a cell of yours and ' +
+    'pays the Transit fee for that move, so it is not free.';
+
+export const EVICTED_LOT_NOT_SELLING =
+    'It is out of the hub and sells to nobody; the remainder stays yours, stranded, until you return it to a ' +
+    'cell of your own.';
+
+export const EVICTED_LISTING_BLOCK =
+    'No lot of any resource can be listed on this hub until that outstanding count reaches zero.';
+
+export const EVICTED_COUNT_UNREADABLE =
+    'The hub could not be asked how many evicted lots of yours are still outstanding, so treat the listing ' +
+    'block as in force.';
+
+export const EVICTED_COUNT_UNREACHABLE_NOTE =
+    'The outstanding evicted-lot count of at least one hub could not be read from the chain; the evicted lots ' +
+    'below are still listed and no hub is reported clear.';
 
 export const WAREHOUSE_PRESSURE_SCOPE_SELF = 'self';
 export const WAREHOUSE_PRESSURE_SCOPE_SCOUTING = 'scouting';
