@@ -1,8 +1,30 @@
 import { ROUTE_NETWORK_LABELS, ROUTE_NETWORK_LINKED, ROUTE_NETWORK_SPLIT, ROUTE_NETWORK_TITLE } from './constants.js';
-import type { RouteNetworkResult } from '../../../services/types.js';
+import type { PlannedRouteNetworkResult } from '../../../services/route.types.js';
+import type { PanelRow } from '../../../utils/panel.types.js';
 import { renderPanel } from '../../../utils/panel.utils.js';
 
-export function routeNetworkPanel(result: RouteNetworkResult): string {
+function lotReturnRows(result: PlannedRouteNetworkResult): Array<PanelRow> {
+    const plan = result.request.lotReturn;
+    if (plan === null) {
+        return [];
+    }
+    const source = plan.historicalSource;
+    return [
+        [
+            { label: ROUTE_NETWORK_LABELS.lot, value: `${plan.lotId} (${plan.lotState})` },
+            {
+                label: ROUTE_NETWORK_LABELS.source,
+                value:
+                    source === null
+                        ? 'judged on today’s map, exactly like an ordinary plan'
+                        : `the listed hub of the lot, admitted at reach ${source.radius} and ` +
+                          `${source.transitFeePerUnit} $CPU per unit whatever stands there now`,
+            },
+        ],
+    ];
+}
+
+export function routeNetworkPanel(result: PlannedRouteNetworkResult): string {
     const labels = ROUTE_NETWORK_LABELS;
     const request = result.request;
 
@@ -21,6 +43,7 @@ export function routeNetworkPanel(result: RouteNetworkResult): string {
                 { label: labels.towards, value: request.towards },
                 { label: labels.cargo, value: `${request.amount} of resource ${request.resourceId}` },
             ],
+            ...lotReturnRows(result),
             [{ label: labels.link, value: result.connected ? ROUTE_NETWORK_LINKED : ROUTE_NETWORK_SPLIT }],
             [
                 {

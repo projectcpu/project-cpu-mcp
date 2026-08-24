@@ -11,6 +11,8 @@ export const ROUTE_NETWORK_LABELS = {
     from: 'From',
     towards: 'Towards',
     cargo: 'Cargo',
+    lot: 'Lot return',
+    source: 'Source',
     link: 'Link',
     next: 'Next',
     note: 'Note',
