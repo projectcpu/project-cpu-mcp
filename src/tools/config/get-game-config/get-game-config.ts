@@ -8,12 +8,15 @@ export function registerGetGameConfigTool(server: ToolRegistrar, context: AppCon
         'cpu_get_game_config',
         { description: GET_GAME_CONFIG_DESCRIPTION, inputSchema: {} },
         async () => {
-            const config = await context.appConfig.load();
+            const [config, lotListing] = await Promise.all([
+                context.appConfig.load(),
+                context.tradeRules.loadLotListingRules(),
+            ]);
 
             return {
                 content: [
-                    { type: 'text', text: renderEntryPoint(config) },
-                    { type: 'text', text: JSON.stringify(buildGameConfigReference(config)) },
+                    { type: 'text', text: renderEntryPoint(config, lotListing) },
+                    { type: 'text', text: JSON.stringify(buildGameConfigReference(config, lotListing)) },
                 ],
             };
         },

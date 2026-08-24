@@ -1,8 +1,11 @@
 import {
     BUILDING_INDEX_SECTION_TITLE,
+    EFFECTIVE_BOUNDS_SOURCE_NOTE,
     EMPTY_CATALOG_NOTE,
     ENTRY_POINT_HEADLINE_TAIL,
     ENTRY_POINT_LOOKUP,
+    LOT_LISTING_LABEL,
+    LOT_LISTING_UNAVAILABLE_NOTE,
     NONE_LABEL,
     PUSH_RANDOMNESS_SUMMARY,
     REVEAL_PAYMENT_UNKNOWN_SUMMARY,
@@ -21,7 +24,7 @@ import {
 } from './constants.js';
 import type { GameConfigReferenceView, HubTierRadiusView } from './types.js';
 import { BuildingKind, type RandomnessDescriptor, RandomnessKind, type RevealPaymentView } from '../../../api/types.js';
-import type { AppConfig } from '../../../services/types.js';
+import type { AppConfig, LotListingRulesView } from '../../../services/types.js';
 import { INDEX_COLUMNS_LEGEND } from '../find-buildings/constants.js';
 import { renderBuildingIndexLine } from '../find-buildings/find-buildings.utils.js';
 
@@ -70,6 +73,20 @@ function describeTrade(config: AppConfig): string {
     );
 }
 
+function describeLotListing(rules: LotListingRulesView | null): string {
+    if (rules === null) {
+        return LOT_LISTING_UNAVAILABLE_NOTE;
+    }
+    return (
+        `one new lot must hold between ${rules.minLotSharePercent}% and ${rules.maxLotSharePercent}% of the ` +
+        `hub's storage shelf for the resource; where that shelf is uncapped the window is an absolute ` +
+        `${rules.minUncappedLotValue}–${rules.maxUncappedLotValue} units instead. At most ` +
+        `${rules.maxLotsPerSellerHubResource} live lots per seller, hub and resource — delivering, open and ` +
+        `evicted ones all count. Asking price floor ${rules.minPricePerUnit} $CPU/u. ` +
+        `Note: ${EFFECTIVE_BOUNDS_SOURCE_NOTE}`
+    );
+}
+
 export function renderHeadline(config: AppConfig): string {
     return (
         `Network ${config.network} (chainId ${config.chainId}), ${config.buildings.length} building(s), ` +
@@ -88,12 +105,13 @@ export function renderRoutingMap(): string {
     ].join('\n');
 }
 
-export function renderStaticFacts(config: AppConfig): string {
+export function renderStaticFacts(config: AppConfig, lotListing: LotListingRulesView | null): string {
     return [
         STATIC_SECTION_TITLE,
         `Reveal: ${describeRevealPayment(config.reveal)}.`,
         `Randomness: ${describeRandomnessMode(config.randomness)}`,
         `Trade: ${describeTrade(config)}.`,
+        `${LOT_LISTING_LABEL} ${describeLotListing(lotListing)}.`,
         `Transit: ${describeTransit(config)}.`,
         `Storage: ${STORAGE_SHELVES_SUMMARY}.`,
         `Resources: ${renderPairs(Object.entries(config.resources))}.`,
@@ -114,13 +132,19 @@ export function renderBuildingIndex(config: AppConfig): string {
     return [heading, ...rows].join('\n');
 }
 
-export function renderEntryPoint(config: AppConfig): string {
-    return [renderHeadline(config), renderRoutingMap(), renderStaticFacts(config), renderBuildingIndex(config)].join(
-        '\n\n',
-    );
+export function renderEntryPoint(config: AppConfig, lotListing: LotListingRulesView | null): string {
+    return [
+        renderHeadline(config),
+        renderRoutingMap(),
+        renderStaticFacts(config, lotListing),
+        renderBuildingIndex(config),
+    ].join('\n\n');
 }
 
-export function buildGameConfigReference(config: AppConfig): GameConfigReferenceView {
+export function buildGameConfigReference(
+    config: AppConfig,
+    lotListing: LotListingRulesView | null,
+): GameConfigReferenceView {
     return {
         network: config.network,
         chainId: config.chainId,
@@ -129,7 +153,7 @@ export function buildGameConfigReference(config: AppConfig): GameConfigReference
         resources: config.resources,
         reveal: config.reveal,
         transport: { ...config.transport, hubRadii: hubTierRadii(config) },
-        trade: config.trade,
+        trade: { ...config.trade, lotListing },
         storage: config.storage,
         catalog: { buildingCount: config.buildings.length, recipeCount: config.recipes.length },
         lookup: {

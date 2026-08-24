@@ -143,9 +143,23 @@ terms themselves ever blurring together.
 
 ## Trading
 
+- **Eviction** — a hub owner ending somebody else's open lot on that hub without taking or moving its
+  goods. The seller keeps the whole remainder in escrow, while the lot stops selling and releases the
+  hub space it occupied.
+- **Evicted lot** — a seller-owned lot removed from its hub by Eviction. It is unbuyable and no longer
+  occupies hub storage, but blocks that seller from creating any new lot on the same hub until every
+  evicted remainder there has a Lot return scheduled; other hubs remain unaffected.
 - **Fill** — one executed purchase against a lot, whole or partial; a lot has many of them, and the
   last one buys the lot out.
   *Avoid*: trade, settlement, sale.
+- **Lot return** — the seller sending one lot's whole unsold remainder from its hub to one owned revealed
+  cell over an explicitly chosen route. It cancels an open lot or reclaims an Evicted lot, but is one
+  player intent in either case and ends that lot as cancelled when the delivery is scheduled.
+  *Avoid*: reclaim as the umbrella term (that is only the Evicted-lot contract branch), partial return.
+- **Temporarily unroutable lot** — a lot whose hub cannot currently serve as the required live route node,
+  such as while the hub is in a Construction window. Distinct from a Frozen lot: routing readiness, not
+  the Sale fee, is what prevents the action, and readiness can restore it without changing the lot.
+  *Avoid*: Frozen lot.
 
 ## Routing
 
@@ -184,8 +198,8 @@ basis point.
   regardless of readiness (see Readiness).
 - **Frozen lot** — an open lot whose hub's live rate has risen above the seller tolerance stored on it.
   Buys revert on-chain until the hub owner lowers the rate back to the tolerance or below; the escrow stays
-  intact and untouched, and cancelling a frozen lot is always fee-free. Surfaced as `frozen` on a lot read
-  and in `cpu_get_markets`' per-row frozen counts.
+  intact and untouched. Surfaced as `frozen` on a lot read and in `cpu_get_markets`' per-row frozen counts.
+  Its Lot return pays no Sale fee, but may still owe Transit fees for its chosen route.
 - **Seller tolerance** — the highest sale-fee rate a seller will accept at listing time
   (`cpu_create_lot`'s `maxSaleFeePercent`), stored per lot. When omitted, the client reads the hub's live
   rate on-chain and passes *that* as the tolerance, so a rate raised between the decision and the

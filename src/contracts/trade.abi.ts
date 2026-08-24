@@ -1,4 +1,18 @@
 // Must match the deployed Trade contract.
+
+/** Shared by the single- and batch-lot reads; the field order is the storage order and decoding depends on it. */
+const LOT_COMPONENTS = [
+    { name: 'seller', type: 'address', internalType: 'address' },
+    { name: 'hub', type: 'uint256', internalType: 'uint256' },
+    { name: 'resource', type: 'uint16', internalType: 'uint16' },
+    { name: 'remaining', type: 'uint128', internalType: 'uint128' },
+    { name: 'pricePerUnit', type: 'uint128', internalType: 'uint128' },
+    { name: 'state', type: 'uint8', internalType: 'enum ITrade.LotState' },
+    { name: 'maxSaleFeeBp', type: 'uint16', internalType: 'uint16' },
+    { name: 'hubRadius', type: 'uint16', internalType: 'uint16' },
+    { name: 'hubMoveFee', type: 'uint128', internalType: 'uint128' },
+] as const;
+
 export const TRADE_ABI = [
     {
         type: 'function',
@@ -39,6 +53,24 @@ export const TRADE_ABI = [
     },
     {
         type: 'function',
+        name: 'evict',
+        inputs: [{ name: 'lotId', type: 'uint256', internalType: 'uint256' }],
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'reclaim',
+        inputs: [
+            { name: 'lotId', type: 'uint256', internalType: 'uint256' },
+            { name: 'returnTokenIds', type: 'uint256[]', internalType: 'uint256[]' },
+            { name: 'maxFee', type: 'uint256', internalType: 'uint256' },
+        ],
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
         name: 'setSaleFee',
         inputs: [
             { name: 'hub', type: 'uint256', internalType: 'uint256' },
@@ -56,6 +88,121 @@ export const TRADE_ABI = [
             { name: 'res', type: 'uint16', internalType: 'uint16' },
         ],
         outputs: [{ name: '', type: 'uint16', internalType: 'uint16' }],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'getLot',
+        inputs: [{ name: 'lotId', type: 'uint256', internalType: 'uint256' }],
+        outputs: [
+            {
+                name: '',
+                type: 'tuple',
+                internalType: 'struct ITrade.Lot',
+                components: LOT_COMPONENTS,
+            },
+        ],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'getLots',
+        inputs: [{ name: 'lotIds', type: 'uint256[]', internalType: 'uint256[]' }],
+        outputs: [
+            {
+                name: 'out',
+                type: 'tuple[]',
+                internalType: 'struct ITrade.Lot[]',
+                components: LOT_COMPONENTS,
+            },
+        ],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'getConfig',
+        inputs: [],
+        outputs: [
+            {
+                name: '',
+                type: 'tuple',
+                internalType: 'struct ITrade.TradeConfig',
+                components: [
+                    { name: 'minPricePerUnit', type: 'uint128', internalType: 'uint128' },
+                    { name: 'saleBurnPercent', type: 'uint16', internalType: 'uint16' },
+                    { name: 'minLotShareBp', type: 'uint16', internalType: 'uint16' },
+                    { name: 'maxLotShareBp', type: 'uint16', internalType: 'uint16' },
+                    { name: 'maxLotsPerSellerResource', type: 'uint16', internalType: 'uint16' },
+                    { name: 'minUncappedLotValue', type: 'uint128', internalType: 'uint128' },
+                    { name: 'maxUncappedLotValue', type: 'uint128', internalType: 'uint128' },
+                ],
+            },
+        ],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'getMinLotValue',
+        inputs: [
+            { name: 'hub', type: 'uint256', internalType: 'uint256' },
+            { name: 'res', type: 'uint16', internalType: 'uint16' },
+        ],
+        outputs: [{ name: '', type: 'uint128', internalType: 'uint128' }],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'getMaxLotValue',
+        inputs: [
+            { name: 'hub', type: 'uint256', internalType: 'uint256' },
+            { name: 'res', type: 'uint16', internalType: 'uint16' },
+        ],
+        outputs: [{ name: '', type: 'uint128', internalType: 'uint128' }],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'getSellerLotCount',
+        inputs: [
+            { name: 'seller', type: 'address', internalType: 'address' },
+            { name: 'hub', type: 'uint256', internalType: 'uint256' },
+            { name: 'res', type: 'uint16', internalType: 'uint16' },
+        ],
+        outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'getSellerEvictedCount',
+        inputs: [
+            { name: 'seller', type: 'address', internalType: 'address' },
+            { name: 'hub', type: 'uint256', internalType: 'uint256' },
+        ],
+        outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'quoteReturn',
+        inputs: [
+            { name: 'lotId', type: 'uint256', internalType: 'uint256' },
+            { name: 'returnTokenIds', type: 'uint256[]', internalType: 'uint256[]' },
+            { name: 'seller', type: 'address', internalType: 'address' },
+        ],
+        outputs: [
+            {
+                name: 'q',
+                type: 'tuple',
+                internalType: 'struct ITrade.ReturnQuote',
+                components: [
+                    { name: 'transitFee', type: 'uint256', internalType: 'uint256' },
+                    { name: 'transitDiscount', type: 'uint256', internalType: 'uint256' },
+                    { name: 'totalDistance', type: 'uint256', internalType: 'uint256' },
+                    { name: 'arrivalAt', type: 'uint64', internalType: 'uint64' },
+                    { name: 'amount', type: 'uint128', internalType: 'uint128' },
+                ],
+            },
+        ],
         stateMutability: 'view',
     },
     {
@@ -189,6 +336,17 @@ export const TRADE_ABI = [
     },
     {
         type: 'event',
+        name: 'LotEvicted',
+        inputs: [
+            { name: 'lotId', type: 'uint256', indexed: true, internalType: 'uint256' },
+            { name: 'evictor', type: 'address', indexed: true, internalType: 'address' },
+            { name: 'seller', type: 'address', indexed: true, internalType: 'address' },
+            { name: 'remaining', type: 'uint128', indexed: false, internalType: 'uint128' },
+        ],
+        anonymous: false,
+    },
+    {
+        type: 'event',
         name: 'SaleFeeChanged',
         inputs: [
             { name: 'hubTokenId', type: 'uint256', indexed: true, internalType: 'uint256' },
@@ -217,4 +375,11 @@ export const TRADE_ABI = [
     { type: 'error', name: 'SaleFeeTooHigh', inputs: [] },
     { type: 'error', name: 'SaleFeeExceedsMax', inputs: [] },
     { type: 'error', name: 'NotHubOwner', inputs: [] },
+    { type: 'error', name: 'EvictedLotPending', inputs: [] },
+    { type: 'error', name: 'LotNotEvicted', inputs: [] },
+    { type: 'error', name: 'SelfEviction', inputs: [] },
+    { type: 'error', name: 'TooManyLots', inputs: [] },
+    { type: 'error', name: 'LotTooLarge', inputs: [] },
+    { type: 'error', name: 'LotShareTooHigh', inputs: [] },
+    { type: 'error', name: 'EmptyLotWindow', inputs: [] },
 ] as const;

@@ -9,6 +9,7 @@ import type {
     IRevealRequestsReader,
     LotAvailability,
     LotSort,
+    LotState,
     OpenRevealRequestView,
     RandomnessDescriptor,
     RecipeView,
@@ -18,6 +19,7 @@ import type {
     TransportRoutingView,
 } from '../api/types.js';
 import type { Network } from '../config/types.js';
+import type { OnChainLotState } from '../contracts/trade.types.js';
 import type { CellCoord } from '../geometry/types.js';
 import type { ILogger } from '../logger/types.js';
 import type { RevealCellReader, RoutingSnapshot } from '../map/types.js';
@@ -1034,15 +1036,113 @@ export interface CancelLotParams {
     maxFee: bigint;
 }
 
-/** Sends the Trade writes — implemented by TradeClient. Lot state comes from the game API. */
+export interface ReclaimLotParams {
+    trade: Address;
+    lotId: bigint;
+    returnTokenIds: Array<bigint>;
+    maxFee: bigint;
+}
+
+export interface EvictLotParams {
+    trade: Address;
+    lotId: bigint;
+}
+
+export interface GetLotParams {
+    trade: Address;
+    lotId: bigint;
+}
+
+export interface GetLotsParams {
+    trade: Address;
+    lotIds: Array<bigint>;
+}
+
+export interface GetTradeConfigParams {
+    trade: Address;
+}
+
+export interface LotBoundParams {
+    trade: Address;
+    hub: bigint;
+    res: number;
+}
+
+export interface SellerLotCountParams {
+    trade: Address;
+    seller: Address;
+    hub: bigint;
+    res: number;
+}
+
+export interface SellerEvictedCountParams {
+    trade: Address;
+    seller: Address;
+    hub: bigint;
+}
+
+export interface QuoteReturnParams {
+    trade: Address;
+    lotId: bigint;
+    returnTokenIds: Array<bigint>;
+    seller: Address;
+}
+
+/**
+ * The lot exactly as the Trade contract stores it. `hubRadius` and `hubMoveFee` are the hub's routing
+ * terms captured at listing — they bound what the seller can be charged to bring the remainder home, and
+ * the game API does not project either, so return-aware routing has to read them here.
+ */
+export interface OnChainLot {
+    seller: Address;
+    hub: bigint;
+    resource: number;
+    remaining: bigint;
+    pricePerUnit: bigint;
+    state: OnChainLotState;
+    maxSaleFeeBp: number;
+    hubRadius: number;
+    hubMoveFee: bigint;
+}
+
+/** The deployed tunable trade parameters. Effective per-hub bounds are never derived from these. */
+export interface OnChainTradeConfig {
+    minPricePerUnit: bigint;
+    saleBurnPercent: number;
+    minLotShareBp: number;
+    maxLotShareBp: number;
+    maxLotsPerSellerResource: number;
+    minUncappedLotValue: bigint;
+    maxUncappedLotValue: bigint;
+}
+
+export interface ReturnQuoteResult {
+    transitFee: bigint;
+    transitDiscount: bigint;
+    totalDistance: bigint;
+    arrivalAt: bigint;
+    amount: bigint;
+}
+
+/** The Trade reads and writes — implemented by TradeClient. Lot discovery comes from the game API. */
 export interface ITradeClient {
     createLot(params: CreateLotParams): Promise<Hash>;
     buy(params: BuyLotParams): Promise<Hash>;
     cancel(params: CancelLotParams): Promise<Hash>;
+    reclaim(params: ReclaimLotParams): Promise<Hash>;
+    evict(params: EvictLotParams): Promise<Hash>;
     setSaleFee(params: SetSaleFeeParams): Promise<Hash>;
     getSaleFee(params: GetSaleFeeParams): Promise<number>;
+    getLot(params: GetLotParams): Promise<OnChainLot>;
+    getLots(params: GetLotsParams): Promise<Array<OnChainLot>>;
+    getConfig(params: GetTradeConfigParams): Promise<OnChainTradeConfig>;
+    getMinLotValue(params: LotBoundParams): Promise<bigint>;
+    getMaxLotValue(params: LotBoundParams): Promise<bigint>;
+    getSellerLotCount(params: SellerLotCountParams): Promise<bigint>;
+    getSellerEvictedCount(params: SellerEvictedCountParams): Promise<bigint>;
     quoteSale(params: QuoteSaleParams): Promise<SaleQuoteResult>;
     quoteBuy(params: QuoteBuyParams): Promise<BuyQuoteResult>;
+    quoteReturn(params: QuoteReturnParams): Promise<ReturnQuoteResult>;
 }
 
 export interface SetSaleFeeResult {
@@ -1144,6 +1244,155 @@ export interface TradeQuote {
     transitDiscount: string | null;
     arrivalAt: number | null;
     total: string;
+}
+
+// ---- Trade (bounded listings, eviction, lot returns) ----
+
+/**
+ * The tunable listing rules the deployed Trade contract holds, in the units an agent reads. Shares are
+ * percentages of the hub's storage shelf for the resource; the uncapped pair is the absolute window used
+ * instead when that shelf is uncapped. Neither pair yields the effective bounds for a given hub and
+ * resource — only the contract's own bound views do.
+ */
+export interface LotListingRulesView {
+    minLotSharePercent: number;
+    maxLotSharePercent: number;
+    /** Resource units. */
+    minUncappedLotValue: string;
+    maxUncappedLotValue: string;
+    maxLotsPerSellerHubResource: number;
+    /** Anti-dust floor on a lot's asking price, in $CPU per unit (decimal). */
+    minPricePerUnit: string;
+}
+
+/** Reads the deployed listing rules off the chain — implemented by TradeRulesService. */
+export interface ITradeRules {
+    /** Null when the chain cannot be read right now (no wallet yet, or the RPC is unreachable). */
+    loadLotListingRules(): Promise<LotListingRulesView | null>;
+}
+
+export interface TradeRulesServiceOptions {
+    appConfig: IAppConfig;
+    wallet: WalletProvider;
+    tradeClient: ITradeClient;
+    logger: ILogger;
+}
+
+export interface LotTermsInput {
+    hubTokenId: string;
+    resourceId: number;
+}
+
+/** Why a new listing on this hub and resource cannot go ahead right now. */
+export enum LotListingBlocker {
+    /** The seller has an evicted remainder on this hub with no return scheduled — checked before anything else. */
+    EvictedPending = 'evicted_pending',
+    /** Every live-lot slot for this seller/hub/resource is taken. */
+    SellerLotLimit = 'seller_lot_limit',
+    /** The hub cannot hold a lot of this resource at all: its window has no room between the bounds. */
+    EmptyWindow = 'empty_window',
+}
+
+/**
+ * The live listing terms for one hub and resource, read from the Trade views rather than derived from the
+ * static shares. Amounts are resource units as decimal strings.
+ */
+export interface LotTermsResult {
+    hubTokenId: string;
+    resourceId: number;
+    sellerAddress: string;
+    /** Smallest value one new lot may hold here. */
+    effectiveMin: string;
+    /** Largest value one new lot may hold here. */
+    effectiveMax: string;
+    /** Delivering, Open and Evicted lots this seller holds for the hub and resource. */
+    sellerLotCount: number;
+    /** Configured ceiling on that count. */
+    sellerLotLimit: number;
+    /** Evicted lots this seller still owes a return on, across every resource on this hub. */
+    outstandingEvictedCount: number;
+    canList: boolean;
+    blockers: Array<LotListingBlocker>;
+}
+
+export interface EvictLotInput {
+    lotId: string;
+}
+
+/** A confirmed eviction: the lot stops selling and frees the hub, and not one unit of it moves. */
+export interface EvictLotResult {
+    lotId: string;
+    hubTokenId: string;
+    sellerAddress: string;
+    resourceId: number;
+    /** The whole remainder, still the seller's and still escrowed. */
+    remaining: string;
+    state: LotState;
+    txHash: Hash;
+    status: TxStatus;
+    blockNumber: string;
+}
+
+export interface LotReturnInput {
+    lotId: string;
+    /** Waypoint tokenIds, `[hub, …waypoints, sellerDest]` — the seller's explicit route home. */
+    chain: Array<number>;
+}
+
+/** Whether the whole remainder fits in the destination as it stands right now, reservations included. */
+export interface DestinationCapacityView {
+    fits: boolean;
+    required: string;
+    /** Free units at the destination; null when its storage for the resource is uncapped. */
+    free: string | null;
+}
+
+/** A non-destructive preview of one Lot return, priced by the contract's own return quote. */
+export interface LotReturnQuote {
+    lotId: string;
+    hubTokenId: string;
+    resourceId: number;
+    /** The whole current remainder — a Lot return never sends part of a lot. */
+    amount: string;
+    destinationTokenId: string;
+    /** Transit fee actually debited, in $CPU (decimal). */
+    transitPaid: string;
+    transitDiscount: string;
+    /** Grid steps the route covers end to end. */
+    totalDistance: number;
+    arrivalAt: number;
+    capacity: DestinationCapacityView;
+}
+
+/** Which contract branch settled a Lot return — one player intent, two lifecycle sources. */
+export enum LotReturnBranch {
+    /** An Open lot: the offer is withdrawn and the remainder ships home. */
+    Cancelled = 'cancelled',
+    /** An Evicted lot: the remainder the hub owner threw out ships home. */
+    Reclaimed = 'reclaimed',
+}
+
+/** A confirmed Lot return, normalized so both branches read the same. */
+export interface LotReturnResult {
+    lotId: string;
+    /** The lot's authoritative state before the return — Open or Evicted. */
+    originalState: LotState;
+    branch: LotReturnBranch;
+    hubTokenId: string;
+    resourceId: number;
+    /** Units on their way back to the seller. */
+    returned: string;
+    /** Transit fee actually debited, in $CPU (decimal). */
+    transitPaid: string;
+    transitDiscount: string;
+    destinationTokenId: string;
+    deliveryId: string;
+    arrivalAt: number;
+    /** Transport-fee approve, when the route owed a fee at all. */
+    approveTxHash: Hash | null;
+    txHash: Hash;
+    status: TxStatus;
+    blockNumber: string;
 }
 
 // ---- Swap (Uniswap v4 ETH/$CPU pool) ----

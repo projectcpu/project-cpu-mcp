@@ -33,6 +33,7 @@ import { RouteService } from './services/route.service.js';
 import { SwapService } from './services/swap.service.js';
 import { SyndicateRegistryClient } from './services/syndicate.client.js';
 import { SyndicateService } from './services/syndicate.service.js';
+import { TradeRulesService } from './services/trade-rules.service.js';
 import { TradeClient } from './services/trade.client.js';
 import { TradeService } from './services/trade.service.js';
 import { TransportClient } from './services/transport.client.js';
@@ -107,6 +108,12 @@ async function main(): Promise<void> {
         tradeClient,
         transportClient,
         logger: logger.child('trade'),
+    });
+    const tradeRules = new TradeRulesService({
+        appConfig,
+        wallet,
+        tradeClient,
+        logger: logger.child('trade:rules'),
     });
     const syndicateRegistry = new SyndicateRegistryClient({ contracts, logger: logger.child('syndicate:client') });
     const syndicate = new SyndicateService({
@@ -248,6 +255,7 @@ async function main(): Promise<void> {
         transport,
         route,
         trade,
+        tradeRules,
         syndicate,
         swap,
         mint,

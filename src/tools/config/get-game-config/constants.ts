@@ -3,6 +3,19 @@ export const SALE_FEE_STRUCTURAL_BOUND_PERCENT = 100;
 export const SALE_FEE_STRUCTURAL_BOUND_NOTE =
     '(the structural bound — a hub owner can set any rate up to this maximum)';
 
+export const LOT_LISTING_LABEL = 'Lot listing:';
+
+export const EFFECTIVE_BOUNDS_SOURCE_NOTE = [
+    'the exact unit window for one hub and one resource is read from the Trade contract itself, never worked',
+    'out from these shares',
+].join(' ');
+
+export const LOT_LISTING_UNAVAILABLE_NOTE = [
+    'the listing window and the per-seller lot limit live on the Trade contract and could not be read right',
+    'now (no wallet configured, or the chain is unreachable) — retry once a session exists rather than',
+    'assuming a bound',
+].join(' ');
+
 export const ENTRY_POINT_LOOKUP = {
     building: 'cpu_get_building',
     buildingSearch: 'cpu_find_buildings',

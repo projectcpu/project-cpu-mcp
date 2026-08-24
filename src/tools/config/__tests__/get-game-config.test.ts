@@ -3,15 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { BuildingKind, BuildingType, CraftRecipeId, RandomnessKind } from '../../../api/types.js';
 import { Network } from '../../../config/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import { type AppConfig, ModeSwitchKind } from '../../../services/types.js';
+import { type AppConfig, type LotListingRulesView, ModeSwitchKind } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { transportInputSchema } from '../../transport/types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { renderBuildingIndexLine } from '../find-buildings/find-buildings.utils.js';
 import {
     BUILDING_INDEX_SECTION_TITLE,
+    EFFECTIVE_BOUNDS_SOURCE_NOTE,
     EMPTY_CATALOG_NOTE,
     ENTRY_POINT_LOOKUP,
+    LOT_LISTING_LABEL,
+    LOT_LISTING_UNAVAILABLE_NOTE,
     ROUTING_BUILDING_CARD_LINE,
     ROUTING_FIND_BUILDINGS_LINE,
     ROUTING_RECIPES_LINE,
@@ -139,9 +142,30 @@ const CONFIG: AppConfig = {
     storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
 };
 
-function capture(config: AppConfig = CONFIG): (args: never) => Promise<ToolResult> {
+const LOT_LISTING_RULES: LotListingRulesView = {
+    minLotSharePercent: 0.1,
+    maxLotSharePercent: 2,
+    minUncappedLotValue: '10000',
+    maxUncappedLotValue: '100000',
+    maxLotsPerSellerHubResource: 5,
+    minPricePerUnit: '0',
+};
+
+function LOT_LISTING_SECTION_OF(text: string): string {
+    const line = text.split('\n').find((row) => row.startsWith(LOT_LISTING_LABEL));
+    if (line === undefined) {
+        throw new Error(`no "${LOT_LISTING_LABEL}" line in the entry point`);
+    }
+    return line;
+}
+
+function capture(
+    config: AppConfig = CONFIG,
+    lotListing: LotListingRulesView | null = LOT_LISTING_RULES,
+): (args: never) => Promise<ToolResult> {
     const context = {
         appConfig: { load: async () => config },
+        tradeRules: { loadLotListingRules: async () => lotListing },
         logger: new NoopLogger(),
     } as unknown as AppContext;
     let captured: ((args: never) => Promise<ToolResult>) | null = null;
@@ -175,6 +199,7 @@ function registeredToolName(): string {
     } as unknown as ToolRegistrar;
     registerGetGameConfigTool(server, {
         appConfig: { load: async () => CONFIG },
+        tradeRules: { loadLotListingRules: async () => LOT_LISTING_RULES },
         logger: new NoopLogger(),
     } as unknown as AppContext);
     return name;
@@ -385,7 +410,7 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(json.resources).toEqual({ 5: 'Iron', 101: 'Concrete', 102: 'Steel' });
         expect(json.reveal).toEqual({ ethContribution: '0.001', cpuBurn: '2' });
         expect(json.transport).toEqual({ ...CONFIG.transport, hubRadii: [] });
-        expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
+        expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50, lotListing: LOT_LISTING_RULES });
         expect(json.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });
     });
 });
@@ -553,5 +578,57 @@ describe('get_game_config tool — what it stopped carrying', () => {
 
     it('still says how much of each the catalog holds, so nothing looks lost', async () => {
         expect((await reference()).catalog).toEqual({ buildingCount: 3, recipeCount: 1 });
+    });
+});
+
+describe('cpu_get_game_config lot listing rules', () => {
+    it('carries the live shares, uncapped bounds and per-seller limit in the machine block', async () => {
+        expect((await reference()).trade.lotListing).toEqual(LOT_LISTING_RULES);
+    });
+
+    it('states the bounds as shares of the hub shelf, in percent, not in basis points', async () => {
+        const text = await prose();
+
+        expect(text).toMatch(/0\.1%/);
+        expect(text).toMatch(/2%/);
+        expect(text).not.toMatch(/\b10 bp\b/);
+        expect(text).not.toMatch(/\b200 bp\b/);
+    });
+
+    it('states the uncapped absolute pair in resource units and says it applies to uncapped storage only', async () => {
+        const text = await prose();
+
+        expect(text).toMatch(/10000/);
+        expect(text).toMatch(/100000/);
+        expect(text).toMatch(/uncapped/i);
+    });
+
+    it('states the maximum live lots one seller may hold per hub and resource', async () => {
+        expect(await prose()).toMatch(/5 live lots/);
+    });
+
+    it('presents no flat minimum lot value as the rule for a capped resource', async () => {
+        const listing = LOT_LISTING_SECTION_OF(await prose());
+
+        expect(listing).toMatch(/of the hub's storage shelf/i);
+        expect(listing).not.toMatch(/minimum lot value/i);
+    });
+
+    it('sends the agent to the Trade views for the effective units of one hub and resource', async () => {
+        expect(await prose()).toContain(EFFECTIVE_BOUNDS_SOURCE_NOTE);
+    });
+
+    it('says the listing rules are unavailable rather than inventing them when the chain cannot be read', async () => {
+        const text = (await capture(CONFIG, null)({} as never)).content[0]?.text ?? '';
+
+        expect(text).toContain(LOT_LISTING_UNAVAILABLE_NOTE);
+        expect(text).not.toMatch(/5 live lots/);
+    });
+
+    it('reports the absent rules as null in the machine block, never as zeros', async () => {
+        const raw = (await capture(CONFIG, null)({} as never)).content[1]?.text ?? '{}';
+        const view = JSON.parse(raw) as GameConfigReferenceView;
+
+        expect(view.trade.lotListing).toBeNull();
     });
 });

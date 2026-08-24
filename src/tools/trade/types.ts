@@ -37,8 +37,8 @@ export const createLotInputSchema = {
             'Optional seller tolerance: the highest sale-fee percent (0–100) you accept the hub charging on each ' +
                 "sale. Omit to lock in the hub's live rate at listing time as the tolerance. The hub settles its " +
                 'live rate on every sale (never more than the tolerance); if the owner later raises it above the ' +
-                'tolerance the lot freezes — buys revert until the rate drops back to the tolerance or below — and ' +
-                'cpu_cancel_lot is always fee-free.',
+                'tolerance the lot freezes — buys revert until the rate drops back to the tolerance or below. ' +
+                'Sending a frozen lot home costs no sale fee, but still costs transit for the route you choose.',
         ),
 };
 
@@ -166,5 +166,8 @@ export const listMyLotsInputSchema = {
         .nativeEnum(LotState)
         .nullable()
         .default(null)
-        .describe('Optional lifecycle filter (delivering, open, sold, cancelled). Omit for all.'),
+        .describe(
+            'Optional lifecycle filter (delivering, open, evicted, sold, cancelled). Omit for all of them, ' +
+                'evicted included — an evicted lot is still yours and still owes a return home.',
+        ),
 };
