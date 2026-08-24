@@ -178,7 +178,7 @@ function chainConfig(selfService: boolean): AppConfig {
 interface HarnessOpts {
     walletReady: boolean | null;
     deliveries: (() => Promise<Array<DeliveryView>>) | null;
-    lots: (() => Promise<Array<LotView>>) | null;
+    lots: ((state: LotState | null) => Promise<Array<LotView>>) | null;
     selfService: boolean | null;
     revealRequests: FakeRevealRequests | null;
     report: AttentionReport | null;
@@ -1035,6 +1035,22 @@ describe('get_attention evicted lots', () => {
         const result = await handler({ minSeverity: AttentionSeverity.Critical });
 
         expect(evictedItems(result)).toHaveLength(1);
+    });
+
+    it('asks the lot list for every state, so an evicted lot an open-only query would hide still lands', async () => {
+        const asked: Array<LotState | null> = [];
+        const handler = harness({
+            lots: async (state) => {
+                asked.push(state);
+                return state === null ? [evictedLot()] : [];
+            },
+            evictedCounts: { 42: 1n },
+        });
+        const result = await handler({ minSeverity: null });
+
+        expect(evictedItems(result)).toHaveLength(1);
+        expect(evictedItems(result)[0]?.lotId).toBe('700');
+        expect(asked).toEqual([null]);
     });
 
     it('drops a stale evicted row the hub itself no longer counts', async () => {

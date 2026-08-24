@@ -11,12 +11,15 @@ export function registerReturnLotTool(
     context: AppContext,
     service: Pick<ILotReturnService, 'returnLot'> | null = null,
 ): void {
-    const lotReturn = service ?? createLotReturnService(context);
+    // Built on first use, not at registration: registering a tool must not reach for the wallet.
+    let returnService = service;
+    const lotReturn = (): Pick<ILotReturnService, 'returnLot'> => (returnService ??= createLotReturnService(context));
+
     server.registerTool(
         'cpu_return_lot',
         { description: RETURN_LOT_DESCRIPTION, inputSchema: lotReturnInputSchema },
         async (args) => {
-            const result = await lotReturn.returnLot({ lotId: args.lotId, chain: args.chain });
+            const result = await lotReturn().returnLot({ lotId: args.lotId, chain: args.chain });
             const { resources } = await context.appConfig.load();
 
             return {

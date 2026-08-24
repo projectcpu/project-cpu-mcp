@@ -11,12 +11,15 @@ export function registerQuoteLotReturnTool(
     context: AppContext,
     service: Pick<ILotReturnService, 'quoteReturn'> | null = null,
 ): void {
-    const lotReturn = service ?? createLotReturnService(context);
+    // Built on first use, not at registration: registering a tool must not reach for the wallet.
+    let returnService = service;
+    const lotReturn = (): Pick<ILotReturnService, 'quoteReturn'> => (returnService ??= createLotReturnService(context));
+
     server.registerTool(
         'cpu_quote_lot_return',
         { description: QUOTE_LOT_RETURN_DESCRIPTION, inputSchema: lotReturnInputSchema },
         async (args) => {
-            const quote = await lotReturn.quoteReturn({ lotId: args.lotId, chain: args.chain });
+            const quote = await lotReturn().quoteReturn({ lotId: args.lotId, chain: args.chain });
             const { resources } = await context.appConfig.load();
 
             return {

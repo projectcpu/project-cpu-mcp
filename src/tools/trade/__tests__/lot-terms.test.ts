@@ -102,6 +102,17 @@ describe('get_lot_terms tool', () => {
         expect(text).toMatch(/return/i);
     });
 
+    it('hands the refusal to the machine block with every blocker behind it', async () => {
+        const tool = lotTermsTool(blockedTerms);
+
+        const result = await tool.handler({ hubTokenId: 20, resourceId: 3 } as never);
+        const machine = JSON.parse(result.content[1]?.text ?? '{}');
+
+        expect(machine).toEqual(blockedTerms);
+        expect(machine.canList).toBe(false);
+        expect(machine.blockers).toEqual([LotListingBlocker.EvictedPending, LotListingBlocker.SellerLotLimit]);
+    });
+
     it('says the window comes from the contract, never from the configured shares', () => {
         expect(lotTermsTool(clearTerms).description).toMatch(/live|effective/i);
         expect(lotTermsTool(clearTerms).description).not.toMatch(/share/i);

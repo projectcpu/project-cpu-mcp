@@ -24,13 +24,17 @@ export function createLotEvictionService(context: AppContext): ILotEviction {
 export function registerEvictLotTool(
     server: ToolRegistrar,
     context: AppContext,
-    eviction: ILotEviction = createLotEvictionService(context),
+    injected: ILotEviction | null = null,
 ): void {
+    // Built on first use, not at registration: registering a tool must not reach for the wallet.
+    let evictionService = injected;
+    const eviction = (): ILotEviction => (evictionService ??= createLotEvictionService(context));
+
     server.registerTool(
         'cpu_evict_lot',
         { description: EVICT_LOT_DESCRIPTION, inputSchema: evictLotInputSchema },
         async (args) => {
-            const result = await eviction.evictLot({ lotId: args.lotId });
+            const result = await eviction().evictLot({ lotId: args.lotId });
             const { resources } = await context.appConfig.load();
 
             return {
