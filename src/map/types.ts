@@ -385,6 +385,7 @@ export enum AttentionReason {
     DemolishCooldown = 'demolish_cooldown',
     LotFrozen = 'lot_frozen',
     LotAtRisk = 'lot_at_risk',
+    LotEvicted = 'lot_evicted',
     RevealStuck = 'reveal_stuck',
     RevealSourceRetired = 'reveal_source_retired',
 }
