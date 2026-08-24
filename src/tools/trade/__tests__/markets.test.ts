@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { capture, hubCell, market } from './fixtures.js';
+import { capture, captureTool, hubCell, market } from './fixtures.js';
 import { type MarketResourceSummary, BuildingType } from '../../../api/types.js';
 import { registerGetMarketsTool } from '../markets/get-markets.js';
 
@@ -85,5 +85,24 @@ describe('get_markets tool', () => {
         });
         const result = await handler({} as never);
         expect(result.content[0]?.text).toMatch(/1 frozen \(40\)/);
+    });
+
+    it('summarizes only the buyable and incoming buckets the server aggregates — never an evicted one', async () => {
+        const handler = capture(registerGetMarketsTool, {
+            trade: { getMarkets: async () => [market] },
+            mapReader: { readRevealCell: async () => hubCell({ 3: 2.5 }) },
+        });
+        const result = await handler({} as never);
+        expect(result.content[0]?.text).not.toMatch(/evict/i);
+        const json = JSON.parse(result.content[1]?.text ?? '[]') as Array<Record<string, unknown>>;
+        expect(Object.keys(json[0] ?? {}).filter((key) => /evict/i.test(key))).toEqual([]);
+    });
+
+    it('states in its description that evicted lots are not offers it reports', () => {
+        const { description } = captureTool(registerGetMarketsTool, {
+            trade: { getMarkets: async () => [market] },
+            mapReader: { readRevealCell: async () => null },
+        });
+        expect(description).toMatch(/evicted/i);
     });
 });

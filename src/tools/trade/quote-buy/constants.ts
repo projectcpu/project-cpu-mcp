@@ -9,5 +9,6 @@ export const QUOTE_BUY_DESCRIPTION = [
     'buy, a failed quote explains why the purchase would revert (lot closed, amount exceeds remaining, a',
     'sale-fee-tolerance freeze, a foreign frozen hub on the route). It does NOT check pause, $CPU balance, or',
     'allowance — a fill can still revert on those. `cpu_buy_lot` re-quotes transit on-chain and authorizes ~10%',
-    'over as headroom (a ceiling, not an extra charge). Use before `cpu_buy_lot`.',
+    'over as headroom (a ceiling, not an extra charge). Use before `cpu_buy_lot`. It re-reads the lot first and',
+    "refuses without quoting when it is not open — an evicted lot is the seller's to bring home, not yours to buy.",
 ].join(' ');

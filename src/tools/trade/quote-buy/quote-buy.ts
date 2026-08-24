@@ -1,6 +1,7 @@
 import { QUOTE_BUY_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
+import { requireOpenLot } from '../buyer-guard/lot-open.guard.js';
 import { summarizeQuoteBuy } from '../format.utils.js';
 import { quoteBuyInputSchema } from '../types.js';
 
@@ -9,6 +10,7 @@ export function registerQuoteBuyTool(server: ToolRegistrar, context: AppContext)
         'cpu_quote_buy',
         { description: QUOTE_BUY_DESCRIPTION, inputSchema: quoteBuyInputSchema },
         async (args) => {
+            await requireOpenLot(context.trade, args.lotId);
             const quote = await context.trade.quoteBuy({
                 lotId: args.lotId,
                 value: args.value,

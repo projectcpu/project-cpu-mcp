@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buyResult, capture } from './fixtures.js';
+import { buyResult, capture, lot } from './fixtures.js';
 import type { TradeQuote } from '../../../services/types.js';
 import { ToolEventType } from '../../types.js';
 import { registerBuyLotTool } from '../buy-lot/buy-lot.js';
@@ -8,7 +8,9 @@ import { registerQuoteBuyTool } from '../quote-buy/quote-buy.js';
 
 describe('buy_lot tool', () => {
     it('reports a buy with the clan economics, burn, sale approve and buy tx', async () => {
-        const handler = capture(registerBuyLotTool, { trade: { buyLot: async () => buyResult } });
+        const handler = capture(registerBuyLotTool, {
+            trade: { getLot: async () => lot, buyLot: async () => buyResult },
+        });
         const result = await handler({ lotId: '7', chain: [], value: '10' } as never);
         expect(result.content[0]?.text).toMatch(/Bought 10 Silica/);
         expect(result.content[0]?.text).toMatch(/sale 5 \$CPU/);
@@ -27,6 +29,7 @@ describe('buy_lot tool', () => {
     it('propagates service errors', async () => {
         const handler = capture(registerBuyLotTool, {
             trade: {
+                getLot: async () => lot,
                 buyLot: async () => {
                     throw new Error('LotNotOpen');
                 },
@@ -56,7 +59,9 @@ describe('quote_buy tool', () => {
             arrivalAt: 1704,
             total: '55',
         };
-        const handler = capture(registerQuoteBuyTool, { trade: { quoteBuy: async () => quote } });
+        const handler = capture(registerQuoteBuyTool, {
+            trade: { getLot: async () => lot, quoteBuy: async () => quote },
+        });
         const result = await handler({ lotId: '7', value: '100', chain: [] } as never);
         expect(result.content[0]?.text).toMatch(/Buy quote for lot 7/);
         expect(result.content[0]?.text).toMatch(/Silica \(#3\)/);
@@ -83,7 +88,9 @@ describe('quote_buy tool', () => {
             arrivalAt: null,
             total: '48',
         };
-        const handler = capture(registerQuoteBuyTool, { trade: { quoteBuy: async () => quote } });
+        const handler = capture(registerQuoteBuyTool, {
+            trade: { getLot: async () => lot, quoteBuy: async () => quote },
+        });
         const result = await handler({ lotId: '7', value: '100', chain: null } as never);
         expect(result.content[0]?.text).toMatch(/Seller-only estimate for lot 7/);
         expect(result.content[0]?.text).toMatch(/sale 50 \$CPU \(hub fee 1.5%\) − 2 syndicate discount = 48 charged/);
@@ -108,7 +115,9 @@ describe('quote_buy tool', () => {
             arrivalAt: null,
             total: '50',
         };
-        const handler = capture(registerQuoteBuyTool, { trade: { quoteBuy: async () => quote } });
+        const handler = capture(registerQuoteBuyTool, {
+            trade: { getLot: async () => lot, quoteBuy: async () => quote },
+        });
         const result = await handler({ lotId: '7', value: '100', chain: null } as never);
         expect(result.content[0]?.text).toMatch(/does not check pause, \$CPU balance, or allowance/);
     });

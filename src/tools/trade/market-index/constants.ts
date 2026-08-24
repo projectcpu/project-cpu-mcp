@@ -8,4 +8,6 @@ export const GET_MARKET_INDEX_DESCRIPTION = [
     'This answers a different question than `cpu_get_markets` (the cheapest ask available right now, per hub):',
     'that is what you could buy at this instant; this is what the world actually paid, on average, over the last',
     'day. The two are never combined into one call — mixing them would read as one price when it is really two.',
+    'It aggregates settled trades, so a trade stays in the window no matter what became of its lot afterwards —',
+    'sold out, cancelled, or evicted by the hub owner. History here is never rewritten backwards.',
 ].join(' ');
