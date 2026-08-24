@@ -1,4 +1,5 @@
 import { zeroAddress } from 'viem';
+import type { ZodError } from 'zod';
 
 import { STALE_STAND_CONFIG_HINT } from './app-config.constants.js';
 import { type AppConfig, type CatalogBuildingView, ModeSwitchKind } from './types.js';
@@ -9,6 +10,8 @@ import {
     randomnessDescriptorSchema,
     RandomnessKind,
     type RevealPaymentView,
+    type TradeParameters,
+    tradeParametersSchema,
 } from '../api/types.js';
 import { bpToPercent } from '../utils/format.utils.js';
 
@@ -62,6 +65,10 @@ function parseRevealPayment(raw: unknown): RevealPaymentView | null {
     return { ethContribution, cpuBurn };
 }
 
+function formatIssues(error: ZodError): string {
+    return error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
+}
+
 function knownRandomnessKinds(): string {
     return Object.values(RandomnessKind).join(', ');
 }
@@ -100,15 +107,28 @@ function parseRandomnessDescriptor(raw: unknown): RandomnessDescriptor {
         );
     }
 
-    const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
     throw new Error(
         `GET /api/v1/config serves an incomplete "${kind}" randomness descriptor — ` +
-            `${STALE_STAND_CONFIG_HINT}. Rejected fields: ${issues}.`,
+            `${STALE_STAND_CONFIG_HINT}. Rejected fields: ${formatIssues(parsed.error)}.`,
+    );
+}
+
+function parseTradeParameters(raw: unknown): TradeParameters {
+    const parsed = tradeParametersSchema.safeParse(raw);
+    if (parsed.success) {
+        return parsed.data;
+    }
+
+    throw new Error(
+        `GET /api/v1/config serves no usable trade block — ${STALE_STAND_CONFIG_HINT}. The sale burn and ` +
+            `the sale-fee ceiling are live rules and are never assumed. Rejected fields: ` +
+            `${formatIssues(parsed.error)}.`,
     );
 }
 
 export function parseAppConfig(raw: unknown): AppConfig {
     const data = appConfigResponseSchema.parse(raw);
+    const trade = parseTradeParameters(data.trade);
     return {
         network: data.network,
         chainId: data.chainId,
@@ -129,8 +149,8 @@ export function parseAppConfig(raw: unknown): AppConfig {
         reveal: parseRevealPayment(data.reveal),
         transport: data.transport,
         trade: {
-            saleBurnPercent: data.trade.saleBurnPercent,
-            maxSaleFeePercent: bpToPercent(data.trade.maxSaleFeeBp),
+            saleBurnPercent: trade.saleBurnPercent,
+            maxSaleFeePercent: bpToPercent(trade.maxSaleFeeBp),
         },
         storage: { caps: data.storage.caps.map((row) => ({ ...row })) },
     };

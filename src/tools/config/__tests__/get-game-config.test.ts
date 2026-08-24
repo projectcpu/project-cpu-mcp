@@ -10,11 +10,8 @@ import type { ToolRegistrar } from '../../types.js';
 import { renderBuildingIndexLine } from '../find-buildings/find-buildings.utils.js';
 import {
     BUILDING_INDEX_SECTION_TITLE,
-    EFFECTIVE_BOUNDS_SOURCE_NOTE,
     EMPTY_CATALOG_NOTE,
     ENTRY_POINT_LOOKUP,
-    LOT_LISTING_LABEL,
-    LOT_LISTING_UNAVAILABLE_NOTE,
     ROUTING_BUILDING_CARD_LINE,
     ROUTING_FIND_BUILDINGS_LINE,
     ROUTING_RECIPES_LINE,
@@ -151,10 +148,12 @@ const LOT_LISTING_RULES: LotListingRulesView = {
     minPricePerUnit: '0',
 };
 
+const LOT_LISTING_LINE_PREFIX = 'Lot listing:';
+
 function LOT_LISTING_SECTION_OF(text: string): string {
-    const line = text.split('\n').find((row) => row.startsWith(LOT_LISTING_LABEL));
+    const line = text.split('\n').find((row) => row.startsWith(LOT_LISTING_LINE_PREFIX));
     if (line === undefined) {
-        throw new Error(`no "${LOT_LISTING_LABEL}" line in the entry point`);
+        throw new Error(`no "${LOT_LISTING_LINE_PREFIX}" line in the entry point`);
     }
     return line;
 }
@@ -604,7 +603,11 @@ describe('cpu_get_game_config lot listing rules', () => {
     });
 
     it('states the maximum live lots one seller may hold per hub and resource', async () => {
-        expect(await prose()).toMatch(/5 live lots/);
+        expect(await prose()).toMatch(/5 live lots per seller, hub and resource/);
+    });
+
+    it('counts delivering, open and evicted lots against that limit', async () => {
+        expect(LOT_LISTING_SECTION_OF(await prose())).toMatch(/delivering, open and evicted ones all count/i);
     });
 
     it('presents no flat minimum lot value as the rule for a capped resource', async () => {
@@ -615,13 +618,21 @@ describe('cpu_get_game_config lot listing rules', () => {
     });
 
     it('sends the agent to the Trade views for the effective units of one hub and resource', async () => {
-        expect(await prose()).toContain(EFFECTIVE_BOUNDS_SOURCE_NOTE);
+        const listing = LOT_LISTING_SECTION_OF(await prose());
+
+        expect(listing).toMatch(/read from the Trade contract itself/i);
+        expect(listing).toMatch(/never worked out from these shares/i);
     });
 
     it('says the listing rules are unavailable rather than inventing them when the chain cannot be read', async () => {
         const text = (await capture(CONFIG, null)({} as never)).content[0]?.text ?? '';
+        const listing = LOT_LISTING_SECTION_OF(text);
 
-        expect(text).toContain(LOT_LISTING_UNAVAILABLE_NOTE);
+        expect(listing).toMatch(/could not be read right now/i);
+        expect(listing).toMatch(/no wallet configured, or the chain is unreachable/i);
+        expect(listing).toMatch(/retry/i);
+        expect(listing).not.toMatch(/\d/);
+        expect(listing).not.toMatch(/%/);
         expect(text).not.toMatch(/5 live lots/);
     });
 

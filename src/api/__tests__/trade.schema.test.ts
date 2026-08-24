@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { apiFillViewSchema, apiLotViewSchema, apiMarketResourceSummarySchema, LotState } from '../types.js';
+import {
+    apiFillViewSchema,
+    apiLotViewSchema,
+    apiMarketResourceSummarySchema,
+    LotState,
+    tradeParametersSchema,
+} from '../types.js';
 
 function lotRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
@@ -107,5 +113,18 @@ describe('fill response schema', () => {
         };
 
         expect(() => apiFillViewSchema.parse(row)).toThrow();
+    });
+});
+
+describe('trade parameters schema', () => {
+    it('requires the sale burn and the sale-fee ceiling', () => {
+        expect(() => tradeParametersSchema.parse({ maxSaleFeeBp: 5000 })).toThrow(/saleBurnPercent/);
+        expect(() => tradeParametersSchema.parse({ saleBurnPercent: 1 })).toThrow(/maxSaleFeeBp/);
+    });
+
+    it('keeps only the two parameters, so an unknown key cannot travel with them', () => {
+        const parsed = tradeParametersSchema.parse({ saleBurnPercent: 1, maxSaleFeeBp: 5000, minLotValue: '1000' });
+
+        expect(parsed).toEqual({ saleBurnPercent: 1, maxSaleFeeBp: 5000 });
     });
 });

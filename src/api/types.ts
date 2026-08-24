@@ -355,6 +355,18 @@ export const storageConfigSchema = z
         }
     });
 
+/**
+ * Both parameters are surfaced as live rules, so neither may be defaulted: a zero burn and a zero
+ * ceiling are quotable numbers an agent would plan against, and a response without them is a stale
+ * shape, not a network that charges nothing.
+ */
+export const tradeParametersSchema = z.object({
+    saleBurnPercent: z.number(),
+    maxSaleFeeBp: z.number(),
+});
+
+export type TradeParameters = z.infer<typeof tradeParametersSchema>;
+
 export const appConfigResponseSchema = z
     .object({
         network: z.literal(LAUNCH_NETWORK),
@@ -378,10 +390,7 @@ export const appConfigResponseSchema = z
         buildings: z.array(buildingConfigSchema).default([]),
         reveal: z.unknown().nullable().default(null),
         transport: transportRoutingSchema,
-        trade: z
-            .object({ saleBurnPercent: z.number().default(0), maxSaleFeeBp: z.number().default(0) })
-            .passthrough()
-            .default({}),
+        trade: z.unknown(),
     })
     .passthrough();
 

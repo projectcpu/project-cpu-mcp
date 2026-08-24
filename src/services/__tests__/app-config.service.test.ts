@@ -246,22 +246,22 @@ describe('AppConfigService', () => {
         expect(config.contracts.syndicate).toBeNull();
     });
 
-    it('defaults the trade block when an older API omits it', async () => {
-        const without = await makeService(
-            new FakeApi({
-                status: 200,
-                data: {
-                    network: 'robinhood',
-                    chainId: 4663,
-                    contracts: { land: '', cpuToken: '', cpuHook: '', cell: '' },
-                    randomness: { kind: RandomnessKind.ENTROPY, adapter: '' },
-                    resources: {},
-                    transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0' } },
-                    storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
-                },
-            }),
-        ).load();
-        expect(without.trade).toEqual({ saleBurnPercent: 0, maxSaleFeePercent: 0 });
+    it('rejects a config that carries no trade block instead of reporting a zero burn', async () => {
+        const { trade: _dropped, ...rest } = makeResponse();
+
+        await expect(makeService(new FakeApi({ status: 200, data: rest })).load()).rejects.toThrow(/trade/i);
+    });
+
+    it('rejects a trade block with no sale burn rather than defaulting it to zero', async () => {
+        const data = makeResponse({ trade: { maxSaleFeeBp: 5000 } as AppConfigFixture['trade'] });
+
+        await expect(makeService(new FakeApi({ status: 200, data })).load()).rejects.toThrow(/saleBurnPercent/);
+    });
+
+    it('rejects a trade block with no sale-fee ceiling rather than defaulting it to zero', async () => {
+        const data = makeResponse({ trade: { saleBurnPercent: 1 } as AppConfigFixture['trade'] });
+
+        await expect(makeService(new FakeApi({ status: 200, data })).load()).rejects.toThrow(/maxSaleFeeBp/);
     });
 
     it('surfaces the per-resource transit-fee floors verbatim', async () => {
@@ -316,6 +316,7 @@ describe('AppConfigService', () => {
                     randomness: { kind: RandomnessKind.ENTROPY, adapter: '' },
                     resources: {},
                     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0' } },
+                    trade: { saleBurnPercent: 0, maxSaleFeeBp: 0 },
                     storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
                 },
             }),
