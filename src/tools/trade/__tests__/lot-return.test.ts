@@ -1,0 +1,154 @@
+import { describe, expect, it } from 'vitest';
+
+import { captureTool, type CapturedTool } from './fixtures.js';
+import { LotState } from '../../../api/types.js';
+import { LotReturnBranch, type LotReturnQuote, type LotReturnResult } from '../../../services/types.js';
+import type { AppContext } from '../../../types.js';
+import { TxStatus } from '../../../wallet/types.js';
+import { ToolEventType, type ToolRegistrar } from '../../types.js';
+import { registerQuoteLotReturnTool } from '../quote-lot-return/quote-lot-return.js';
+import { registerReturnLotTool } from '../return-lot/return-lot.js';
+
+const quote: LotReturnQuote = {
+    lotId: '7',
+    hubTokenId: '20',
+    resourceId: 3,
+    amount: '80',
+    destinationTokenId: '31',
+    transitPaid: '0.7',
+    transitDiscount: '0.2',
+    totalDistance: 4,
+    arrivalAt: 1_700_000_900,
+    capacity: { fits: true, required: '80', free: '120' },
+};
+
+const result: LotReturnResult = {
+    lotId: '7',
+    originalState: LotState.Open,
+    branch: LotReturnBranch.Cancelled,
+    hubTokenId: '20',
+    resourceId: 3,
+    returned: '80',
+    transitPaid: '0.7',
+    transitDiscount: '0.2',
+    destinationTokenId: '31',
+    deliveryId: '123',
+    arrivalAt: 1_700_000_900,
+    approveTxHash: '0xapprove',
+    txHash: '0xreturn',
+    status: TxStatus.Success,
+    blockNumber: '100',
+};
+
+function quoteTool(over: Partial<LotReturnQuote> = {}): CapturedTool {
+    const service = { quoteReturn: async () => ({ ...quote, ...over }) };
+    return captureTool(
+        (server: ToolRegistrar, context: AppContext) => registerQuoteLotReturnTool(server, context, service),
+        {},
+    );
+}
+
+function returnTool(over: Partial<LotReturnResult> = {}): CapturedTool {
+    const service = { returnLot: async () => ({ ...result, ...over }) };
+    return captureTool(
+        (server: ToolRegistrar, context: AppContext) => registerReturnLotTool(server, context, service),
+        {},
+    );
+}
+
+describe('quote_lot_return tool', () => {
+    it('registers under the lot-return quote name and says a session is required', () => {
+        const tool = quoteTool();
+        expect(tool.name).toBe('cpu_quote_lot_return');
+        expect(tool.description).toMatch(/session/i);
+    });
+
+    it('asks for one lot and one explicit full route', () => {
+        const tool = quoteTool();
+        expect(Object.keys(tool.inputSchema).sort()).toEqual(['chain', 'lotId']);
+        expect(tool.inputSchema.chain?.safeParse([20]).success).toBe(false);
+        expect(tool.inputSchema.chain?.safeParse([20, 31]).success).toBe(true);
+    });
+
+    it('states the whole remainder, the destination, the fee, the discount, the distance and the ETA', async () => {
+        const tool = quoteTool();
+        const out = await tool.handler({ lotId: '7', chain: [20, 31] } as never);
+        const text = out.content[0]?.text ?? '';
+        expect(text).toMatch(/whole remainder/i);
+        expect(text).toMatch(/80 Silica/);
+        expect(text).toMatch(/cell 31/i);
+        expect(text).toMatch(/0\.7 \$CPU/);
+        expect(text).toMatch(/0\.2/);
+        expect(text).toMatch(/4 grid steps/i);
+    });
+
+    it('says the destination has room, with the free figure it checked', async () => {
+        const out = await quoteTool().handler({ lotId: '7', chain: [20, 31] } as never);
+        expect(out.content[0]?.text).toMatch(/120 free/i);
+    });
+
+    it('says outright when the whole remainder does not fit, naming required and free', async () => {
+        const tool = quoteTool({ capacity: { fits: false, required: '80', free: '40' } });
+        const out = await tool.handler({ lotId: '7', chain: [20, 31] } as never);
+        const text = out.content[0]?.text ?? '';
+        expect(text).toMatch(/does not fit/i);
+        expect(text).toMatch(/80/);
+        expect(text).toMatch(/40/);
+    });
+
+    it('never claims a free figure for uncapped destination storage', async () => {
+        const tool = quoteTool({ capacity: { fits: true, required: '80', free: null } });
+        const out = await tool.handler({ lotId: '7', chain: [20, 31] } as never);
+        expect(out.content[0]?.text).toMatch(/uncapped/i);
+    });
+
+    it('carries the quote unchanged in the machine block', async () => {
+        const out = await quoteTool().handler({ lotId: '7', chain: [20, 31] } as never);
+        expect(JSON.parse(out.content[1]?.text ?? '{}')).toEqual(quote);
+    });
+});
+
+describe('return_lot tool', () => {
+    it('registers under the lot-return name and says a session is required', () => {
+        const tool = returnTool();
+        expect(tool.name).toBe('cpu_return_lot');
+        expect(tool.description).toMatch(/session/i);
+    });
+
+    it('reads the same lot and explicit full route as the quote', () => {
+        expect(Object.keys(returnTool().inputSchema).sort()).toEqual(['chain', 'lotId']);
+    });
+
+    it('summarizes a cancelled Open lot with the units, the delivery and the fee', async () => {
+        const out = await returnTool().handler({ lotId: '7', chain: [20, 31] } as never);
+        const text = out.content[0]?.text ?? '';
+        expect(text).toMatch(/lot 7/i);
+        expect(text).toMatch(/80 Silica/);
+        expect(text).toMatch(/cancel/i);
+        expect(text).toMatch(/finalize_delivery on 123/);
+        expect(text).toMatch(/0\.7 \$CPU/);
+        expect(text).toMatch(/approve tx 0xapprove/);
+        expect(text).toMatch(/0xreturn/);
+    });
+
+    it('names the reclaim branch when the lot was evicted rather than open', async () => {
+        const tool = returnTool({ originalState: LotState.Evicted, branch: LotReturnBranch.Reclaimed });
+        const out = await tool.handler({ lotId: '7', chain: [20, 31] } as never);
+        expect(out.content[0]?.text).toMatch(/evicted/i);
+        expect(out.content[0]?.text).toMatch(/reclaim/i);
+    });
+
+    it('warns that handing the destination cell on before finalization hands the goods on with it', async () => {
+        const out = await returnTool().handler({ lotId: '7', chain: [20, 31] } as never);
+        const text = out.content[0]?.text ?? '';
+        expect(text).toMatch(/transfer/i);
+        expect(text).toMatch(/new owner/i);
+    });
+
+    it('names the event in the machine block', async () => {
+        const out = await returnTool().handler({ lotId: '7', chain: [20, 31] } as never);
+        expect((JSON.parse(out.content[1]?.text ?? '{}') as { eventType: string }).eventType).toBe(
+            ToolEventType.LotReturned,
+        );
+    });
+});
