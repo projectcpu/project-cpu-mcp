@@ -22,6 +22,7 @@ export enum ToolEventType {
     LotBought = 'lot_bought',
     LotCancelled = 'lot_cancelled',
     LotReturned = 'lot_returned',
+    LotEvicted = 'lot_evicted',
     HubFeeSet = 'hub_fee_set',
     Swapped = 'swapped',
     Withdrawn = 'withdrawn',

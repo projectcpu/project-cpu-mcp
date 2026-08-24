@@ -6,7 +6,10 @@ export const CREATE_LOT_DESCRIPTION = [
     'seller proceeds (the buyer still pays exactly price × value). `maxSaleFeePercent` is your tolerance: the highest',
     'rate you accept — omit it to lock in the live rate at listing (read on-chain). The hub settles its live rate',
     'each sale (never above your tolerance); if it later rises above the tolerance the lot freezes and buys revert',
-    'until the hub lowers it — `cpu_cancel_lot` is always fee-free and returns the escrow. The lot is DELIVERING and',
+    'until the hub lowers it — you can send the unsold remainder home at any time, which owes no sale fee but still',
+    'owes transit for the route you pick. Read the live window, your live-lot count and any evicted remainder you owe',
+    'with `cpu_get_lot_terms` first: this tool re-reads the same terms and refuses before any approval or transaction.',
+    'The lot is DELIVERING and',
     'becomes buyable (OPEN) only after its escrow arrives — call `cpu_finalize_delivery` on the returned deliveryId',
     '(or wait). Returns the lotId and the locked-in `maxSaleFeePercent`; track with `cpu_list_my_lots` / `cpu_get_lot`.',
 ].join(' ');
