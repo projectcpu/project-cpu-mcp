@@ -223,6 +223,9 @@ export interface SocketLifecycleHandlers {
     onDisconnect: (reason: string) => void;
     onError: (error: Error) => void;
     onCellUpdate: (cell: RawCell) => void;
+    // A realtime update this client could not read. Reported separately so the row is accounted for the same
+    // way a dropped snapshot row is, instead of vanishing and leaving unknown ground looking unminted.
+    onCellUpdateDropped: () => void;
 }
 
 // Abstraction over the realtime socket so tests can drive lifecycle events with a fake.
@@ -254,6 +257,21 @@ export interface MapStatus {
     getReadiness(): MapReadiness;
     isSocketConnected(): boolean;
     resyncNow(): Promise<void>;
+}
+
+/**
+ * One atomic projection for routing: the cells, whether the full map bootstrap has finished, and the version
+ * that produced them. Read together so a row missing from a half-loaded map can never pass as open ground.
+ */
+export interface RoutingSnapshot {
+    cells: Array<Cell>;
+    /** True only when every existing row is held: the bootstrap has finished and no row was left unread. */
+    complete: boolean;
+    /** Rows this client could not read; each one would otherwise pass for ground nobody has minted. */
+    droppedCells: number;
+    /** Live updates this client could not read; the rows they carried are held, but may have moved on. */
+    droppedUpdates: number;
+    version: number;
 }
 
 export interface RevealCellReader {

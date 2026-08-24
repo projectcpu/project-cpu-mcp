@@ -108,6 +108,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
             {
                 type: BuildingType.Mine,
                 onChainId: 4,
+                radius: 0,
                 name: 'Mine',
                 kind: BuildingKind.Extractor,
                 tier: 1,
@@ -130,6 +131,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
             {
                 type: BuildingType.SteelMill,
                 onChainId: 11,
+                radius: 0,
                 name: 'Steel Mill',
                 kind: BuildingKind.Crafter,
                 tier: 2,
@@ -152,6 +154,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
             {
                 type: BuildingType.WaferFab,
                 onChainId: 17,
+                radius: 0,
                 name: 'Wafer Fab',
                 kind: BuildingKind.Crafter,
                 tier: 3,
@@ -174,6 +177,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
             {
                 type: BuildingType.Hub,
                 onChainId: 23,
+                radius: 3,
                 name: 'Hub',
                 kind: BuildingKind.Hub,
                 tier: 1,
@@ -196,6 +200,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
             {
                 type: BuildingType.PumpStation,
                 onChainId: 1,
+                radius: 0,
                 name: 'Pump Station',
                 kind: BuildingKind.Extractor,
                 tier: 1,

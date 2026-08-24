@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeMapSocket } from '../../__mocks__/in-memory-socket.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
+import { FakeAppConfig, makeConfig } from '../../services/__tests__/service-fakes.js';
 import { BackendVersion, createBackendVersionGate } from '../../version/backend-version.js';
 import { BACKEND_RESET_NOTICE, BACKEND_VERSION_TTL_MS } from '../../version/constants.js';
 import { createNoticeBuffer, guardToolHandler } from '../../version/tool-guard.js';
 import type { IBackendVersion } from '../../version/types.js';
-import { STARTUP_FETCH_RETRY_MS } from '../constants.js';
+import { MAP_HTTP_PATH, STARTUP_FETCH_RETRY_MS } from '../constants.js';
+import { MapReader } from '../reader.js';
 import { MapStore } from '../store.js';
 import { MapSync } from '../sync.js';
 import { type IMapApi, MapReadiness, type RawCell } from '../types.js';
@@ -21,6 +23,7 @@ class FakeApi implements IMapApi {
     public readonly calls: Array<string> = [];
     public snapshotVersion = 50;
     public snapshotCells: Array<RawCell>;
+    public resyncCells: Array<RawCell> = [];
 
     constructor(
         snapshotCells: Array<RawCell>,
@@ -29,12 +32,36 @@ class FakeApi implements IMapApi {
         this.snapshotCells = snapshotCells;
     }
 
+    public gate = false;
+    private readonly held: Array<(cells: Array<RawCell>) => void> = [];
+
     async request<T>(path: string): Promise<{ status: number; data: T }> {
         this.calls.push(path);
         this.trace.push('map-request');
-        const cells = path.includes('since=') ? [] : this.snapshotCells;
+        if (this.gate) {
+            const answered = await new Promise<Array<RawCell>>((resolve) => {
+                this.held.push(resolve);
+            });
+            return {
+                status: 200,
+                data: makeSnapshot({ version: this.snapshotVersion, serverTime: 1000, cells: answered }) as T,
+            };
+        }
+        const cells = path.includes('since=') ? this.resyncCells : this.snapshotCells;
         const data = makeSnapshot({ version: this.snapshotVersion, serverTime: 1000, cells }) as T;
         return { status: 200, data };
+    }
+
+    heldCount(): number {
+        return this.held.length;
+    }
+
+    answerNewest(cells: Array<RawCell>): void {
+        this.held.pop()?.(cells);
+    }
+
+    answerOldest(cells: Array<RawCell>): void {
+        this.held.shift()?.(cells);
     }
 
     getBaseUrl(): string {
@@ -81,6 +108,12 @@ function setup(snapshotCells: Array<RawCell>): {
     return { sync, socket, api, store, backendVersion, trace };
 }
 
+function flush(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+}
+
 async function waitReady(sync: MapSync): Promise<void> {
     await vi.waitFor(() => expect(sync.getReadiness()).toBe(MapReadiness.Ready));
 }
@@ -97,6 +130,244 @@ describe('MapSync', () => {
 
         expect(sync.getReadiness()).toBe(MapReadiness.Ready);
         expect(store.size()).toBe(1);
+    });
+
+    it('remembers the snapshot rows it could not read, so a reader can refuse to guess at them', async () => {
+        const { sync, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+
+        expect(store.size()).toBe(1);
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('counts a realtime update it could not read, so a loaded map stops passing for whole', async () => {
+        const { sync, socket, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        expect((await reader.routingSnapshot()).complete).toBe(true);
+
+        socket.emitUnreadableCell();
+
+        const routing = await reader.routingSnapshot();
+        expect(routing.droppedUpdates).toBe(1);
+        expect(routing.droppedCells).toBe(0);
+        expect(routing.complete).toBe(false);
+    });
+
+    it('repairs a missed update with a whole-map read, so routing recovers without a restart', async () => {
+        const { sync, socket, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        socket.emitUnreadableCell();
+        expect((await reader.routingSnapshot()).complete).toBe(false);
+
+        api.calls.length = 0;
+        await sync.resyncNow();
+
+        expect(api.calls).toEqual([MAP_HTTP_PATH]);
+        expect((await reader.routingSnapshot()).complete).toBe(true);
+    });
+
+    it('repairs the snapshot rows it could not read once a whole-map read comes back clean', async () => {
+        const { sync, api, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+        expect(store.getDroppedCells()).toBe(1);
+
+        api.snapshotCells = [makeCell({ tokenId: '1', updated: 50 }), makeCell({ tokenId: '2', updated: 60 })];
+        await sync.resyncNow();
+
+        expect(store.getDroppedCells()).toBe(0);
+        expect(store.size()).toBe(2);
+    });
+
+    it('keeps the gap when the repairing whole-map read still cannot read a row', async () => {
+        const { sync, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+
+        await sync.resyncNow();
+
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('refuses an older repairing answer the right to close a gap a newer answer just re-measured', async () => {
+        const { sync, api, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+        expect(store.getDroppedCells()).toBe(1);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+
+        api.gate = true;
+        const first = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+        const second = sync.resyncNow();
+        await flush();
+
+        api.answerNewest([makeCell({ tokenId: '1', updated: 50 }), { tokenId: '2' } as unknown as RawCell]);
+        await flush();
+        api.answerOldest([makeCell({ tokenId: '1', updated: 50 })]);
+        await Promise.all([first, second]);
+
+        expect(store.getDroppedCells()).toBe(1);
+        expect(store.get('2')).toBeNull();
+        expect((await reader.routingSnapshot()).complete).toBe(false);
+    });
+
+    it('lets a reconnect ride the repairing read already in flight instead of opening a second one', async () => {
+        const { sync, api, socket, store } = setup([
+            makeCell({ tokenId: '1', updated: 50 }),
+            { tokenId: '2' } as unknown as RawCell,
+        ]);
+        sync.start();
+        await waitReady(sync);
+        api.calls.length = 0;
+
+        api.gate = true;
+        const repair = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+        socket.emitConnect();
+        await flush();
+
+        expect(api.heldCount()).toBe(1);
+        expect(api.calls).toEqual([MAP_HTTP_PATH]);
+
+        api.answerNewest([makeCell({ tokenId: '1', updated: 50 }), { tokenId: '2' } as unknown as RawCell]);
+        await repair;
+        await flush();
+
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('keeps a gap that opened while the repairing read was in flight', async () => {
+        const { sync, api, socket, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        socket.emitUnreadableCell();
+        expect(store.getDroppedUpdates()).toBe(1);
+
+        api.gate = true;
+        const repair = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+        socket.emitUnreadableCell();
+
+        api.answerOldest([makeCell({ tokenId: '1', updated: 50 })]);
+        await repair;
+
+        expect(store.getDroppedUpdates()).toBe(1);
+        expect((await reader.routingSnapshot()).complete).toBe(false);
+    });
+
+    it('goes on reading the map after a repairing read finished, so a later gap is repaired too', async () => {
+        const { sync, socket, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        const reader = new MapReader({ store, status: sync, appConfig: new FakeAppConfig(makeConfig()) });
+        socket.emitUnreadableCell();
+
+        await sync.resyncNow();
+        expect(store.getDroppedUpdates()).toBe(0);
+
+        api.calls.length = 0;
+        await sync.resyncNow();
+        await sync.resyncNow();
+        expect(api.calls).toEqual([`${MAP_HTTP_PATH}?since=50`, `${MAP_HTTP_PATH}?since=50`]);
+
+        socket.emitUnreadableCell();
+        api.calls.length = 0;
+        await sync.resyncNow();
+
+        expect(api.calls).toEqual([MAP_HTTP_PATH]);
+        expect(store.getDroppedUpdates()).toBe(0);
+        expect((await reader.routingSnapshot()).complete).toBe(true);
+    });
+
+    it('holds a resync that rides the repairing read until that read has answered', async () => {
+        const { sync, api, socket } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        socket.emitUnreadableCell();
+
+        api.gate = true;
+        const owner = sync.resyncNow();
+        await vi.waitFor(() => expect(api.heldCount()).toBe(1));
+
+        let riderReturned = false;
+        const rider = sync.resyncNow().then(() => {
+            riderReturned = true;
+        });
+        await flush();
+        expect(riderReturned).toBe(false);
+
+        api.answerOldest([makeCell({ tokenId: '1', updated: 50 })]);
+        await Promise.all([owner, rider]);
+
+        expect(riderReturned).toBe(true);
+    });
+
+    it('asks for a delta while nothing is missing', async () => {
+        const { sync, api } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+
+        api.calls.length = 0;
+        await sync.resyncNow();
+
+        expect(api.calls).toEqual([`${MAP_HTTP_PATH}?since=50`]);
+    });
+
+    it('counts the resync rows it could not read', async () => {
+        const { sync, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        expect(store.getDroppedCells()).toBe(0);
+
+        api.resyncCells = [{ tokenId: '2' } as unknown as RawCell];
+        await sync.resyncNow();
+
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('counts the rows it could not read while replacing the whole map', async () => {
+        const { sync, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+
+        api.snapshotCells = [makeCell({ tokenId: '2', updated: 2 }), { tokenId: '3' } as unknown as RawCell];
+        sync.applyFullSnapshot(await sync.fetchFullSnapshot());
+
+        expect(store.size()).toBe(1);
+        expect(store.getDroppedCells()).toBe(1);
+    });
+
+    it('does not carry an unreadable-row count from one full replacement into the next', async () => {
+        const { sync, api, store } = setup([makeCell({ tokenId: '1', updated: 50 })]);
+        sync.start();
+        await waitReady(sync);
+        api.snapshotCells = [makeCell({ tokenId: '2', updated: 2 }), { tokenId: '3' } as unknown as RawCell];
+        sync.applyFullSnapshot(await sync.fetchFullSnapshot());
+        expect(store.getDroppedCells()).toBe(1);
+
+        api.snapshotCells = [makeCell({ tokenId: '4', updated: 4 })];
+        sync.applyFullSnapshot(await sync.fetchFullSnapshot());
+
+        expect(store.getDroppedCells()).toBe(0);
     });
 
     it('checks the source build before it asks for the first snapshot', async () => {

@@ -1,6 +1,6 @@
 import { encodeFunctionData, formatEther, zeroAddress, type Address } from 'viem';
 
-import { SEADROP_ADDRESS } from './mint.constants.js';
+import { NO_PUBLIC_DROP_MESSAGE, SEADROP_ADDRESS } from './mint.constants.js';
 import { preparePaidAction } from './paid-action.js';
 import { AppContract } from './paid-action.types.js';
 import {
@@ -96,8 +96,8 @@ export class MintService implements IMintService {
         if (drop.endTime !== 0 && now > drop.endTime) {
             throw new Error(`The land public drop has ended (closed at ${formatUnixSeconds(drop.endTime)}).`);
         }
-        if (drop.mintPrice === 0n && drop.startTime === 0 && drop.endTime === 0) {
-            throw new Error('No active land public drop found for the configured land contract.');
+        if (drop.maxTotalMintableByWallet === 0) {
+            throw new Error(NO_PUBLIC_DROP_MESSAGE);
         }
         if (quantity > drop.maxTotalMintableByWallet) {
             throw new Error(

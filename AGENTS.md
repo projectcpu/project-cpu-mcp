@@ -161,7 +161,7 @@ Pre-1.0: `release-please-config.json` sets `bump-minor-pre-major` + `bump-patch-
 
 To force a release the commits wouldn't trigger on their own (e.g. a docs-only change), add a `Release-As: x.y.z` footer to a commit on `main` (land it via a small PR) — release-please then opens a Release PR for that exact version. Never create the tag by hand: a stray tag desyncs release-please's manifest/release bookkeeping.
 
-Publishing runs in `.github/workflows/release.yml`: on push to `main`, release-please opens/updates the Release PR; when the Release PR merges, the **same run** tags the release and a gated `publish` job re-runs lint/typecheck/build/unit tests and runs `npm publish --provenance` (OIDC trusted publishing). The npm trusted publisher is bound to this workflow's filename (`release.yml`) — renaming the file requires updating it on npmjs.com. End users get it via `npx project-cpu-mcp@latest`.
+Publishing runs in `.github/workflows/release.yml`: on push to `main`, release-please opens/updates the Release PR; when the Release PR merges, the **same run** tags the release and a gated `publish` job re-runs lint/typecheck/build and the full test suite, then runs `npm publish --provenance` (OIDC trusted publishing). The npm trusted publisher is bound to this workflow's filename (`release.yml`) — renaming the file requires updating it on npmjs.com. End users get it via `npx project-cpu-mcp@latest`.
 
 ## Git
 

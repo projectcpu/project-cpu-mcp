@@ -2,7 +2,7 @@ import { buildAttentionReport } from './attention.utils.js';
 import { toCell } from './cell-view.utils.js';
 import { WAREHOUSE_NEAR_FULL_PCT } from './constants.js';
 import { buildResourceIndex, classifyNeighbors, filterCells, summarizeMap } from './map.utils.js';
-import { buildingTypesOfKind, toProjectionConfig } from './reader.utils.js';
+import { buildingTypesOfKind, isBootstrapComplete, toProjectionConfig } from './reader.utils.js';
 import type { MapStore } from './store.js';
 import {
     type AttentionReport,
@@ -19,6 +19,7 @@ import {
     type MapStatus,
     type RawCell,
     type ResourceIndex,
+    type RoutingSnapshot,
 } from './types.js';
 import { BuildingKind } from '../api/types.js';
 import { MAX_ROUTE_RADIUS } from '../geometry/constants.js';
@@ -123,9 +124,17 @@ export class MapReader {
         };
     }
 
-    async allCells(): Promise<Array<Cell>> {
+    async routingSnapshot(): Promise<RoutingSnapshot> {
         const project = await this.projector();
-        return [...this.store.values()].map(project);
+        const droppedCells = this.store.getDroppedCells();
+        const droppedUpdates = this.store.getDroppedUpdates();
+        return {
+            cells: [...this.store.values()].map(project),
+            complete: isBootstrapComplete(this.status.getReadiness()) && droppedCells === 0 && droppedUpdates === 0,
+            droppedCells,
+            droppedUpdates,
+            version: this.store.getLatestUpdated(),
+        };
     }
 
     private async projector(): Promise<(raw: RawCell) => Cell> {

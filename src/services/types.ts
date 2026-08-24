@@ -20,7 +20,7 @@ import type {
 import type { Network } from '../config/types.js';
 import type { CellCoord } from '../geometry/types.js';
 import type { ILogger } from '../logger/types.js';
-import type { Cell, RevealCellReader } from '../map/types.js';
+import type { RevealCellReader, RoutingSnapshot } from '../map/types.js';
 import type {
     IFulfilmentClaims,
     IRandomnessStrategyFactory,
@@ -697,7 +697,7 @@ export interface FinalizeResult {
 // ---- Route survey ----
 
 export interface RouteCellReader {
-    allCells(): Promise<Array<Cell>>;
+    routingSnapshot(): Promise<RoutingSnapshot>;
 }
 
 export interface RouteServiceOptions {
@@ -705,6 +705,7 @@ export interface RouteServiceOptions {
     appConfig: IAppConfig;
     mapReader: RouteCellReader;
     logger: ILogger;
+    artifactDirectory: string | null;
 }
 
 export interface NextHopsInput {
@@ -719,8 +720,13 @@ export interface NextHopView {
     hopDistance: number;
     isOwn: boolean;
     isHub: boolean;
+    /** Open ground: no completed reveal, so nobody controls it and anyone's cargo may pass through. */
+    isVirgin: boolean;
     ready: boolean | null;
-    owner: string;
+    /** null on ground nobody has minted yet. */
+    owner: string | null;
+    /** Reach this waypoint contributes in grid steps: its Ready hub's own radius, or the move radius. */
+    radius: number;
     transitFeePerUnit: string | null;
     distanceToTarget: number | null;
 }
@@ -728,47 +734,87 @@ export interface NextHopView {
 export interface NextHopsResult {
     from: string;
     fromIsHub: boolean;
+    fromIsVirgin: boolean;
     fromReady: boolean | null;
+    /** Reach the origin contributes in grid steps — a hop is legal up to `fromRadius + radius - 1`. */
+    fromRadius: number;
     towards: string | null;
     targetDistance: number | null;
-    reach: { moveRadius: number; hubRadius: number };
     hops: Array<NextHopView>;
     note: string;
 }
 
 export interface RouteNetworkInput {
-    from: number | null;
-    towards: number | null;
+    from: number;
+    towards: number;
     resourceId: number;
+    amount: string;
 }
 
-export interface NetworkNodeView {
+/** The one move the graph was cut for, normalized — the artifact carries it whole. */
+export interface RouteRequestView {
+    from: string;
+    towards: string;
+    resourceId: number;
+    amount: string;
+}
+
+/**
+ * Membership is the eligibility statement: a node in the artifact is an Intermediate waypoint the contract
+ * accepts, so no separate eligibility flag is carried.
+ */
+export interface RouteGraphNodeView {
     tokenId: string;
-    pos: CellCoord;
+    /** null on ground nobody has minted yet. */
+    owner: string | null;
+    /** Open ground: no completed reveal, so nobody controls it and any payer may route through it. */
+    isVirgin: boolean;
     isOwn: boolean;
+    /** An Active Hub: a Hub-kind building whose construction has finished, not merely one placed. */
     isHub: boolean;
-    ready: boolean | null;
-    owner: string;
+    /** Reach this node contributes in grid steps — a hop is legal up to radius(a)+radius(b)−1. */
+    radius: number;
+    /** Nominal per-unit transit fee for the requested resource; null where passage costs nothing. */
     transitFeePerUnit: string | null;
-    distFromSource: number | null;
-    distToTarget: number | null;
-    component: number;
 }
 
-export interface NetworkEdgeView {
+export interface RouteGraphEdgeView {
     a: string;
     b: string;
     distance: number;
 }
 
+export interface RouteGraphArtifact {
+    schemaVersion: number;
+    snapshotVersion: number;
+    request: RouteRequestView;
+    connected: boolean;
+    nodes: Array<RouteGraphNodeView>;
+    edges: Array<RouteGraphEdgeView>;
+}
+
+/** `path` stays empty: the chain is the agent's to compute from the graph, and no endpoint pair is a route. */
+export interface QuoteTransportArgumentsView {
+    path: Array<string>;
+    resourceId: number;
+    amount: string;
+}
+
+export interface QuoteTransportCallView {
+    tool: string;
+    arguments: QuoteTransportArgumentsView;
+}
+
 export interface RouteNetworkResult {
-    from: string | null;
-    towards: string | null;
-    fromToTarget: number | null;
-    reach: { moveRadius: number; hubRadius: number };
-    components: number;
-    nodes: Array<NetworkNodeView>;
-    edges: Array<NetworkEdgeView>;
+    artifactPath: string;
+    schemaVersion: number;
+    snapshotVersion: number;
+    request: RouteRequestView;
+    connected: boolean;
+    nodeCount: number;
+    edgeCount: number;
+    instructions: ReadonlyArray<string>;
+    quoteTemplate: QuoteTransportCallView;
     note: string;
 }
 
@@ -1202,12 +1248,12 @@ export interface MintInput {
 
 /** The active SeaDrop public-drop terms for the land collection, read on-chain. */
 export interface PublicDropView {
-    /** ETH price per cell, in wei. */
+    /** Per-cell amount in native ETH, in wei, as the drop sets it — may be zero. */
     mintPrice: bigint;
     startTime: number;
     endTime: number;
     maxTotalMintableByWallet: number;
-    /** OpenSea fee, in basis points of the (inclusive) mint price. */
+    /** OpenSea fee, in basis points of the (inclusive) per-cell amount. */
     feeBps: number;
     restrictFeeRecipients: boolean;
 }
@@ -1218,16 +1264,16 @@ export interface PreparedMint {
     land: Address;
     drop: PublicDropView;
     quantity: number;
-    /** quantity × mintPrice, in wei — the exact ETH the mint must pay. */
+    /** quantity × the live per-cell amount, in wei — the value the mint transaction sends. */
     totalWei: bigint;
 }
 
 export interface MintQuote {
     land: Address;
     quantity: number;
-    /** Per-cell price in native ETH (decimal). */
+    /** Live per-cell amount in native ETH (decimal), as read from the drop terms. */
     mintPrice: string;
-    /** quantity × mintPrice in native ETH (decimal). */
+    /** quantity × the live per-cell amount, in native ETH (decimal). */
     total: string;
     feeBps: number;
     startTime: number;
@@ -1235,11 +1281,11 @@ export interface MintQuote {
     maxTotalMintableByWallet: number;
 }
 
-/** A confirmed mint — the on-chain SeaDrop public-drop purchase of `quantity` cells, paid in ETH. */
+/** A confirmed mint — `quantity` cells issued on-chain through the SeaDrop public drop. */
 export interface MintResult {
     land: Address;
     quantity: number;
-    /** quantity × mintPrice in native ETH (decimal). */
+    /** quantity × the live per-cell amount, in native ETH (decimal). */
     total: string;
     txHash: Hash;
     status: TxStatus;

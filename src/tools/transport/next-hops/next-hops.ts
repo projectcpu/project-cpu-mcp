@@ -1,5 +1,5 @@
-import { NEXT_HOPS_DESCRIPTION } from './constants.js';
-import type { NextHopsResult } from '../../../services/types.js';
+import { NEXT_HOPS_DESCRIPTION, NEXT_HOPS_SUMMARY_LIMIT } from './constants.js';
+import type { NextHopsResult, NextHopView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { nextHopsInputSchema } from '../types.js';
@@ -14,24 +14,37 @@ function originNote(result: NextHopsResult): string {
     );
 }
 
+function hopKind(hop: NextHopView): string {
+    if (hop.isHub) {
+        return 'hub';
+    }
+    return hop.isVirgin ? 'virgin' : 'own';
+}
+
+function describeHop(hop: NextHopView): string {
+    const fee = hop.transitFeePerUnit !== null ? `, fee ${hop.transitFeePerUnit} $CPU/u` : '';
+    const remaining = hop.distanceToTarget !== null ? `, ${hop.distanceToTarget} steps to target` : '';
+    return `${hop.tokenId} (${hopKind(hop)}, radius ${hop.radius}, ${hop.hopDistance} step hop${fee}${remaining})`;
+}
+
 function summarizeHops(result: NextHopsResult): string {
     if (result.hops.length === 0) {
         return (
-            `No eligible waypoints within reach of ${result.from} — the route ends here.` +
+            `No eligible waypoints within reach of ${result.from} (radius ${result.fromRadius}) — the route ends ` +
+            'here.' +
             `${originNote(result)} ` +
             'Build a Hub to bridge the gap, use closer cells, or reveal what you own nearby.'
         );
     }
     const towards =
         result.towards !== null ? ` towards ${result.towards} (${result.targetDistance ?? '?'} steps away)` : '';
-    const lines = result.hops.map((hop) => {
-        const kind = hop.isOwn ? 'own' : 'hub';
-        const fee = hop.transitFeePerUnit !== null ? `, fee ${hop.transitFeePerUnit} $CPU/u` : '';
-        const remaining = hop.distanceToTarget !== null ? `, ${hop.distanceToTarget} steps to target` : '';
-        return `${hop.tokenId} (${kind}, ${hop.hopDistance} step hop${fee}${remaining})`;
-    });
+    const shown = result.hops.slice(0, NEXT_HOPS_SUMMARY_LIMIT);
+    const lines = shown.map(describeHop);
+    const hidden = result.hops.length - shown.length;
+    const rest = hidden > 0 ? ` + ${hidden} more in the JSON payload` : '';
     return (
-        `${result.hops.length} legal next hop(s) from ${result.from}${towards}: ${lines.join('; ')}.` +
+        `${result.hops.length} legal next hop(s) from ${result.from} (radius ${result.fromRadius})${towards}: ` +
+        `${lines.join('; ')}${rest}.` +
         `${originNote(result)} ${result.note}`
     );
 }

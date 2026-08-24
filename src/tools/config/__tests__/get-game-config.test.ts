@@ -5,6 +5,7 @@ import { Network } from '../../../config/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
 import { type AppConfig, ModeSwitchKind } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
+import { transportInputSchema } from '../../transport/types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { renderBuildingIndexLine } from '../find-buildings/find-buildings.utils.js';
 import {
@@ -65,6 +66,7 @@ const CONFIG: AppConfig = {
         {
             type: BuildingType.Mine,
             onChainId: 4,
+            radius: 0,
             name: 'Mine',
             kind: BuildingKind.Extractor,
             tier: 1,
@@ -87,6 +89,7 @@ const CONFIG: AppConfig = {
         {
             type: BuildingType.SteelMill,
             onChainId: 11,
+            radius: 0,
             name: 'Steel Mill',
             kind: BuildingKind.Crafter,
             tier: 2,
@@ -109,6 +112,7 @@ const CONFIG: AppConfig = {
         {
             type: 'mine_branch_a_l2' as BuildingType,
             onChainId: 46,
+            radius: 0,
             name: 'Mine Branch A L2',
             kind: BuildingKind.Extractor,
             tier: 2,
@@ -161,6 +165,30 @@ async function reference(config: AppConfig = CONFIG): Promise<GameConfigReferenc
     const raw = (await capture(config)({} as never)).content[1]?.text ?? '{}';
     return JSON.parse(raw) as GameConfigReferenceView;
 }
+
+function registeredToolName(): string {
+    let name = '';
+    const server = {
+        registerTool(toolName: string): void {
+            name = toolName;
+        },
+    } as unknown as ToolRegistrar;
+    registerGetGameConfigTool(server, {
+        appConfig: { load: async () => CONFIG },
+        logger: new NoopLogger(),
+    } as unknown as AppContext);
+    return name;
+}
+
+function hubTier(type: string, tier: number, radius: number): AppConfig['buildings'][number] {
+    const [base] = CONFIG.buildings;
+    if (base === undefined) {
+        throw new Error('the fixture carries no catalog building to build a Hub tier from');
+    }
+    return { ...base, type: type as BuildingType, name: type, kind: BuildingKind.Hub, tier, radius };
+}
+
+const HUB_LADDER = [hubTier('hub', 1, 5), hubTier('hub_l3', 3, 13)];
 
 function sectionOf(text: string, title: string): string {
     const start = text.indexOf(title);
@@ -289,12 +317,20 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(section).toContain(
             'sale fee up to 100% (the structural bound — a hub owner can set any rate up to this maximum)',
         );
-        expect(section).toContain('radii in cells — move 1, hub 3');
+        expect(section).toContain('radii in cells — move 1 everywhere; hub reach is set per Hub tier —');
+        expect(section).toContain('3 by default for a tier without its own');
         expect(section).toContain('2s per cell');
         expect(section).toContain("every resource carries a transit-fee floor ($CPU/u; a hub's non-zero override");
         expect(section).toContain('5:0.1');
         expect(section).toContain('storage caps are explicit per-resource cell/hub shelf pairs');
         expect(section).toContain('`0` means unlimited');
+    });
+
+    it('serves the radius of every Hub tier, so hops can be chained without a code runner', async () => {
+        const section = sectionOf(await prose({ ...CONFIG, buildings: HUB_LADDER }), STATIC_SECTION_TITLE);
+
+        expect(section).toContain('hub reach is set per Hub tier — hub:5, hub_l3:13');
+        expect(section).toContain('3 by default for a tier without its own');
     });
 
     it('holds the static and not the index rows or the routing map', async () => {
@@ -305,6 +341,41 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(section).not.toContain('| crafter | tier 2 |');
     });
 
+    it('serves every Hub tier radius in the machine block, not one universal hub radius', async () => {
+        const json = await reference({ ...CONFIG, buildings: HUB_LADDER });
+
+        expect(json.transport.hubRadii).toEqual([
+            { type: 'hub', tier: 1, radius: 5 },
+            { type: 'hub_l3', tier: 3, radius: 13 },
+        ]);
+        expect(json.transport.hubRadius).toBe(CONFIG.transport.hubRadius);
+    });
+
+    it('reads the tier radii off the loaded catalog instead of a ladder baked into the client', async () => {
+        const json = await reference({ ...CONFIG, buildings: [hubTier('hub', 1, 7), hubTier('hub_l2', 2, 9)] });
+
+        expect(json.transport.hubRadii).toEqual([
+            { type: 'hub', tier: 1, radius: 7 },
+            { type: 'hub_l2', tier: 2, radius: 9 },
+        ]);
+    });
+
+    it('keeps buildings that route nothing out of the tier radii', async () => {
+        const json = await reference();
+
+        expect(CONFIG.buildings.map((building) => building.kind)).not.toContain(BuildingKind.Hub);
+        expect(json.transport.hubRadii).toEqual([]);
+    });
+
+    it('is the tool a hand-planned hop is sent to for tier reach, and it answers with that reach', async () => {
+        const json = await reference({ ...CONFIG, buildings: HUB_LADDER });
+        const pathDescription = transportInputSchema.path.description ?? '';
+
+        expect(json.transport.hubRadii).toHaveLength(HUB_LADDER.length);
+        expect(pathDescription).toMatch(/radius of every Hub tier|Hub tier.*radius/);
+        expect(pathDescription).toContain(registeredToolName());
+    });
+
     it('carries every static group in the machine block, untrimmed', async () => {
         const json = await reference();
 
@@ -313,7 +384,7 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(json.contracts).toEqual(CONFIG.contracts);
         expect(json.resources).toEqual({ 5: 'Iron', 101: 'Concrete', 102: 'Steel' });
         expect(json.reveal).toEqual({ ethContribution: '0.001', cpuBurn: '2' });
-        expect(json.transport).toEqual(CONFIG.transport);
+        expect(json.transport).toEqual({ ...CONFIG.transport, hubRadii: [] });
         expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50 });
         expect(json.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });
     });

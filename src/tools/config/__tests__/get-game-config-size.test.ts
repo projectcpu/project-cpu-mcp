@@ -154,6 +154,7 @@ function catalogBuilding(
     return {
         type: type as BuildingType,
         onChainId: familyIndex * 10 + level,
+        radius: 0,
         name: titleize(type),
         kind,
         tier: level,

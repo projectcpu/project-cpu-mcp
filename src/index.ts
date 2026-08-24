@@ -160,7 +160,13 @@ async function main(): Promise<void> {
     });
     resetRequest.run = () => resetCoordinator.reset();
 
-    const route = new RouteService({ wallet, appConfig, mapReader, logger: logger.child('route') });
+    const route = new RouteService({
+        wallet,
+        appConfig,
+        mapReader,
+        logger: logger.child('route'),
+        artifactDirectory: null,
+    });
 
     const withdraw = new WithdrawService({
         wallet,

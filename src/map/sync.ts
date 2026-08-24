@@ -37,6 +37,8 @@ export class MapSync implements MapStatus {
     private degradeTimer: ReturnType<typeof setTimeout> | null = null;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private resyncPaused = false;
+    private repairInFlight: Promise<void> | null = null;
+    private droppedInFullSnapshot = 0;
     private generation = 0;
 
     constructor(options: MapSyncOptions) {
@@ -64,6 +66,7 @@ export class MapSync implements MapStatus {
             onDisconnect: (reason) => this.handleDisconnect(reason),
             onError: (error) => this.handleError(error),
             onCellUpdate: (cell) => this.handleCellUpdate(cell),
+            onCellUpdateDropped: () => this.handleCellUpdateDropped(),
         });
 
         void this.bootstrapSnapshot();
@@ -108,6 +111,7 @@ export class MapSync implements MapStatus {
 
     async fetchFullSnapshot(): Promise<MapSnapshotResponse> {
         const { snapshot, dropped } = await this.fetchSnapshot(MAP_HTTP_PATH);
+        this.droppedInFullSnapshot = dropped;
         if (dropped > 0) {
             this.logger.warn('dropped invalid cells from map snapshot', { dropped });
         }
@@ -117,6 +121,8 @@ export class MapSync implements MapStatus {
     applyFullSnapshot(snapshot: MapSnapshotResponse): void {
         this.generation += 1;
         this.store.replaceAll(snapshot);
+        this.store.noteDroppedCells(this.droppedInFullSnapshot);
+        this.droppedInFullSnapshot = 0;
         this.logger.info('map replaced from a full snapshot', {
             cells: this.store.size(),
             version: this.store.getSyncVersion(),
@@ -146,6 +152,7 @@ export class MapSync implements MapStatus {
                 return;
             }
             this.store.applySnapshot(snapshot);
+            this.store.noteDroppedCells(dropped);
             if (dropped > 0) {
                 this.logger.warn('dropped invalid cells from map snapshot', { dropped });
             }
@@ -169,16 +176,48 @@ export class MapSync implements MapStatus {
         if (this.resyncPaused) {
             return;
         }
+        // One repairing read at a time. Each of them measures the open gap before it asks and writes that
+        // measurement off when it answers, so two overlapping reads would write the same gap off twice and
+        // an answer older than the gap could close it. An overlap rides the read already in flight instead.
+        if (this.repairInFlight !== null) {
+            await this.repairInFlight;
+            return;
+        }
+        const repairCells = this.store.getDroppedCells();
+        const repairUpdates = this.store.getDroppedUpdates();
+        if (repairCells === 0 && repairUpdates === 0) {
+            await this.readMap(0, 0);
+            return;
+        }
+        const repair = this.readMap(repairCells, repairUpdates);
+        this.repairInFlight = repair;
+        try {
+            await repair;
+        } finally {
+            this.repairInFlight = null;
+        }
+    }
+
+    // A delta never re-sends a row the parser already dropped, so while a gap is open the only read that can
+    // close it is one of the whole map.
+    private async readMap(repairCells: number, repairUpdates: number): Promise<void> {
+        const repairing = repairCells > 0 || repairUpdates > 0;
         const generation = this.generation;
         const since = this.store.getSyncVersion();
         try {
-            const { snapshot, dropped } = await this.fetchSnapshot(`${MAP_HTTP_PATH}?since=${since}`);
+            const { snapshot, dropped } = await this.fetchSnapshot(
+                repairing ? MAP_HTTP_PATH : `${MAP_HTTP_PATH}?since=${since}`,
+            );
             if (generation !== this.generation) {
                 return;
             }
             this.store.applySnapshot(snapshot);
+            if (repairing) {
+                this.store.clearRepairedGaps(repairCells, repairUpdates);
+            }
+            this.store.noteDroppedCells(dropped);
             this.logger.info('map resynced', {
-                since,
+                since: repairing ? 0 : since,
                 changed: snapshot.cells.length,
                 dropped,
                 version: this.store.getSyncVersion(),
@@ -227,6 +266,10 @@ export class MapSync implements MapStatus {
         if (this.store.applyCell(cell)) {
             this.logger.debug('cell updated', { tokenId: cell.tokenId, latest: this.store.getLatestUpdated() });
         }
+    }
+
+    private handleCellUpdateDropped(): void {
+        this.store.noteDroppedUpdates(1);
     }
 
     private markReady(): void {
