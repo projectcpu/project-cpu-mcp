@@ -33,6 +33,11 @@ export const ROUTE_NETWORK_DESCRIPTION = [
     'goods stop at the border until you bridge it with a border Hub (it still needs an eligible landing point',
     'within reach on the far side), land across, or a detour.',
     'Routing over the graph is YOUR job: pick the chain, then verify it with cpu_quote_transport before spending.',
+    'Pass `lotId` to plan one lot’s way home instead: for an Evicted lot the source becomes the hub it was',
+    'listed on, admitted from the lot itself at the reach and the rate recorded there, so the plan holds after',
+    'that hub is demolished, rebuilt, left unfinished or sold. Only the source changes — the destination is',
+    'still your own revealed cell, every later waypoint keeps the ordinary rules, and the prefilled quote call',
+    'becomes cpu_quote_lot_return.',
 ].join(' ');
 
 export const NEXT_HOPS_DESCRIPTION = [
@@ -61,4 +66,8 @@ export const NEXT_HOPS_DESCRIPTION = [
     'open ground. WHEN: the cheap point check — call it right before each leg and after',
     'cpu_get_changes shows movement (hubs get demolished, fees change while goods travel); replan via',
     'cpu_route_network only when a local fix is impossible.',
+    'Pass `lotId` to survey one lot’s way home instead: for an Evicted lot the origin becomes the hub it was',
+    'listed on, admitted from the lot itself at the reach recorded there, whatever stands on that cell now.',
+    'Only the origin changes — every candidate is still judged on today’s map — and the chain you build is',
+    'verified with cpu_quote_lot_return.',
 ].join(' ');

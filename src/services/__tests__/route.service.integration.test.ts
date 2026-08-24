@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { parseEther } from 'viem';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_SERVER_TIME, FakeAppConfig, makeConfig, WALLET_ADDRESS } from './service-fakes.js';
-import { BuildingKind, BuildingType, type TransportRoutingView } from '../../api/types.js';
+import { BuildingKind, BuildingType, LotState, type TransportRoutingView } from '../../api/types.js';
+import { OnChainLotState } from '../../contracts/trade.types.js';
 import { neighbors } from '../../geometry/adjacency.js';
 import { MAX_TOKEN_ID } from '../../geometry/constants.js';
 import { kRing } from '../../geometry/graph.utils.js';
@@ -17,15 +19,21 @@ import { toProjectionConfig } from '../../map/reader.utils.js';
 import type { RawCell } from '../../map/types.js';
 import { formatUnixSeconds } from '../../utils/format.utils.js';
 import type { WalletProvider } from '../../wallet/types.js';
+import { LOT_RETURN_QUOTE_TOOL_NAME, QUOTE_TOOL_NAME } from '../route.constants.js';
 import { RouteService } from '../route.service.js';
+import {
+    RouteSourcePolicy,
+    type ILotSnapshots,
+    type PlannedRouteGraphArtifact,
+    type PlannedRouteNetworkResult,
+} from '../route.types.js';
 import type {
     CatalogBuildingView,
     NextHopsResult,
     NextHopView,
-    RouteGraphArtifact,
+    OnChainLot,
     RouteGraphNodeView,
     RouteNetworkInput,
-    RouteNetworkResult,
 } from '../types.js';
 
 const RIVAL = '0x000000000000000000000000000000000000beef';
@@ -121,6 +129,7 @@ function makeService(
     complete = true,
     droppedCells = 0,
     droppedUpdates = 0,
+    lots: ILotSnapshots | null = null,
 ): RouteService {
     const wallet = { get: () => ({ getAddress: () => WALLET_ADDRESS }) } as unknown as WalletProvider;
     const base = makeConfig();
@@ -130,21 +139,24 @@ function makeService(
         buildings: hubLadder(base.buildings),
     };
     const projection = toProjectionConfig(config);
-    return new RouteService({
-        wallet,
-        appConfig: new FakeAppConfig(config),
-        mapReader: {
-            routingSnapshot: async () => ({
-                cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
-                complete,
-                droppedCells,
-                droppedUpdates,
-                version: SNAPSHOT_VERSION,
-            }),
+    return new RouteService(
+        {
+            wallet,
+            appConfig: new FakeAppConfig(config),
+            mapReader: {
+                routingSnapshot: async () => ({
+                    cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
+                    complete,
+                    droppedCells,
+                    droppedUpdates,
+                    version: SNAPSHOT_VERSION,
+                }),
+            },
+            logger: new NoopLogger(),
+            artifactDirectory,
         },
-        logger: new NoopLogger(),
-        artifactDirectory,
-    });
+        lots,
+    );
 }
 
 function survey(cells: Array<RawCell>, from: number, towards: number | null = null, resourceId = RES) {
@@ -164,15 +176,15 @@ function exportInput(over: Partial<RouteNetworkInput> = {}): RouteNetworkInput {
     return { from: ORIGIN, towards: Number(at(2)), resourceId: RES, amount: AMOUNT, ...over };
 }
 
-function graphOf(result: RouteNetworkResult): RouteGraphArtifact {
-    return JSON.parse(fs.readFileSync(result.artifactPath, 'utf8')) as RouteGraphArtifact;
+function graphOf(result: PlannedRouteNetworkResult): PlannedRouteGraphArtifact {
+    return JSON.parse(fs.readFileSync(result.artifactPath, 'utf8')) as PlannedRouteGraphArtifact;
 }
 
-function nodeOf(graph: RouteGraphArtifact, tokenId: string): RouteGraphNodeView | null {
+function nodeOf(graph: PlannedRouteGraphArtifact, tokenId: string): RouteGraphNodeView | null {
     return graph.nodes.find((node) => node.tokenId === tokenId) ?? null;
 }
 
-function edgeOf(graph: RouteGraphArtifact, a: string, b: string): boolean {
+function edgeOf(graph: PlannedRouteGraphArtifact, a: string, b: string): boolean {
     const [low, high] = Number(a) < Number(b) ? [a, b] : [b, a];
     return graph.edges.some((edge) => edge.a === low && edge.b === high && edge.distance === gridDistance(a, b));
 }
@@ -647,8 +659,17 @@ describe('RouteService.network', () => {
 
         expect(result.snapshotVersion).toBe(SNAPSHOT_VERSION);
         expect(graph.schemaVersion).toBe(result.schemaVersion);
-        expect(graph.request).toEqual({ from: String(ORIGIN), towards: at(2), resourceId: RES, amount: AMOUNT });
-        expect(result.quoteTemplate.arguments).toEqual({ path: [], resourceId: RES, amount: AMOUNT });
+        expect(graph.request).toEqual({
+            from: String(ORIGIN),
+            towards: at(2),
+            resourceId: RES,
+            amount: AMOUNT,
+            lotReturn: null,
+        });
+        expect(result.quoteTemplate).toEqual({
+            tool: QUOTE_TOOL_NAME,
+            arguments: { path: [], resourceId: RES, amount: AMOUNT },
+        });
     });
 
     it('makes open Virgin ground a node, so unminted land between two of your cells is no wall', async () => {
@@ -747,5 +768,309 @@ describe('RouteService.network', () => {
         expect(result.edgeCount).toBe(graph.edges.length);
         expect(JSON.stringify(result)).not.toContain('"nodes"');
         expect(result.note).toMatch(/raw route graph/);
+    });
+});
+
+const LOT_ID = '77';
+const LISTED_FEE = '0.4';
+
+class FakeLotSnapshots implements ILotSnapshots {
+    readonly asked: Array<string> = [];
+    private readonly lot: OnChainLot;
+
+    constructor(lot: OnChainLot) {
+        this.lot = lot;
+    }
+
+    readLot(lotId: string): Promise<OnChainLot> {
+        this.asked.push(lotId);
+        return Promise.resolve(this.lot);
+    }
+}
+
+function lotSnapshot(over: Partial<OnChainLot> = {}): OnChainLot {
+    return {
+        seller: WALLET_ADDRESS,
+        hub: BigInt(ORIGIN),
+        resource: RES,
+        remaining: 120n,
+        pricePerUnit: parseEther('1'),
+        state: OnChainLotState.Evicted,
+        maxSaleFeeBp: 500,
+        hubRadius: TOP_HUB_RADIUS,
+        hubMoveFee: parseEther(LISTED_FEE),
+        ...over,
+    };
+}
+
+/** The listed hub, gone: foreign land past its first reveal carrying nothing — no waypoint under live rules. */
+function demolished(tokenId: string): RawCell {
+    return makeCell({ tokenId, owner: RIVAL, revealCount: 1 });
+}
+
+function returnHarness(
+    cells: Array<RawCell>,
+    lot: OnChainLot = lotSnapshot(),
+    floors: Record<number, string> = DEFAULT_FLOORS,
+): { service: RouteService; lots: FakeLotSnapshots } {
+    const lots = new FakeLotSnapshots(lot);
+    return { service: makeService(cells, floors, {}, true, 0, 0, lots), lots };
+}
+
+describe('RouteService.network in Lot return context', () => {
+    const far = () => at(TOP_HUB_RADIUS);
+
+    it('admits the listed hub of an Evicted lot as a historical source and records the policy that let it in', async () => {
+        const cells = [demolished(String(ORIGIN)), own(at(2)), own(far())];
+        const { service, lots } = returnHarness(cells);
+
+        const result = await service.network(exportInput(), { lotId: LOT_ID });
+        const graph = graphOf(result);
+
+        expect(lots.asked).toEqual([LOT_ID]);
+        expect(graph.request).toEqual({
+            from: String(ORIGIN),
+            towards: at(2),
+            resourceId: RES,
+            amount: AMOUNT,
+            lotReturn: {
+                lotId: LOT_ID,
+                lotState: LotState.Evicted,
+                sourcePolicy: RouteSourcePolicy.HistoricalHub,
+                historicalSource: {
+                    tokenId: String(ORIGIN),
+                    radius: TOP_HUB_RADIUS,
+                    listedTransitFeePerUnit: LISTED_FEE,
+                    liveTransitFeePerUnit: null,
+                    transitFeePerUnit: LISTED_FEE,
+                },
+            },
+        });
+        expect(result.request).toEqual(graph.request);
+        expect(nodeOf(graph, String(ORIGIN))).toMatchObject({
+            radius: TOP_HUB_RADIUS,
+            transitFeePerUnit: LISTED_FEE,
+        });
+        expect(edgeOf(graph, String(ORIGIN), far())).toBe(true);
+    });
+
+    it('points the quote template at the Lot return quote, carrying lot, destination and amount unchanged', async () => {
+        const { service } = returnHarness([demolished(String(ORIGIN)), own(at(2))]);
+
+        const result = await service.network(exportInput(), { lotId: LOT_ID });
+
+        expect(result.quoteTemplate).toEqual({
+            tool: LOT_RETURN_QUOTE_TOOL_NAME,
+            arguments: { lotId: LOT_ID, chain: [] },
+        });
+        expect(result.request.towards).toBe(at(2));
+        expect(result.request.amount).toBe(AMOUNT);
+        expect(result.request.resourceId).toBe(RES);
+        expect(result.instructions.join(' ')).toMatch(/cpu_quote_lot_return/);
+        expect(result.artifactPath).not.toBe('');
+    });
+
+    it('does not let ordinary planning inherit the exception: the same source is refused with no lot read', async () => {
+        const cells = [demolished(String(ORIGIN)), own(at(2)), own(far())];
+        const { service, lots } = returnHarness(cells);
+
+        await expect(service.network(exportInput())).rejects.toThrow(/is not yours/);
+        expect(lots.asked).toEqual([]);
+    });
+
+    it('admits the historical source whatever stands there now, with the reach the lot recorded', async () => {
+        const rebuilt: Array<[string, RawCell]> = [
+            ['demolished', demolished(String(ORIGIN))],
+            [
+                'a non-Hub replacement',
+                makeCell({
+                    tokenId: String(ORIGIN),
+                    owner: RIVAL,
+                    revealCount: 1,
+                    ...withBuilding(BuildingType.Quarry),
+                }),
+            ],
+            ['an unfinished replacement', hub(String(ORIGIN), RIVAL, BASE_HUB, withBuilding(BASE_HUB, UNFINISHED_AT))],
+            ['transferred away', hub(String(ORIGIN), RIVAL)],
+        ];
+
+        for (const [, source] of rebuilt) {
+            const { service } = returnHarness([source, own(at(2)), own(far())]);
+            const graph = graphOf(await service.network(exportInput(), { lotId: LOT_ID }));
+
+            expect(nodeOf(graph, String(ORIGIN))?.radius).toBe(TOP_HUB_RADIUS);
+            expect(edgeOf(graph, String(ORIGIN), far())).toBe(true);
+        }
+    });
+
+    it('measures the first hop with the listed radius, never with the radius standing there today', async () => {
+        const live = hub(String(ORIGIN), WALLET_ADDRESS, TOP_HUB);
+        const { service } = returnHarness(
+            [live, own(at(2)), own(at(BASE_HUB_RADIUS)), own(far())],
+            lotSnapshot({ hubRadius: BASE_HUB_RADIUS }),
+        );
+
+        const graph = graphOf(await service.network(exportInput(), { lotId: LOT_ID }));
+
+        expect(nodeOf(graph, String(ORIGIN))?.radius).toBe(BASE_HUB_RADIUS);
+        expect(edgeOf(graph, String(ORIGIN), at(BASE_HUB_RADIUS))).toBe(true);
+        expect(edgeOf(graph, String(ORIGIN), far())).toBe(false);
+    });
+
+    it('ends the exception at the source: later nodes keep live membership, radius, ownership and fee', async () => {
+        const controlled = at(3);
+        const rivalHub = at(BASE_HUB_RADIUS);
+        const cells = [
+            demolished(String(ORIGIN)),
+            own(at(2)),
+            makeCell({ tokenId: controlled, owner: RIVAL, revealCount: 1 }),
+            foreignHub(rivalHub, '0.5'),
+        ];
+        const { service } = returnHarness(cells);
+
+        const graph = graphOf(await service.network(exportInput(), { lotId: LOT_ID }));
+
+        expect(nodeOf(graph, controlled)).toBeNull();
+        expect(nodeOf(graph, rivalHub)).toMatchObject({
+            isHub: true,
+            isOwn: false,
+            radius: BASE_HUB_RADIUS,
+            transitFeePerUnit: '0.5',
+            owner: RIVAL,
+        });
+    });
+
+    it('keeps the destination a revealed cell of the seller, foreign Active Hub included', async () => {
+        const rivalHub = at(BASE_HUB_RADIUS);
+        const cells = [
+            demolished(String(ORIGIN)),
+            own(at(2)),
+            own(at(3), { revealCount: 0 }),
+            foreignHub(rivalHub, '0.5'),
+        ];
+        const { service } = returnHarness(cells);
+
+        await expect(service.network(exportInput({ towards: Number(rivalHub) }), { lotId: LOT_ID })).rejects.toThrow(
+            /is not yours/,
+        );
+        await expect(service.network(exportInput({ towards: Number(at(3)) }), { lotId: LOT_ID })).rejects.toThrow(
+            /no completed reveal/,
+        );
+    });
+
+    it('gives an Open lot no historical source: its hub must still be an eligible source today', async () => {
+        const open = lotSnapshot({ state: OnChainLotState.Open });
+        const gone = returnHarness([demolished(String(ORIGIN)), own(at(2)), own(far())], open);
+
+        await expect(gone.service.network(exportInput(), { lotId: LOT_ID })).rejects.toThrow(/is not yours/);
+
+        const held = returnHarness([own(String(ORIGIN)), own(at(2)), own(far())], open);
+        const result = await held.service.network(exportInput(), { lotId: LOT_ID });
+        const graph = graphOf(result);
+
+        expect(graph.request.lotReturn).toEqual({
+            lotId: LOT_ID,
+            lotState: LotState.Open,
+            sourcePolicy: RouteSourcePolicy.Live,
+            historicalSource: null,
+        });
+        expect(nodeOf(graph, String(ORIGIN))?.radius).toBe(1);
+        expect(edgeOf(graph, String(ORIGIN), far())).toBe(false);
+        expect(result.quoteTemplate).toEqual({
+            tool: LOT_RETURN_QUOTE_TOOL_NAME,
+            arguments: { lotId: LOT_ID, chain: [] },
+        });
+    });
+
+    it('refuses a lot that is not the caller’s, one no Lot return settles, and a source that is not its hub', async () => {
+        const cells = [demolished(String(ORIGIN)), own(at(2))];
+
+        await expect(
+            returnHarness(cells, lotSnapshot({ seller: RIVAL as OnChainLot['seller'] })).service.network(
+                exportInput(),
+                { lotId: LOT_ID },
+            ),
+        ).rejects.toThrow(/belongs to/);
+        await expect(
+            returnHarness(cells, lotSnapshot({ state: OnChainLotState.Delivering })).service.network(exportInput(), {
+                lotId: LOT_ID,
+            }),
+        ).rejects.toThrow(/still on its way to the hub/);
+        await expect(
+            returnHarness(cells, lotSnapshot({ state: OnChainLotState.None })).service.network(exportInput(), {
+                lotId: LOT_ID,
+            }),
+        ).rejects.toThrow(/no longer held by the Trade contract/);
+        await expect(
+            returnHarness(cells, lotSnapshot({ hub: BigInt(at(2)) })).service.network(exportInput(), {
+                lotId: LOT_ID,
+            }),
+        ).rejects.toThrow(/starts at the hub it was listed on/);
+    });
+
+    it('charges the historical source the listed rate, or the cheaper rate whatever stands there now asks', async () => {
+        const cells = (source: RawCell): Array<RawCell> => [source, own(at(2))];
+        const feeOf = async (source: RawCell): Promise<string | null> => {
+            const { service } = returnHarness(cells(source));
+            const graph = graphOf(await service.network(exportInput(), { lotId: LOT_ID }));
+            return nodeOf(graph, String(ORIGIN))?.transitFeePerUnit ?? null;
+        };
+
+        expect(await feeOf(foreignHub(String(ORIGIN), '0.1'))).toBe('0.1');
+        expect(await feeOf(foreignHub(String(ORIGIN), '0.9'))).toBe(LISTED_FEE);
+        expect(await feeOf(hub(String(ORIGIN), WALLET_ADDRESS))).toBe('0');
+        expect(await feeOf(demolished(String(ORIGIN)))).toBe(LISTED_FEE);
+    });
+});
+
+describe('RouteService.nextHops in Lot return context', () => {
+    it('surveys from the historical source with the listed reach and points at the Lot return quote', async () => {
+        const far = at(TOP_HUB_RADIUS);
+        const { service, lots } = returnHarness([demolished(String(ORIGIN)), own(far), own(at(2))]);
+
+        const result = await service.nextHops({ from: ORIGIN, towards: null, resourceId: RES }, { lotId: LOT_ID });
+
+        expect(lots.asked).toEqual([LOT_ID]);
+        expect(result.fromRadius).toBe(TOP_HUB_RADIUS);
+        expect(result.lotReturn?.sourcePolicy).toBe(RouteSourcePolicy.HistoricalHub);
+        expect(result.lotReturn?.historicalSource?.radius).toBe(TOP_HUB_RADIUS);
+        expect(hopFor(result, far)).not.toBeNull();
+        expect(result.note).toMatch(/cpu_quote_lot_return/);
+    });
+
+    it('keeps every candidate on live rules while the origin uses the listed reach', async () => {
+        const rivalHub = at(BASE_HUB_RADIUS);
+        const controlled = at(3);
+        const { service } = returnHarness([
+            demolished(String(ORIGIN)),
+            foreignHub(rivalHub, '0.5'),
+            makeCell({ tokenId: controlled, owner: RIVAL, revealCount: 1 }),
+        ]);
+
+        const result = await service.nextHops({ from: ORIGIN, towards: null, resourceId: RES }, { lotId: LOT_ID });
+
+        expect(hopFor(result, controlled)).toBeNull();
+        expect(hopFor(result, rivalHub)).toMatchObject({ radius: BASE_HUB_RADIUS, transitFeePerUnit: '0.5' });
+    });
+
+    it('refuses the same origin without the context, and gives an Open lot no exception either', async () => {
+        const cells = [demolished(String(ORIGIN)), own(at(2))];
+        const { service, lots } = returnHarness(cells);
+
+        await expect(service.nextHops({ from: ORIGIN, towards: null, resourceId: RES })).rejects.toThrow(
+            /not an eligible waypoint/,
+        );
+        expect(lots.asked).toEqual([]);
+
+        const open = returnHarness(cells, lotSnapshot({ state: OnChainLotState.Open }));
+        await expect(
+            open.service.nextHops({ from: ORIGIN, towards: null, resourceId: RES }, { lotId: LOT_ID }),
+        ).rejects.toThrow(/not an eligible waypoint/);
+    });
+
+    it('answers a survey with no lot context with no return plan at all', async () => {
+        const result = await survey([own(String(ORIGIN)), own(at(1))], ORIGIN);
+
+        expect(result.lotReturn).toBeNull();
     });
 });

@@ -1,10 +1,24 @@
 import { NEXT_HOPS_DESCRIPTION, NEXT_HOPS_SUMMARY_LIMIT } from './constants.js';
-import type { NextHopsResult, NextHopView } from '../../../services/types.js';
+import type { PlannedNextHopsResult } from '../../../services/route.types.js';
+import type { NextHopView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { nextHopsInputSchema } from '../types.js';
 
-function originNote(result: NextHopsResult): string {
+/** Says out loud why the origin is legal at all — nothing on today's map explains a hop from a razed hub. */
+function returnNote(result: PlannedNextHopsResult): string {
+    const source = result.lotReturn?.historicalSource ?? null;
+    if (source === null) {
+        return '';
+    }
+    return (
+        ` This survey plans the way home for lot ${result.lotReturn?.lotId ?? ''}: ${result.from} is its listed ` +
+        `hub, admitted from the lot itself with the reach recorded there (${source.radius}), whatever stands ` +
+        'there now. Every candidate below is judged on today’s map as usual.'
+    );
+}
+
+function originNote(result: PlannedNextHopsResult): string {
     if (result.fromReady !== false) {
         return '';
     }
@@ -27,12 +41,12 @@ function describeHop(hop: NextHopView): string {
     return `${hop.tokenId} (${hopKind(hop)}, radius ${hop.radius}, ${hop.hopDistance} step hop${fee}${remaining})`;
 }
 
-function summarizeHops(result: NextHopsResult): string {
+function summarizeHops(result: PlannedNextHopsResult): string {
     if (result.hops.length === 0) {
         return (
             `No eligible waypoints within reach of ${result.from} (radius ${result.fromRadius}) — the route ends ` +
             'here.' +
-            `${originNote(result)} ` +
+            `${returnNote(result)}${originNote(result)} ` +
             'Build a Hub to bridge the gap, use closer cells, or reveal what you own nearby.'
         );
     }
@@ -45,7 +59,7 @@ function summarizeHops(result: NextHopsResult): string {
     return (
         `${result.hops.length} legal next hop(s) from ${result.from} (radius ${result.fromRadius})${towards}: ` +
         `${lines.join('; ')}${rest}.` +
-        `${originNote(result)} ${result.note}`
+        `${returnNote(result)}${originNote(result)} ${result.note}`
     );
 }
 
@@ -54,11 +68,14 @@ export function registerNextHopsTool(server: ToolRegistrar, context: AppContext)
         'cpu_next_hops',
         { description: NEXT_HOPS_DESCRIPTION, inputSchema: nextHopsInputSchema },
         async (args) => {
-            const result = await context.route.nextHops({
-                from: args.from,
-                towards: args.towards,
-                resourceId: args.resourceId,
-            });
+            const result = await context.route.nextHops(
+                {
+                    from: args.from,
+                    towards: args.towards,
+                    resourceId: args.resourceId,
+                },
+                args.lotId === null ? null : { lotId: args.lotId },
+            );
 
             return {
                 content: [

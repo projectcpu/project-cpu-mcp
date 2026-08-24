@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { parseEther } from 'viem';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { BuildingKind, BuildingType, type TransportRoutingView } from '../../../api/types.js';
+import { BuildingKind, BuildingType, LotState, type TransportRoutingView } from '../../../api/types.js';
+import { OnChainLotState } from '../../../contracts/trade.types.js';
 import { neighbors } from '../../../geometry/adjacency.js';
 import { MAX_TOKEN_ID } from '../../../geometry/constants.js';
 import { kRing } from '../../../geometry/graph.utils.js';
@@ -21,18 +23,21 @@ import {
     WALLET_ADDRESS,
 } from '../../../services/__tests__/service-fakes.js';
 import {
+    LOT_RETURN_GRAPH_INSTRUCTIONS,
+    LOT_RETURN_QUOTE_TOOL_NAME,
     QUOTE_TOOL_NAME,
     ROUTE_GRAPH_INSTRUCTIONS,
     ROUTE_GRAPH_SCHEMA_VERSION,
     ROUTE_NETWORK_NOTE,
 } from '../../../services/route.constants.js';
 import { RouteService } from '../../../services/route.service.js';
-import type {
-    CatalogBuildingView,
-    RouteGraphArtifact,
-    RouteGraphNodeView,
-    RouteNetworkResult,
-} from '../../../services/types.js';
+import {
+    RouteSourcePolicy,
+    type ILotSnapshots,
+    type PlannedRouteGraphArtifact,
+    type PlannedRouteNetworkResult,
+} from '../../../services/route.types.js';
+import type { CatalogBuildingView, OnChainLot, RouteGraphNodeView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import {
     PANEL_CONTINUATION_INDENT,
@@ -131,6 +136,7 @@ function makeService(
     transport: Partial<TransportRoutingView> = {},
     complete = true,
     directory: string | null = artifactDirectory,
+    lots: ILotSnapshots | null = null,
 ): RouteService {
     const wallet = { get: () => ({ getAddress: () => WALLET_ADDRESS }) } as unknown as WalletProvider;
     const catalog = makeConfig();
@@ -140,21 +146,24 @@ function makeService(
         buildings: hubLadder(catalog.buildings),
     };
     const projection = toProjectionConfig(config);
-    return new RouteService({
-        wallet,
-        appConfig: new FakeAppConfig(config),
-        mapReader: {
-            routingSnapshot: async () => ({
-                cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
-                complete,
-                droppedCells: 0,
-                droppedUpdates: 0,
-                version: SNAPSHOT_VERSION,
-            }),
+    return new RouteService(
+        {
+            wallet,
+            appConfig: new FakeAppConfig(config),
+            mapReader: {
+                routingSnapshot: async () => ({
+                    cells: cells.map((c) => toCell(c, DEFAULT_SERVER_TIME, projection)),
+                    complete,
+                    droppedCells: 0,
+                    droppedUpdates: 0,
+                    version: SNAPSHOT_VERSION,
+                }),
+            },
+            logger: new NoopLogger(),
+            artifactDirectory: directory,
         },
-        logger: new NoopLogger(),
-        artifactDirectory: directory,
-    });
+        lots,
+    );
 }
 
 function toolFor(service: unknown): Handler {
@@ -178,6 +187,7 @@ interface ExportArgs {
     towards: number;
     resourceId: number;
     amount: string;
+    lotId: string | null;
 }
 
 function cellsFor(...extra: Array<RawCell>): Array<RawCell> {
@@ -194,6 +204,7 @@ function exportGraph(
         towards: Number(TARGET),
         resourceId: RES,
         amount: AMOUNT,
+        lotId: null,
         ...over,
     });
 }
@@ -204,28 +215,28 @@ beforeEach(() => {
     artifactDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'project-cpu-mcp-test-'));
 });
 
-function descriptorOf(result: ToolResult): RouteNetworkResult {
-    return JSON.parse(result.content[1]?.text ?? '') as RouteNetworkResult;
+function descriptorOf(result: ToolResult): PlannedRouteNetworkResult {
+    return JSON.parse(result.content[1]?.text ?? '') as PlannedRouteNetworkResult;
 }
 
-function artifactOf(descriptor: RouteNetworkResult): RouteGraphArtifact {
-    return JSON.parse(fs.readFileSync(descriptor.artifactPath, 'utf8')) as RouteGraphArtifact;
+function artifactOf(descriptor: PlannedRouteNetworkResult): PlannedRouteGraphArtifact {
+    return JSON.parse(fs.readFileSync(descriptor.artifactPath, 'utf8')) as PlannedRouteGraphArtifact;
 }
 
-async function exported(cells: Array<RawCell>, over: Partial<ExportArgs> = {}): Promise<RouteGraphArtifact> {
+async function exported(cells: Array<RawCell>, over: Partial<ExportArgs> = {}): Promise<PlannedRouteGraphArtifact> {
     return artifactOf(descriptorOf(await exportGraph(cells, over)));
 }
 
-function nodeOf(artifact: RouteGraphArtifact, tokenId: string): RouteGraphNodeView | null {
+function nodeOf(artifact: PlannedRouteGraphArtifact, tokenId: string): RouteGraphNodeView | null {
     return artifact.nodes.find((node) => node.tokenId === tokenId) ?? null;
 }
 
-function edgeOf(artifact: RouteGraphArtifact, a: string, b: string): boolean {
+function edgeOf(artifact: PlannedRouteGraphArtifact, a: string, b: string): boolean {
     const [low, high] = Number(a) < Number(b) ? [a, b] : [b, a];
     return artifact.edges.some((edge) => edge.a === low && edge.b === high);
 }
 
-function instructionsText(descriptor: RouteNetworkResult): string {
+function instructionsText(descriptor: PlannedRouteNetworkResult): string {
     return descriptor.instructions.join(' ');
 }
 
@@ -243,8 +254,15 @@ describe('cpu_route_network request', () => {
             amount: AMOUNT,
         };
 
-        expect(Object.keys(routeNetworkInputSchema).sort()).toEqual(['amount', 'from', 'resourceId', 'towards']);
+        expect(Object.keys(routeNetworkInputSchema).sort()).toEqual([
+            'amount',
+            'from',
+            'lotId',
+            'resourceId',
+            'towards',
+        ]);
         expect(schema.safeParse(full).success).toBe(true);
+        expect(schema.parse(full)).toMatchObject({ lotId: null });
         for (const field of Object.keys(full)) {
             const partial = { ...full };
             delete partial[field];
@@ -321,6 +339,7 @@ describe('cpu_route_network artifact', () => {
             towards: TARGET,
             resourceId: RES,
             amount: AMOUNT,
+            lotReturn: null,
         });
         expect(artifact.nodes).toHaveLength(descriptor.nodeCount);
         expect(artifact.edges).toHaveLength(descriptor.edgeCount);
@@ -625,14 +644,116 @@ describe('route_network description', () => {
     });
 });
 
+const LOT_ID = '77';
+const LISTED_RADIUS = MID_HUB_RADIUS;
+
+class FakeLotSnapshots implements ILotSnapshots {
+    private readonly lot: OnChainLot;
+
+    constructor(lot: OnChainLot) {
+        this.lot = lot;
+    }
+
+    readLot(): Promise<OnChainLot> {
+        return Promise.resolve(this.lot);
+    }
+}
+
+function evictedLot(over: Partial<OnChainLot> = {}): OnChainLot {
+    return {
+        seller: WALLET_ADDRESS,
+        hub: BigInt(ORIGIN),
+        resource: RES,
+        remaining: 120n,
+        pricePerUnit: 1n,
+        state: OnChainLotState.Evicted,
+        maxSaleFeeBp: 500,
+        hubRadius: LISTED_RADIUS,
+        hubMoveFee: parseEther('0.4'),
+        ...over,
+    };
+}
+
+describe('cpu_route_network in Lot return context', () => {
+    function returning(cells: Array<RawCell>, lot: OnChainLot = evictedLot()): RouteService {
+        return makeService(cells, FLOORS, {}, true, artifactDirectory, new FakeLotSnapshots(lot));
+    }
+
+    it('plans from the listed hub of an Evicted lot and records the policy in the artifact it writes', async () => {
+        const landing = at(LISTED_RADIUS);
+        const cells = [makeCell({ tokenId: String(ORIGIN), owner: RIVAL, revealCount: 1 }), own(TARGET), own(landing)];
+        const service = returning(cells);
+
+        const descriptor = descriptorOf(await exportGraph(cells, { lotId: LOT_ID }, service));
+        const artifact = artifactOf(descriptor);
+
+        expect(descriptor.request.lotReturn).toMatchObject({
+            lotId: LOT_ID,
+            sourcePolicy: RouteSourcePolicy.HistoricalHub,
+            historicalSource: { tokenId: String(ORIGIN), radius: LISTED_RADIUS },
+        });
+        expect(artifact.request).toEqual(descriptor.request);
+        expect(nodeOf(artifact, String(ORIGIN))?.radius).toBe(LISTED_RADIUS);
+        expect(edgeOf(artifact, String(ORIGIN), landing)).toBe(true);
+        expect(descriptor.schemaVersion).toBe(ROUTE_GRAPH_SCHEMA_VERSION);
+        expect(descriptor.instructions).toEqual([...LOT_RETURN_GRAPH_INSTRUCTIONS]);
+    });
+
+    it('prefills the Lot return quote with the lot and leaves the chain to the agent', async () => {
+        const cells = [makeCell({ tokenId: String(ORIGIN), owner: RIVAL, revealCount: 1 }), own(TARGET)];
+
+        const descriptor = descriptorOf(await exportGraph(cells, { lotId: LOT_ID }, returning(cells)));
+
+        expect(descriptor.quoteTemplate).toEqual({
+            tool: LOT_RETURN_QUOTE_TOOL_NAME,
+            arguments: { lotId: LOT_ID, chain: [] },
+        });
+        expect(descriptor.request.towards).toBe(TARGET);
+        expect(descriptor.request.amount).toBe(AMOUNT);
+        expect(instructionsText(descriptor)).toContain(LOT_RETURN_QUOTE_TOOL_NAME);
+    });
+
+    it('keeps the ordinary export free of the exception when no lot is named', async () => {
+        const cells = cellsFor();
+
+        const descriptor = descriptorOf(await exportGraph(cells));
+
+        expect(descriptor.request.lotReturn).toBeNull();
+        expect(descriptor.quoteTemplate.tool).toBe(QUOTE_TOOL_NAME);
+        expect(instructionsText(descriptor)).not.toContain(LOT_RETURN_QUOTE_TOOL_NAME);
+    });
+
+    it('names the lot, the policy and the return quote in the panel it prints', async () => {
+        const cells = [makeCell({ tokenId: String(ORIGIN), owner: RIVAL, revealCount: 1 }), own(TARGET)];
+
+        const panel = panelOf(await exportGraph(cells, { lotId: LOT_ID }, returning(cells)));
+
+        expect(panel).toContain(LOT_ID);
+        expect(panel).toMatch(/listed hub/i);
+        expect(panel).toContain(LOT_RETURN_QUOTE_TOOL_NAME);
+    });
+
+    it('prints no return row at all on an ordinary export', async () => {
+        const panel = panelOf(await exportGraph(cellsFor()));
+
+        expect(panel).not.toMatch(/listed hub/i);
+        expect(panel).not.toContain(LOT_RETURN_QUOTE_TOOL_NAME);
+    });
+});
+
 const PANEL_LABELS = Object.values(ROUTE_NETWORK_LABELS);
 
-function descriptor(over: Partial<RouteNetworkResult> = {}): RouteNetworkResult {
+/** The Lot return row is printed only in Lot return context, so an ordinary panel carries every other field. */
+const ORDINARY_PANEL_LABELS = PANEL_LABELS.filter(
+    (label) => label !== ROUTE_NETWORK_LABELS.lot && label !== ROUTE_NETWORK_LABELS.source,
+);
+
+function descriptor(over: Partial<PlannedRouteNetworkResult> = {}): PlannedRouteNetworkResult {
     return {
         artifactPath: '/tmp/cpu-route-graph-1.json',
         schemaVersion: 1,
         snapshotVersion: SNAPSHOT_VERSION,
-        request: { from: '10', towards: '30', resourceId: RES, amount: AMOUNT },
+        request: { from: '10', towards: '30', resourceId: RES, amount: AMOUNT, lotReturn: null },
         connected: true,
         nodeCount: 12,
         edgeCount: 24,
@@ -647,8 +768,8 @@ const NOTE = 'A raw route graph on disk, not a route. Verify with cpu_quote_tran
 
 const ARGS = { from: 10, towards: 30, resourceId: RES, amount: AMOUNT };
 
-function panelHarness(result: RouteNetworkResult): Handler {
-    return toolFor({ network: async (): Promise<RouteNetworkResult> => result });
+function panelHarness(result: PlannedRouteNetworkResult): Handler {
+    return toolFor({ network: async (): Promise<PlannedRouteNetworkResult> => result });
 }
 
 function panelOf(result: ToolResult): string {
@@ -693,9 +814,33 @@ describe('route_network panel', () => {
 
         for (const panel of panels) {
             expect(panel.split('\n')[0]).toBe(ROUTE_NETWORK_TITLE);
-            expect(panelLabels(panel)).toEqual(PANEL_LABELS);
-            expect(labelSeparators(panel)).toBe(PANEL_LABELS.length);
+            expect(panelLabels(panel)).toEqual(ORDINARY_PANEL_LABELS);
+            expect(labelSeparators(panel)).toBe(ORDINARY_PANEL_LABELS.length);
         }
+    });
+
+    it('adds the Lot return row, and only it, in Lot return context', async () => {
+        const plan = {
+            lotId: '77',
+            lotState: LotState.Evicted,
+            sourcePolicy: RouteSourcePolicy.HistoricalHub,
+            historicalSource: {
+                tokenId: '10',
+                radius: 8,
+                listedTransitFeePerUnit: '0.4',
+                liveTransitFeePerUnit: null,
+                transitFeePerUnit: '0.4',
+            },
+        };
+        const returning = descriptor({
+            request: { from: '10', towards: '30', resourceId: RES, amount: AMOUNT, lotReturn: plan },
+        });
+
+        const panel = panelOf(await panelHarness(returning)(ARGS));
+
+        expect(panelLabels(panel)).toEqual(PANEL_LABELS);
+        expect(panel).toContain('77');
+        expect(panel).toMatch(/reach 8/);
     });
 
     it('keeps every line inside the panel width, whatever the values are', async () => {
@@ -761,7 +906,7 @@ describe('route_network panel', () => {
             const note = `${'b'.repeat(offset)}:${'c'.repeat(30)}`;
             const panel = panelOf(await panelHarness(descriptor({ note }))(ARGS));
 
-            expect(labelSeparators(unwrapped(panel))).toBe(PANEL_LABELS.length);
+            expect(labelSeparators(unwrapped(panel))).toBe(ORDINARY_PANEL_LABELS.length);
             expect(flattened(panel)).toContain(`Note: ${note}`);
             for (const line of panel.split('\n')) {
                 expect(line.length).toBeLessThanOrEqual(PANEL_MAX_WIDTH);
