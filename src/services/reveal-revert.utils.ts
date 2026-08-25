@@ -29,6 +29,18 @@ function messageFor(name: CellRevertName, args: ReadonlyArray<unknown>, tokenId:
                 `nothing was spent and cell ${tokenId} is untouched. This is a fault of the deployment, not ` +
                 `of your wallet — retry later.`
             );
+        case CellRevertName.METADATA_PUBLISHER_NOT_CONFIGURED:
+            return (
+                `This deployment charges for Land metadata publication but has no metadata publisher configured, ` +
+                `so it refuses every reveal. Nothing was spent and cell ${tokenId} is untouched. Retrying cannot ` +
+                `fix this deployment configuration.`
+            );
+        case CellRevertName.PUBLISHER_DELIVERY_FAILED:
+            return (
+                `The Land metadata publication charge could not be delivered to the metadata publisher, so the ` +
+                `whole request was undone: nothing was spent and cell ${tokenId} is untouched. This is a fault ` +
+                `of the deployment, not of your wallet.`
+            );
         case CellRevertName.REFUND_FAILED:
             return (
                 `The reveal carried more ETH than it cost and the change could not be returned, so the whole ` +

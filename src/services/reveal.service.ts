@@ -535,9 +535,9 @@ export class RevealService {
     }
 
     /**
-     * Every reveal is paid for, first one included, and only the Cell knows the price: the chain config
-     * carries the two gameplay legs but not the live randomness fee, so a value rebuilt from it underpays.
-     * Either leg may be zero — a zero burn needs no approval, and a zero contribution is not a free reveal.
+     * Every reveal is paid for, first one included, and only the Cell knows the price: the served config omits
+     * the live randomness fee and metadata publication charge, so a value rebuilt from it underpays. Either
+     * gameplay leg may be zero — a zero burn needs no approval, and a zero contribution is not a free reveal.
      */
     private async fundReveal(
         config: AppConfig,

@@ -74,15 +74,15 @@ describe('CELL_ABI reveal surface', () => {
         });
     });
 
-    it('reads the reveal price back as four words, so a caller can send the total and approve the burn', () => {
+    it('reads the reveal price back with the publication charge appended after the established four words', () => {
         const result = encodeAbiParameters(
-            [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }],
-            [3_000n, 1_000n, 4_000n, 2n],
+            [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }],
+            [3_000n, 1_000n, 10_000n, 2n, 6_000n],
         );
 
         const decoded = decodeFunctionResult({ abi: CELL_ABI, functionName: 'quoteReveal', data: result });
 
-        expect(decoded).toEqual([3_000n, 1_000n, 4_000n, 2n]);
+        expect(decoded).toEqual([3_000n, 1_000n, 10_000n, 2n, 6_000n]);
     });
 
     it('carries the payment reverts of a paid reveal, and no longer the fee revert they replaced', () => {
@@ -92,6 +92,8 @@ describe('CELL_ABI reveal surface', () => {
         expect(names).toContain('RevealPaymentNotConfigured');
         expect(names).toContain('RevealHookNotConfigured');
         expect(names).toContain('HookDeliveryFailed');
+        expect(names).toContain('MetadataPublisherNotConfigured');
+        expect(names).toContain('PublisherDeliveryFailed');
         expect(names).toContain('RefundFailed');
         expect(names).not.toContain('InsufficientRevealFee');
     });
