@@ -66,18 +66,6 @@ export const buyLotInputSchema = {
     value: positiveIntString.describe('Units to buy, as a positive integer string (≤ the lot remaining).'),
 };
 
-export const cancelLotInputSchema = {
-    lotId: z.string().describe('The lot id to cancel (must be yours).'),
-    chain: z
-        .array(tokenIdSchema)
-        .min(2)
-        .describe(
-            'Waypoint tokenIds [hub, ...waypoints, destination] for the return shipment — first node is the lot ' +
-                'Hub, last is your own revealed cell where the unsold units return. A route through a foreign Hub ' +
-                'is paid in $CPU.',
-        ),
-};
-
 export const quoteBuyInputSchema = {
     lotId: z.string().describe('The lot id to preview a buy on.'),
     value: positiveIntString.describe('Units to buy, as a positive integer string.'),

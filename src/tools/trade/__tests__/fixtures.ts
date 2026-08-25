@@ -11,7 +11,7 @@ import {
 import { NoopLogger } from '../../../logger/noop.logger.js';
 import { makeCell, projectCell } from '../../../map/__tests__/fixtures.js';
 import type { Cell } from '../../../map/types.js';
-import type { BuyLotResult, CancelLotResult, CreateLotResult, SetSaleFeeResult } from '../../../services/types.js';
+import type { BuyLotResult, CreateLotResult, SetSaleFeeResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
 import type { ToolRegistrar } from '../../types.js';
@@ -71,21 +71,6 @@ export const createResult: CreateLotResult = {
     transitPaid: '0',
     transitDiscount: '0',
     txHash: '0xcreate',
-    approveTxHash: null,
-    status: TxStatus.Success,
-    blockNumber: '100',
-};
-
-export const cancelResult: CancelLotResult = {
-    lotId: '7',
-    resourceId: 3,
-    returned: '80',
-    fee: '0',
-    transitPaid: '0',
-    transitDiscount: '0',
-    deliveryId: '123',
-    arrivalAt: 1704,
-    txHash: '0xcancel',
     approveTxHash: null,
     status: TxStatus.Success,
     blockNumber: '100',

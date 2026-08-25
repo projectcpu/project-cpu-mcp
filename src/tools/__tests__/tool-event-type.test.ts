@@ -15,7 +15,6 @@ const WIRE: ReadonlyArray<[string, ToolEventType, string]> = [
     ['DeliveryFinalized', ToolEventType.DeliveryFinalized, 'delivery_finalized'],
     ['LotCreated', ToolEventType.LotCreated, 'lot_created'],
     ['LotBought', ToolEventType.LotBought, 'lot_bought'],
-    ['LotCancelled', ToolEventType.LotCancelled, 'lot_cancelled'],
     ['LotReturned', ToolEventType.LotReturned, 'lot_returned'],
     ['LotEvicted', ToolEventType.LotEvicted, 'lot_evicted'],
     ['HubFeeSet', ToolEventType.HubFeeSet, 'hub_fee_set'],

@@ -1,13 +1,7 @@
 import { EVICTED_LOT_EXPLANATION, EVICTED_LOT_HEADLINE, FROZEN_LOT_RETURN_NOTE } from './constants.js';
 import type { EnrichedMarketSummary } from './types.js';
 import { type FillView, type LotView, type MarketIndex, type MarketIndexRow, LotState } from '../../api/types.js';
-import type {
-    BuyLotResult,
-    CancelLotResult,
-    CreateLotResult,
-    SetSaleFeeResult,
-    TradeQuote,
-} from '../../services/types.js';
+import type { BuyLotResult, CreateLotResult, SetSaleFeeResult, TradeQuote } from '../../services/types.js';
 import { formatUnixSeconds, resourceLabel, summarizeTransit, type ResourceNames } from '../../utils/format.utils.js';
 
 /** Human header for a confirmed `create_lot`. */
@@ -53,18 +47,6 @@ export function summarizeBuyLot(result: BuyLotResult, resources: ResourceNames):
         `on the lot. Goods shipping to your cell (delivery ${result.deliveryId}, ETA ` +
         `${formatUnixSeconds(result.arrivalAt)}) — run finalize_delivery on ${result.deliveryId} after the ETA. ` +
         `${approve}buy tx ${result.txHash} in block ${result.blockNumber}.`
-    );
-}
-
-/** Human header for a confirmed `cancel_lot`. */
-export function summarizeCancelLot(result: CancelLotResult, resources: ResourceNames): string {
-    const approve = result.approveTxHash !== null ? `approve tx ${result.approveTxHash}, ` : '';
-    return (
-        `Cancelled lot ${result.lotId}: ${result.returned} ${resourceLabel(resources, result.resourceId)} ` +
-        `returning to you (delivery ${result.deliveryId}, ETA ${formatUnixSeconds(result.arrivalAt)}) — run ` +
-        `finalize_delivery on ${result.deliveryId} after the ETA to reclaim them. Transit fee ` +
-        `${summarizeTransit(result.transitPaid, result.transitDiscount)}. ${approve}cancel tx ${result.txHash} ` +
-        `in block ${result.blockNumber}.`
     );
 }
 
