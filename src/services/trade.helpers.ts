@@ -128,7 +128,9 @@ const QUOTE_REVERT_REASONS: ReadonlyArray<{ name: string; reason: string }> = [
     { name: 'PathTooShort', reason: 'the route needs at least the hub and your destination cell' },
     {
         name: 'NotEligibleWaypoint',
-        reason: 'a waypoint on the route is not eligible — a foreign frozen hub blocks the path',
+        reason:
+            'a waypoint on the route is not eligible — a hub on the path cannot serve as a live node right now ' +
+            '(temporarily unroutable, not frozen)',
     },
     { name: 'HopOutOfRange', reason: "a hop on the route is longer than transport's reach" },
     { name: 'NotWaypointOwner', reason: 'a non-hub waypoint on the route is not owned by you' },

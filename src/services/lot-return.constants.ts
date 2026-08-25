@@ -26,7 +26,9 @@ export const LOT_RETURN_REVERT_REASONS: Readonly<Record<(typeof LOT_RETURN_REVER
     NotDestOwner: 'the last cell on the route must be one you own',
     PathTooShort: 'the route needs at least the hub and your destination cell',
     DegenerateWaypoint: 'the route visits the same cell twice',
-    NotEligibleWaypoint: 'a waypoint on the route is not eligible — a foreign frozen hub blocks the path',
+    NotEligibleWaypoint:
+        'a waypoint on the route is not eligible — a hub on the path cannot serve as a live node right now ' +
+        '(temporarily unroutable, not frozen)',
     HopOutOfRange: "a hop on the route is longer than transport's reach",
     NotWaypointOwner: 'a non-hub waypoint on the route is not owned by you',
     NotRevealed: 'a cell on the route (or the hub) is not revealed yet',

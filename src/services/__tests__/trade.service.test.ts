@@ -1002,14 +1002,14 @@ describe('TradeService.quoteBuy', () => {
         );
     });
 
-    it('names a foreign frozen hub on the route from a bubbled transport revert', async () => {
+    it('names an unroutable hub on the route from a bubbled transport revert', async () => {
         const h = makeTrade({
             response: { status: 200, data: lotView({ id: '7', remaining: '100' }) },
             tradeQuoteError: new Error('Quote reverted: NotEligibleWaypoint()'),
         });
 
         await expect(h.service.quoteBuy({ lotId: '7', value: '10', chain: [20, 75] })).rejects.toThrow(
-            /foreign frozen hub blocks the path/,
+            /cannot serve as a live node right now/,
         );
     });
 });
