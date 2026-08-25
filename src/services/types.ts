@@ -254,6 +254,8 @@ export enum CellRevertName {
     REVEAL_PAYMENT_NOT_CONFIGURED = 'RevealPaymentNotConfigured',
     REVEAL_HOOK_NOT_CONFIGURED = 'RevealHookNotConfigured',
     HOOK_DELIVERY_FAILED = 'HookDeliveryFailed',
+    METADATA_PUBLISHER_NOT_CONFIGURED = 'MetadataPublisherNotConfigured',
+    PUBLISHER_DELIVERY_FAILED = 'PublisherDeliveryFailed',
     REFUND_FAILED = 'RefundFailed',
     REVEAL_NOT_CONFIGURED = 'RevealNotConfigured',
     REVEAL_CELL_OCCUPIED = 'RevealCellOccupied',
@@ -354,10 +356,10 @@ export interface RevealResult {
     status: TxStatus | null;
     blockNumber: string | null;
     /**
-     * The whole ETH this reveal cost (decimal), as the cell quoted it — the liquidity contribution and the
-     * randomness fee together, not the fee alone; "0" when the call sent no request of its own. The
-     * transaction carries headroom above it and the excess comes back in the same transaction, so this is
-     * what the wallet is left down by.
+     * The whole ETH this reveal cost (decimal), as the cell quoted it — the liquidity contribution, randomness
+     * fee, and metadata publication charge together; "0" when the call sent no request of its own. The transaction
+     * carries headroom above it and the excess comes back in the same transaction, so this is what the wallet is
+     * left down by.
      */
     ethPaid: string;
     /** $CPU burned by this reveal (decimal); "0" when the call sent no request of its own. */

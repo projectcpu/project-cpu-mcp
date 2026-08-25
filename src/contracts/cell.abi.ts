@@ -15,6 +15,7 @@ export const CELL_ABI = [
             { name: 'randomnessFeeWei', type: 'uint256', internalType: 'uint256' },
             { name: 'totalRequiredWei', type: 'uint256', internalType: 'uint256' },
             { name: 'cpuBurnWei', type: 'uint256', internalType: 'uint256' },
+            { name: 'metadataPublicationChargeWei', type: 'uint256', internalType: 'uint256' },
         ],
         stateMutability: 'view',
     },
@@ -284,6 +285,16 @@ export const CELL_ABI = [
     {
         type: 'error',
         name: 'HookDeliveryFailed',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'MetadataPublisherNotConfigured',
+        inputs: [],
+    },
+    {
+        type: 'error',
+        name: 'PublisherDeliveryFailed',
         inputs: [],
     },
     {

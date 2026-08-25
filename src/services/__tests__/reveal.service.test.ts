@@ -268,7 +268,12 @@ describe('RevealService on a push randomness source', () => {
         const config: AppConfig = { ...makeConfig(), reveal: { ethContribution: '1', cpuBurn: '2' } };
         const h = makeReveal({
             config,
-            quote: { ethContributionWei: 3_000n, randomnessFeeWei: 1_000n, totalRequiredWei: 4_000n, cpuBurnWei: 9n },
+            quote: {
+                ethContributionWei: 3_000n,
+                randomnessFeeWei: 1_000n,
+                totalRequiredWei: 10_000n,
+                cpuBurnWei: 9n,
+            },
             approve: APPROVE_HASH,
             bumpTo: 1,
         });
@@ -278,9 +283,9 @@ describe('RevealService on a push randomness source', () => {
         const result = await p;
 
         const value = h.cellClient.requests[0]?.value ?? 0n;
-        expect(value).toBeGreaterThanOrEqual(4_000n);
+        expect(value).toBe(12_500n);
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: 9n }]);
-        expect(result.ethPaid).toBe(formatEther(4_000n));
+        expect(result.ethPaid).toBe(formatEther(10_000n));
         expect(result.cpuBurn).toBe(formatEther(9n));
     });
 
