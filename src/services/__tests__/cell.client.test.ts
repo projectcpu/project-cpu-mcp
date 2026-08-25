@@ -21,6 +21,11 @@ const DEPOSITS_NOT_EXHAUSTED = encodeErrorResult({ abi: CELL_ABI, errorName: 'De
 const REVEAL_CELL_OCCUPIED = encodeErrorResult({ abi: CELL_ABI, errorName: 'RevealCellOccupied' });
 const REVEAL_PROCESS_ACTIVE = encodeErrorResult({ abi: CELL_ABI, errorName: 'RevealProcessActive' });
 const REVEAL_NOT_CONFIGURED = encodeErrorResult({ abi: CELL_ABI, errorName: 'RevealNotConfigured' });
+const METADATA_PUBLISHER_NOT_CONFIGURED = encodeErrorResult({
+    abi: CELL_ABI,
+    errorName: 'MetadataPublisherNotConfigured',
+});
+const PUBLISHER_DELIVERY_FAILED = encodeErrorResult({ abi: CELL_ABI, errorName: 'PublisherDeliveryFailed' });
 
 class FakeContracts implements IContractClient {
     public readonly sent: Array<TransactionRequest> = [];
@@ -80,6 +85,17 @@ describe('CellClient', () => {
         });
     });
 
+    it('keeps funding from the established total when the current quote appends a publication charge', async () => {
+        const { client } = makeClient({ quoteReveal: [3_000n, 1_000n, 10_000n, 2n, 6_000n] });
+
+        await expect(client.quoteReveal(CELL)).resolves.toEqual({
+            ethContributionWei: 3_000n,
+            randomnessFeeWei: 1_000n,
+            totalRequiredWei: 10_000n,
+            cpuBurnWei: 2n,
+        });
+    });
+
     it('encodes requestReveal and sends it with the fee value', async () => {
         const { client, contracts } = makeClient({});
         const hash = await client.requestReveal({ cell: CELL, tokenId: 42n, value: 5n });
@@ -111,6 +127,16 @@ describe('CellClient', () => {
         ['RevealCellOccupied', REVEAL_CELL_OCCUPIED, /cell 42 has a building on it.*demolish/is],
         ['RevealProcessActive', REVEAL_PROCESS_ACTIVE, /cell 42 is running a mining or craft process/is],
         ['RevealNotConfigured', REVEAL_NOT_CONFIGURED, /no reveal draw configured/is],
+        [
+            'MetadataPublisherNotConfigured',
+            METADATA_PUBLISHER_NOT_CONFIGURED,
+            /charges for Land metadata publication.*no metadata publisher.*retrying cannot fix/is,
+        ],
+        [
+            'PublisherDeliveryFailed',
+            PUBLISHER_DELIVERY_FAILED,
+            /publication charge could not be delivered.*whole request was undone.*nothing was spent/is,
+        ],
     ])('explains a %s revert of the cell in plain words, naming the cell', async (_name, data, phrase) => {
         const { client } = makeClient({}, new Error('Execution reverted', { cause: { data } }));
 

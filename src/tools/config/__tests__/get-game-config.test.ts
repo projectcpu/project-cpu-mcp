@@ -281,6 +281,8 @@ describe('get_game_config tool — reveal payment', () => {
         const text = await prose({ ...CONFIG, reveal: { ethContribution: '0.0001', cpuBurn: '1' } });
 
         expect(text).toContain('contributes 0.0001 ETH to the $CPU liquidity pool and burns 1 $CPU');
+        expect(text).toContain('this view omits the live randomness fee and metadata publication charge');
+        expect(text).toContain('cpu_reveal reads the exact total off the chain and pays that');
     });
 
     it('says the amounts are unknown, not zero, when the network serves no reveal payment', async () => {

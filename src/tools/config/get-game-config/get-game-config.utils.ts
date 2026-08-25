@@ -38,7 +38,8 @@ export function describeRevealPayment(payment: RevealPaymentView | null): string
     }
     return (
         `every reveal contributes ${payment.ethContribution} ETH to the $CPU liquidity ` +
-        `pool and burns ${payment.cpuBurn} $CPU, the first reveal of a cell included; ` +
+        `pool and burns ${payment.cpuBurn} $CPU, the first reveal of a cell included; this view omits the live ` +
+        `randomness fee and metadata publication charge, so ` +
         `cpu_reveal reads the exact total off the chain and pays that`
     );
 }

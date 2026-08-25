@@ -39,7 +39,7 @@ export class CellClient implements ICellClient {
 
     async quoteReveal(cell: Address): Promise<RevealQuote> {
         const [ethContributionWei, randomnessFeeWei, totalRequiredWei, cpuBurnWei] = await this.contracts.read<
-            readonly [bigint, bigint, bigint, bigint]
+            readonly [bigint, bigint, bigint, bigint, bigint]
         >({
             address: cell,
             abi: CELL_ABI,

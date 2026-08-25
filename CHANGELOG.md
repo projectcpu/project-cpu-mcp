@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.10.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.9.1...v0.10.0) (2026-08-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* cpu_next_hops no longer returns the unread reach wrapper; per-cell reach is fromRadius and radius.
+* server-side operator persona, context-lean entry point and panel output ([#15](https://github.com/projectcpu/project-cpu-mcp/issues/15))
+* pin runtime to Robinhood, adopt explicit Cell and Hub storage shelves, and isolate syndicate player-authored fields behind a dedicated tool.
+
+### Features
+
+* route over Virgin cells on the GP54 world ([#16](https://github.com/projectcpu/project-cpu-mcp/issues/16)) ([7443f7e](https://github.com/projectcpu/project-cpu-mcp/commit/7443f7e262dd5b309e6929186411dc14a45992ea))
+* server-side operator persona, context-lean entry point and panel output ([#15](https://github.com/projectcpu/project-cpu-mcp/issues/15)) ([b9327f1](https://github.com/projectcpu/project-cpu-mcp/commit/b9327f150ca7a4bf8d7ebaade6166e1d175493d9))
+* sync launch API and contract surfaces ([#12](https://github.com/projectcpu/project-cpu-mcp/issues/12)) ([a5ad7a2](https://github.com/projectcpu/project-cpu-mcp/commit/a5ad7a2fc91aca9eda93329393e6930923c52b7b))
+
+
+### Bug Fixes
+
+* sync future contract compatibility ([e11d173](https://github.com/projectcpu/project-cpu-mcp/commit/e11d173da7759f22e5c5574fb80dc313fa299d8e))
+
 ## [0.9.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.9.0...v0.9.1) (2026-08-12)
 
 
