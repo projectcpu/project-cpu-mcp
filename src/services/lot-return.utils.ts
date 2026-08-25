@@ -1,6 +1,6 @@
-import { parseEventLogs, type Abi, type Address, type Log } from 'viem';
+import { maxUint256, parseEventLogs, type Abi, type Address, type Log } from 'viem';
 
-import { LOT_RETURN_REVERT_NAMES, LOT_RETURN_REVERT_REASONS, WEI_CEILING_PATTERN } from './lot-return.constants.js';
+import { LOT_RETURN_REVERT_NAMES, LOT_RETURN_REVERT_REASONS } from './lot-return.constants.js';
 import { decodeKnownRevert } from './revert-decode.utils.js';
 import { lotStateFromChain } from './trade.helpers.js';
 import { LotReturnBranch, type DestinationCapacityView, type OnChainLot } from './types.js';
@@ -9,6 +9,7 @@ import { TRADE_ABI } from '../contracts/trade.abi.js';
 import { TRANSPORT_ABI } from '../contracts/transport.abi.js';
 import type { ILogger } from '../logger/types.js';
 import { cpuFromWei } from '../utils/format.utils.js';
+import { WEI_STRING_PATTERN } from '../utils/wei.constants.js';
 
 const RETURN_ERROR_ABI = [...TRADE_ABI, ...TRANSPORT_ABI] as unknown as Abi;
 
@@ -74,20 +75,33 @@ export function assertWholeRemainder(quoted: bigint, remaining: bigint, lotId: s
 
 /** The ceiling travels as wei precisely so nothing rounds it; a figure that is not whole wei is not a ceiling. */
 export function parseFeeCeilingWei(maxTransitFeeWei: string, lotId: string): bigint {
-    if (!WEI_CEILING_PATTERN.test(maxTransitFeeWei)) {
+    if (!WEI_STRING_PATTERN.test(maxTransitFeeWei)) {
         throw new Error(
             `The fee ceiling for lot ${lotId} must be a whole number of wei, but it reads ` +
                 `"${maxTransitFeeWei}". Quote the return with cpu_quote_lot_return and pass the ` +
                 `maxTransitFeeWei it answers with, unchanged — that field is already wei, not $CPU.`,
         );
     }
-    return BigInt(maxTransitFeeWei);
+    const ceiling = BigInt(maxTransitFeeWei);
+    // A padded ceiling is the way an agent tries to switch the guard off, and it cannot be encoded as the
+    // uint256 the contract takes: refusing it here keeps that failure off the allowance and off the chain.
+    if (ceiling > maxUint256) {
+        throw new Error(
+            `The fee ceiling for lot ${lotId} reads ${maxTransitFeeWei} wei, past the uint256 maximum the ` +
+                `contract can hold, so nothing was approved and nothing was sent. The ceiling is a guard, not ` +
+                `a switch to turn off — quote the return with cpu_quote_lot_return and pass the ` +
+                `maxTransitFeeWei it answers with, unchanged.`,
+        );
+    }
+    return ceiling;
 }
 
 /**
- * The cross-call half of the fee promise: only index 0 of a return route is capped on-chain at the fee pinned
- * when the lot was listed, so any later waypoint can raise its rate between the quote and the call. Refusing
- * here — before the allowance, before the transaction — is what keeps the quoted figure a real ceiling.
+ * The client half of the fee promise. Only the source hub's rate is pinned on-chain, at the figure recorded
+ * when the lot was listed, so any later waypoint can raise its own between the quote and this call. The
+ * ceiling itself does travel with the transaction and caps the whole route total there, but that backstop
+ * only fires once gas is committed: refusing here — before the allowance, before the transaction — is what
+ * makes a stale ceiling cost a re-quote instead of a reverted spend.
  */
 export function assertFeeWithinCeiling(quotedWei: bigint, ceilingWei: bigint, lotId: string): void {
     if (quotedWei <= ceilingWei) {

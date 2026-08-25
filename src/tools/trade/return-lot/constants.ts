@@ -12,15 +12,16 @@ export const RETURN_LOT_DESCRIPTION = [
 
 export const MAX_TRANSIT_FEE_WEI_DESCRIPTION = [
     'The most transit you will pay for this return, in WEI (not $CPU) — copy the `maxTransitFeeWei` field',
-    'from the `cpu_quote_lot_return` you just ran for this same lot and route, unchanged. The route is',
-    're-priced on-chain before anything is approved or sent, and a price above this figure is refused, so a',
-    'ceiling that went stale costs you a re-quote instead of the difference. Only the first hop of a return',
-    'is capped on-chain, so any later waypoint can raise its rate between the quote and this call.',
+    'from the `cpu_quote_lot_return` you just ran for this same lot and route, unchanged. Only the source',
+    'hub charges the rate pinned when the lot was listed; every later waypoint on the way home can raise its',
+    'own rate between that quote and this call, which is why this ceiling exists. The route is re-priced',
+    'on-chain before anything is approved or sent, and a total above this figure is refused right there;',
+    'the same figure then travels with the transaction as a cap on the whole route total, so the chain',
+    'refuses it too if a rate moves before the call is mined. A ceiling that went stale costs you a re-quote',
+    'instead of the difference.',
 ].join(' ');
 
-export const WEI_INPUT_PATTERN = /^\d+$/;
-
-export const WEI_INPUT_MESSAGE =
+export const MAX_TRANSIT_FEE_WEI_MESSAGE =
     'maxTransitFeeWei is a whole number of wei — pass the maxTransitFeeWei field from cpu_quote_lot_return ' +
     'unchanged, not the decimal $CPU figure.';
 

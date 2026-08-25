@@ -139,6 +139,20 @@ describe('return_lot tool', () => {
         expect(description).toMatch(/refused/i);
     });
 
+    // Two different mechanisms, and an earlier revision collapsed them into one: the source hub's RATE is
+    // pinned at listing, while the ceiling caps the route TOTAL on-chain. Saying only the first hop is capped
+    // denies the backstop the seller's figure actually buys, so pin both halves.
+    it('separates the source-hub rate pinned at listing from the ceiling that caps the whole route on-chain', () => {
+        const schema = returnTool().inputSchema;
+        const description = schema.maxTransitFeeWei?.description ?? '';
+        expect(description).toContain('Only the source hub charges the rate pinned when the lot was listed');
+        expect(description).toContain('every later waypoint on the way home can raise its own rate');
+        expect(description).toContain('a cap on the whole route total');
+        expect(description).toContain('the chain refuses it too');
+        expect(description).not.toMatch(/only the first hop/i);
+        expect(description).not.toContain('is capped on-chain, so any later waypoint can raise its rate');
+    });
+
     it('carries the ceiling the caller passed through to the service', async () => {
         const seen: Array<unknown> = [];
         const service = {

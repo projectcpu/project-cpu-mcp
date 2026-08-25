@@ -3,6 +3,7 @@ import {
     encodeAbiParameters,
     encodeErrorResult,
     encodeEventTopics,
+    maxUint256,
     parseAbiItem,
     parseEther,
     type Abi,
@@ -358,6 +359,22 @@ describe('LotReturnService settlement', () => {
         expect(sentCall(contracts).args[2]).toBe(0n);
     });
 
+    // The price, not the ceiling, decides whether an allowance is needed: an honest non-zero ceiling on a
+    // route that happens to cost nothing must not buy an unbounded approve.
+    it('skips the approval on a free route even when the ceiling the seller passed is not zero', async () => {
+        const { service, allowance, contracts } = makeService({ quote: returnQuote({ transitFee: 0n }) });
+        const result = await service.returnLot(input);
+        expect(allowance.calls).toEqual([]);
+        expect(result.approveTxHash).toBeNull();
+        expect(sentCall(contracts).args[2]).toBe(QUOTED_FEE_WEI);
+    });
+
+    it('still approves when the route costs a single wei, however large the ceiling capping it', async () => {
+        const { service, allowance } = makeService({ quote: returnQuote({ transitFee: 1n }) });
+        await service.returnLot(input);
+        expect(allowance.calls).toEqual([{ token: CPU_TOKEN, spender: TRANSPORT, needed: QUOTED_FEE_WEI }]);
+    });
+
     it('returns the whole remainder the lot event reports, with the delivery to finalize', async () => {
         const { service } = makeService();
         const result = await service.returnLot(input);
@@ -534,6 +551,35 @@ describe('LotReturnService fee ceiling', () => {
         await expect(service.returnLot({ ...input, maxTransitFeeWei: '0.7' })).rejects.toThrow(/whole number of wei/i);
         expect(contracts.reads).toEqual([]);
         expect(contracts.sent).toEqual([]);
+    });
+
+    // Padding the figure is how an agent tries to switch the guard off. It is still digits, so the shape
+    // check waves it through — and without this refusal the allowance goes out before the encoder throws.
+    it('refuses a ceiling padded past uint256 before it reads, approves or sends anything', async () => {
+        const { service, contracts, allowance } = makeService();
+        const padded = (maxUint256 + 1n).toString();
+        await expect(service.returnLot({ ...input, maxTransitFeeWei: padded })).rejects.toThrow(
+            /past the uint256 maximum/i,
+        );
+        expect(contracts.reads).toEqual([]);
+        expect(contracts.sent).toEqual([]);
+        expect(allowance.calls).toEqual([]);
+    });
+
+    it('answers a padded ceiling in its own words rather than letting an encoding error through', async () => {
+        const { service } = makeService();
+        const padded = (maxUint256 * 2n).toString();
+        const error = await service.returnLot({ ...input, maxTransitFeeWei: padded }).catch((e: Error) => e);
+        expect((error as Error).message).toContain(padded);
+        expect((error as Error).message).toMatch(/cpu_quote_lot_return/);
+        expect((error as Error).name).toBe('Error');
+    });
+
+    it('takes a ceiling that lands exactly on uint256, so the refusal is not one wei early', async () => {
+        const { service, contracts } = makeService();
+        const result = await service.returnLot({ ...input, maxTransitFeeWei: maxUint256.toString() });
+        expect(sentCall(contracts).args[2]).toBe(maxUint256);
+        expect(result.txHash).toBeDefined();
     });
 
     // The ceiling travels as wei end to end, so the $CPU the seller reads and the cap the contract gets are

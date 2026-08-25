@@ -95,8 +95,10 @@ export class LotReturnService implements ILotReturnService {
         }
 
         const branch = returnBranchOf(state);
+        // The price decides whether an allowance is needed at all; the ceiling only decides how much it caps.
+        // Keying this on the ceiling would send an unbounded approve for a route that costs nothing.
         const approveTxHash =
-            maxFee === 0n
+            quote.transitFee === 0n
                 ? null
                 : await this.allowance.ensureAllowance(
                       action.requireContract(AppContract.CpuToken, 'cannot pay for transit'),

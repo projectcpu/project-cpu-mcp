@@ -1,5 +1,3 @@
-export const WEI_CEILING_PATTERN = /^\d+$/;
-
 export const LOT_RETURN_REVERT_NAMES = [
     'FeeExceedsMax',
     'LotNotOpen',
@@ -19,7 +17,7 @@ export const LOT_RETURN_REVERT_NAMES = [
 
 export const LOT_RETURN_REVERT_REASONS: Readonly<Record<(typeof LOT_RETURN_REVERT_NAMES)[number], string>> = {
     FeeExceedsMax:
-        'the transit fee moved above the figure the return quote had just priced, so the route was refused ' +
+        'the whole route priced out above the ceiling that travelled with the call, so the chain refused it ' +
         'and nothing was spent — quote the return again and send it straight away',
     LotNotOpen: 'the lot is no longer open — re-read it, then return it through the branch its state calls for',
     LotNotEvicted: 'the lot is not evicted — re-read it, then return it through the branch its state calls for',
