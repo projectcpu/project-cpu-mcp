@@ -142,19 +142,27 @@ Once connected, the server exposes tools grouped by area:
   turn it off.
 - **World** — `cpu_get_map`, `cpu_get_cell`, `cpu_get_changes` (react to other players),
   `cpu_get_attention` (your owner-scoped to-do list).
-- **Reveal & build** — `cpu_reveal` (surface a cell's deposits on-chain), `cpu_build` (place a
-  building), `cpu_demolish`, `cpu_start_mining` (an extractor then mines a batch of the resource each
-  cycle), `cpu_get_mining_status`, `cpu_claim_mining`.
+- **Reveal & build** — `cpu_reveal` (surface a cell's deposits on-chain), `cpu_fulfill_reveal` (send the
+  missing draw yourself where the network's randomness mode leaves delivery to the player), `cpu_build`
+  (place a building), `cpu_upgrade` (replace it with a configured successor type), `cpu_demolish`,
+  `cpu_start_mining` (an extractor then mines a batch of the resource each cycle), `cpu_get_mining_status`,
+  `cpu_claim_mining`.
 - **Transport** — `cpu_route_network` (exports the route graph for one move to a temporary JSON file: nodes,
   legal hops, gaps), `cpu_next_hops` (survey the legal waypoints around a cell) — both take the cargo
   `resourceId` and show the exact per-hub transit fee for it — `cpu_quote_transport`, `cpu_transport`,
   `cpu_get_transport_status`, `cpu_list_my_transports`, `cpu_finalize_delivery`.
 - **Crafting** — `cpu_list_recipes`, `cpu_craft`, `cpu_get_craft_status`, `cpu_claim_craft`.
-- **Trading** — `cpu_get_markets`, `cpu_list_lots`, `cpu_get_lot`, `cpu_quote_buy`, `cpu_buy_lot`, `cpu_create_lot`,
-  `cpu_cancel_lot`, `cpu_list_my_lots`, `cpu_set_sale_fee` (a hub owner sets the per-resource sale-fee rate on
-  their own hub), `cpu_list_fills` (the executed-buy feed, pageable by cursor), and `cpu_get_market_index`
-  (world 24h VWAP, change, and volume per resource — a different question from `cpu_get_markets`'s cheapest
-  ask right now). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
+- **Trading** — `cpu_get_markets`, `cpu_list_lots`, `cpu_get_lot`, `cpu_quote_buy`, `cpu_buy_lot`,
+  `cpu_get_lot_terms` (the live listing window, your live-lot count and any evicted remainder you owe on one
+  hub), `cpu_create_lot`, `cpu_list_my_lots`, `cpu_set_sale_fee` (a hub owner sets the per-resource sale-fee
+  rate on their own hub), `cpu_list_fills` (the executed-buy feed, pageable by cursor), and
+  `cpu_get_market_index` (world 24h VWAP, change, and volume per resource — a different question from
+  `cpu_get_markets`'s cheapest ask right now). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
+- **Eviction & lot return** — `cpu_evict_lot` (a hub owner ends somebody else's open lot on their own hub; it
+  moves no goods and seizes nothing, and the seller keeps the whole remainder in escrow), and the seller's
+  way out: `cpu_quote_lot_return` then `cpu_return_lot`, which ships one lot's whole unsold remainder from
+  its hub to one cell you own over a route you choose. It works on an open lot and on an evicted one, one lot
+  and one route per call, and the route still owes its transit fees.
 - **Syndicates** — `cpu_list_syndicates` (browse the registry by name/size, sort, page), `cpu_get_syndicate`
   (one trusted syndicate card plus a page of its members), `cpu_get_syndicate_membership` (check an address's
   membership, defaults to your own), `cpu_join_syndicate` (join by id for same-clan discounts; reports your
@@ -167,8 +175,9 @@ Once connected, the server exposes tools grouped by area:
   server-authored warning tells the agent how to handle them, and returned links stay inert rather than being
   opened or fetched.
   See [CONTEXT.md](./CONTEXT.md) for the syndicate vocabulary.
-- **Tokens** — `cpu_quote_swap`, `cpu_swap` (trade ETH ↔ $CPU on the token pool), `cpu_withdraw` (cash a
-  cell's wCPU out to on-chain $CPU, 1:1).
+- **Tokens & land** — `cpu_quote_swap`, `cpu_swap` (trade ETH ↔ $CPU on the token pool), `cpu_withdraw`
+  (cash a cell's wCPU out to on-chain $CPU, 1:1), `cpu_quote_mint` and `cpu_mint_cell` (preview and mint new
+  land cells on the primary market, priced in native ETH by the public drop itself).
 
 Paid routes and on-chain actions are settled automatically; always check `cpu_get_balance` before
 a paid action.
