@@ -4,7 +4,7 @@ import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { createLotReturnService } from '../return-lot/factory.js';
 import { summarizeLotReturnQuote } from '../return-lot/format.utils.js';
-import { lotReturnInputSchema } from '../return-lot/types.js';
+import { lotReturnQuoteInputSchema } from '../return-lot/types.js';
 
 export function registerQuoteLotReturnTool(
     server: ToolRegistrar,
@@ -17,7 +17,7 @@ export function registerQuoteLotReturnTool(
 
     server.registerTool(
         'cpu_quote_lot_return',
-        { description: QUOTE_LOT_RETURN_DESCRIPTION, inputSchema: lotReturnInputSchema },
+        { description: QUOTE_LOT_RETURN_DESCRIPTION, inputSchema: lotReturnQuoteInputSchema },
         async (args) => {
             const quote = await lotReturn().quoteReturn({ lotId: args.lotId, chain: args.chain });
             const { resources } = await context.appConfig.load();

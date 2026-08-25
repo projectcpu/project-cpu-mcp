@@ -4,6 +4,7 @@ import {
     encodeErrorResult,
     encodeEventTopics,
     parseAbiItem,
+    parseEther,
     type Abi,
     type Address,
     type Hash,
@@ -218,7 +219,8 @@ function sentCall(contracts: FakeContractClient): { functionName: string; args: 
     return { functionName: decoded.functionName, args: decoded.args ?? [] };
 }
 
-const input = { lotId: LOT_ID, chain: CHAIN };
+/** The honest caller: the ceiling is exactly the figure the quote in this harness hands back. */
+const input = { lotId: LOT_ID, chain: CHAIN, maxTransitFeeWei: QUOTED_FEE_WEI.toString() };
 
 describe('LotReturnService quote', () => {
     it('reports the whole current remainder the contract priced, not the caller amount', async () => {
@@ -234,7 +236,8 @@ describe('LotReturnService quote', () => {
     it('carries the contract fee, discount, distance and ETA through without arithmetic of its own', async () => {
         const { service } = makeService();
         const quote = await service.quoteReturn(input);
-        expect(quote.transitPaid).toBe('0.7');
+        expect(quote.maxTransitFee).toBe('0.7');
+        expect(quote.maxTransitFeeWei).toBe(QUOTED_FEE_WEI.toString());
         expect(quote.transitDiscount).toBe('0.2');
         expect(quote.totalDistance).toBe(4);
         expect(quote.arrivalAt).toBe(1_700_000_900);
@@ -334,22 +337,22 @@ describe('LotReturnService settlement', () => {
         expect(result.originalState).toBe(LotState.Evicted);
     });
 
-    it('passes the freshly quoted transit fee verbatim as the fee ceiling', async () => {
-        const { service, contracts } = makeService();
+    it('carries the ceiling the seller passed as the fee cap, never the figure it just re-quoted', async () => {
+        const { service, contracts } = makeService({ quote: returnQuote({ transitFee: QUOTED_FEE_WEI - 1n }) });
         await service.returnLot(input);
         expect(sentCall(contracts).args).toEqual([7n, [HUB, DESTINATION], QUOTED_FEE_WEI]);
     });
 
-    it('authorizes exactly the quoted fee and nothing more', async () => {
+    it('authorizes exactly the ceiling the seller passed and nothing more', async () => {
         const { service, allowance } = makeService();
         const result = await service.returnLot(input);
         expect(allowance.calls).toEqual([{ token: CPU_TOKEN, spender: TRANSPORT, needed: QUOTED_FEE_WEI }]);
         expect(result.approveTxHash).toBe(`0x${'c'.repeat(64)}`);
     });
 
-    it('skips the approval when the quoted fee is zero', async () => {
+    it('skips the approval when the route is free and the ceiling is zero', async () => {
         const { service, allowance, contracts } = makeService({ quote: returnQuote({ transitFee: 0n }) });
-        const result = await service.returnLot(input);
+        const result = await service.returnLot({ ...input, maxTransitFeeWei: '0' });
         expect(allowance.calls).toEqual([]);
         expect(result.approveTxHash).toBeNull();
         expect(sentCall(contracts).args[2]).toBe(0n);
@@ -411,7 +414,7 @@ describe('LotReturnService settlement', () => {
 
     it('refuses a route that does not start at the hub holding the lot', async () => {
         const { service, contracts, allowance } = makeService();
-        await expect(service.returnLot({ lotId: LOT_ID, chain: [99, Number(DESTINATION)] })).rejects.toThrow(
+        await expect(service.returnLot({ ...input, chain: [99, Number(DESTINATION)] })).rejects.toThrow(
             /must start at the lot's hub/i,
         );
         expect(contracts.sent).toEqual([]);
@@ -421,7 +424,7 @@ describe('LotReturnService settlement', () => {
     it('refuses a route that visits the same cell twice', async () => {
         const { service, contracts } = makeService();
         await expect(
-            service.returnLot({ lotId: LOT_ID, chain: [Number(HUB), Number(HUB), Number(DESTINATION)] }),
+            service.returnLot({ ...input, chain: [Number(HUB), Number(HUB), Number(DESTINATION)] }),
         ).rejects.toThrow(/twice/i);
         expect(contracts.sent).toEqual([]);
     });
@@ -474,4 +477,77 @@ describe('LotReturnService settlement', () => {
         expect(order.indexOf('getLot')).toBe(0);
         expect(order).toContain('quoteReturn');
     });
+});
+
+describe('LotReturnService fee ceiling', () => {
+    it('refuses a route that outgrew the seller ceiling before allowance, transaction or map read', async () => {
+        const { service, contracts, allowance, mapReader } = makeService({
+            quote: returnQuote({ transitFee: QUOTED_FEE_WEI * 13n }),
+        });
+        await expect(service.returnLot(input)).rejects.toThrow(/above the 0\.7 \$CPU ceiling/);
+        expect(contracts.sent).toEqual([]);
+        expect(allowance.calls).toEqual([]);
+        expect(mapReader.refreshed).toBe(0);
+    });
+
+    it('names the fee it just priced and the ceiling it was given, in $CPU and in wei', async () => {
+        const { service } = makeService({ quote: returnQuote({ transitFee: QUOTED_FEE_WEI * 13n }) });
+        const error = await service.returnLot(input).catch((e: Error) => e);
+        const message = (error as Error).message;
+        expect(message).toContain('9.1 $CPU');
+        expect(message).toContain((QUOTED_FEE_WEI * 13n).toString());
+        expect(message).toContain('0.7 $CPU');
+        expect(message).toContain(QUOTED_FEE_WEI.toString());
+        expect(message).toMatch(/quote the return again/i);
+    });
+
+    it('refuses a single wei over the ceiling, so the promise has no slack in it', async () => {
+        const { service, contracts } = makeService({ quote: returnQuote({ transitFee: QUOTED_FEE_WEI + 1n }) });
+        await expect(service.returnLot(input)).rejects.toThrow(/ceiling/i);
+        expect(contracts.sent).toEqual([]);
+    });
+
+    it('proceeds when the fresh price lands exactly on the ceiling', async () => {
+        const { service, contracts } = makeService();
+        const result = await service.returnLot(input);
+        expect(sentCall(contracts).args[2]).toBe(QUOTED_FEE_WEI);
+        expect(result.txHash).toBeDefined();
+    });
+
+    it('proceeds under the ceiling and reports the lower figure the receipt actually settled', async () => {
+        const cheaper = QUOTED_FEE_WEI - 100_000_000_000_000_000n;
+        const { service, contracts } = makeService({
+            quote: returnQuote({ transitFee: cheaper }),
+            logs: [
+                lotCancelledLog(REMAINDER),
+                scheduledLog(123n, DESTINATION, 1_700_000_900n),
+                transitSettledLog({ deliveryId: 123n, owner: WALLET_ADDRESS, gross: cheaper, discount: 0n }),
+            ],
+        });
+        const result = await service.returnLot(input);
+        expect(result.transitPaid).toBe('0.6');
+        expect(sentCall(contracts).args[2]).toBe(QUOTED_FEE_WEI);
+    });
+
+    it('refuses a ceiling written as decimal $CPU, before it reads anything on-chain', async () => {
+        const { service, contracts } = makeService();
+        await expect(service.returnLot({ ...input, maxTransitFeeWei: '0.7' })).rejects.toThrow(/whole number of wei/i);
+        expect(contracts.reads).toEqual([]);
+        expect(contracts.sent).toEqual([]);
+    });
+
+    // The ceiling travels as wei end to end, so the $CPU the seller reads and the cap the contract gets are
+    // the same integer — including the awkward magnitudes a decimal roundtrip would shave a wei off.
+    it.each([1n, 27_473_849_233_960_000n, 357_160_040_041_480_000n, 1_000_000_000_000_000_000n, 999n])(
+        'quotes %s wei as a $CPU figure that parses back to the very same wei',
+        async (fee) => {
+            const { service, contracts } = makeService({ quote: returnQuote({ transitFee: fee }) });
+            const quote = await service.quoteReturn(input);
+            expect(BigInt(quote.maxTransitFeeWei)).toBe(fee);
+            expect(parseEther(quote.maxTransitFee)).toBe(fee);
+
+            await service.returnLot({ ...input, maxTransitFeeWei: quote.maxTransitFeeWei });
+            expect(sentCall(contracts).args[2]).toBe(fee);
+        },
+    );
 });

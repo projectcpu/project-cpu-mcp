@@ -1,3 +1,5 @@
+export const WEI_CEILING_PATTERN = /^\d+$/;
+
 export const LOT_RETURN_REVERT_NAMES = [
     'FeeExceedsMax',
     'LotNotOpen',

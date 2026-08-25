@@ -19,7 +19,11 @@ export function registerReturnLotTool(
         'cpu_return_lot',
         { description: RETURN_LOT_DESCRIPTION, inputSchema: lotReturnInputSchema },
         async (args) => {
-            const result = await lotReturn().returnLot({ lotId: args.lotId, chain: args.chain });
+            const result = await lotReturn().returnLot({
+                lotId: args.lotId,
+                chain: args.chain,
+                maxTransitFeeWei: args.maxTransitFeeWei,
+            });
             const { resources } = await context.appConfig.load();
 
             return {

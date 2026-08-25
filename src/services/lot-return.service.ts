@@ -3,6 +3,7 @@ import type { Address, Hash } from 'viem';
 import { decodeDeliveryScheduled, settleTransitFees } from './delivery.helpers.js';
 import type { ILotReturnService, LotReturnServiceOptions } from './lot-return.types.js';
 import {
+    assertFeeWithinCeiling,
     assertReturnRoute,
     assertReturnableLot,
     assertRouteStartsAtHub,
@@ -10,6 +11,7 @@ import {
     decodeReturnedUnits,
     describeCapacityRefusal,
     describeLotReturnRevert,
+    parseFeeCeilingWei,
     returnBranchOf,
 } from './lot-return.utils.js';
 import { preparePaidAction } from './paid-action.js';
@@ -22,6 +24,7 @@ import {
     type ITradeClient,
     type LotReturnInput,
     type LotReturnQuote,
+    type LotReturnQuoteInput,
     type LotReturnResult,
     type OnChainLot,
     type ReturnQuoteResult,
@@ -46,9 +49,9 @@ interface PreparedReturn {
 
 /**
  * One seller intent — send a lot's whole unsold remainder home — over the two contract branches that can
- * carry it: `cancel` for an Open lot, `reclaim` for an Evicted one. Both are quoted by `Trade.quoteReturn`
- * and both spend exactly that quote: the fee it names is the ceiling the transaction carries, so a fee that
- * moved since the quote reverts the whole call instead of debiting more than the seller was shown.
+ * carry it: `cancel` for an Open lot, `reclaim` for an Evicted one. Both are priced by `Trade.quoteReturn`
+ * and both carry the ceiling the seller passes in, never a figure this service picked for them: the route is
+ * re-priced on-chain to decide, and a fee that outgrew the seller's ceiling refuses before anything is spent.
  */
 export class LotReturnService implements ILotReturnService {
     private readonly wallet: WalletProvider;
@@ -69,7 +72,7 @@ export class LotReturnService implements ILotReturnService {
         this.logger = options.logger;
     }
 
-    async quoteReturn(input: LotReturnInput): Promise<LotReturnQuote> {
+    async quoteReturn(input: LotReturnQuoteInput): Promise<LotReturnQuote> {
         const prepared = await this.prepare(input);
         const quote = await this.quoteOnChain(prepared);
         const capacity = await this.assessDestination(prepared, quote.amount);
@@ -77,12 +80,14 @@ export class LotReturnService implements ILotReturnService {
     }
 
     async returnLot(input: LotReturnInput): Promise<LotReturnResult> {
+        const maxFee = parseFeeCeilingWei(input.maxTransitFeeWei, input.lotId);
         const prepared = await this.prepare(input);
         const { action, trade, lot, state, lotId, returnTokenIds } = prepared;
         const transport = action.requireContract(AppContract.Transport, 'cannot route goods');
 
         const quote = await this.quoteOnChain(prepared);
         assertWholeRemainder(quote.amount, lot.remaining, input.lotId);
+        assertFeeWithinCeiling(quote.transitFee, maxFee, input.lotId);
 
         const capacity = await this.assessDestination(prepared, quote.amount);
         if (!capacity.fits) {
@@ -90,7 +95,6 @@ export class LotReturnService implements ILotReturnService {
         }
 
         const branch = returnBranchOf(state);
-        const maxFee = quote.transitFee;
         const approveTxHash =
             maxFee === 0n
                 ? null
@@ -104,6 +108,7 @@ export class LotReturnService implements ILotReturnService {
             lotId: input.lotId,
             branch,
             maxFeeWei: maxFee.toString(),
+            quotedFeeWei: quote.transitFee.toString(),
             amount: quote.amount.toString(),
         });
 
@@ -141,7 +146,7 @@ export class LotReturnService implements ILotReturnService {
         };
     }
 
-    private async prepare(input: LotReturnInput): Promise<PreparedReturn> {
+    private async prepare(input: LotReturnQuoteInput): Promise<PreparedReturn> {
         const action = await preparePaidAction({ appConfig: this.appConfig, wallet: this.wallet });
         const trade = action.requireContract(AppContract.Trade, 'cannot return a lot');
         assertReturnRoute(input.chain);
@@ -197,7 +202,8 @@ export class LotReturnService implements ILotReturnService {
             resourceId: prepared.lot.resource,
             amount: quote.amount.toString(),
             destinationTokenId: prepared.destinationTokenId,
-            transitPaid: cpuFromWei(quote.transitFee.toString()),
+            maxTransitFee: cpuFromWei(quote.transitFee.toString()),
+            maxTransitFeeWei: quote.transitFee.toString(),
             transitDiscount: cpuFromWei(quote.transitDiscount.toString()),
             totalDistance: Number(quote.totalDistance),
             arrivalAt: Number(quote.arrivalAt),

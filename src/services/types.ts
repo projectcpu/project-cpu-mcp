@@ -1335,10 +1335,19 @@ export interface EvictLotResult {
     blockNumber: string;
 }
 
-export interface LotReturnInput {
+export interface LotReturnQuoteInput {
     lotId: string;
     /** Waypoint tokenIds, `[hub, …waypoints, sellerDest]` — the seller's explicit route home. */
     chain: Array<number>;
+}
+
+export interface LotReturnInput extends LotReturnQuoteInput {
+    /**
+     * The most transit the seller will pay, in wei, carried over from the quote they were shown. Wei rather
+     * than decimal $CPU so the figure reaches the contract with no parse between the quote and the call:
+     * a ceiling one wei low refuses a return that was never too expensive.
+     */
+    maxTransitFeeWei: string;
 }
 
 /** Whether the whole remainder fits in the destination as it stands right now, reservations included. */
@@ -1357,8 +1366,10 @@ export interface LotReturnQuote {
     /** The whole current remainder — a Lot return never sends part of a lot. */
     amount: string;
     destinationTokenId: string;
-    /** Transit fee actually debited, in $CPU (decimal). */
-    transitPaid: string;
+    /** What the route costs right now and so the ceiling to carry into the return, in $CPU (decimal). */
+    maxTransitFee: string;
+    /** The same ceiling in wei — the figure to hand `cpu_return_lot` unchanged, exact to the last wei. */
+    maxTransitFeeWei: string;
     transitDiscount: string;
     /** Grid steps the route covers end to end. */
     totalDistance: number;

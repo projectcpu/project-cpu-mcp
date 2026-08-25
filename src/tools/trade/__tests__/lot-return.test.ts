@@ -15,7 +15,8 @@ const quote: LotReturnQuote = {
     resourceId: 3,
     amount: '80',
     destinationTokenId: '31',
-    transitPaid: '0.7',
+    maxTransitFee: '0.7',
+    maxTransitFeeWei: '700000000000000000',
     transitDiscount: '0.2',
     totalDistance: 4,
     arrivalAt: 1_700_000_900,
@@ -70,6 +71,13 @@ describe('quote_lot_return tool', () => {
         expect(tool.inputSchema.chain?.safeParse([20, 31]).success).toBe(true);
     });
 
+    it('hands back the wei ceiling to pass on, and says what passing it does', async () => {
+        const out = await quoteTool().handler({ lotId: '7', chain: [20, 31] } as never);
+        const text = out.content[0]?.text ?? '';
+        expect(text).toContain('maxTransitFeeWei=700000000000000000');
+        expect(text).toMatch(/refuses rather than pay more/i);
+    });
+
     it('states the whole remainder, the destination, the fee, the discount, the distance and the ETA', async () => {
         const tool = quoteTool();
         const out = await tool.handler({ lotId: '7', chain: [20, 31] } as never);
@@ -115,8 +123,36 @@ describe('return_lot tool', () => {
         expect(tool.description).toMatch(/session/i);
     });
 
-    it('reads the same lot and explicit full route as the quote', () => {
-        expect(Object.keys(returnTool().inputSchema).sort()).toEqual(['chain', 'lotId']);
+    it('reads the same lot and explicit full route as the quote, plus a required fee ceiling', () => {
+        const schema = returnTool().inputSchema;
+        expect(Object.keys(schema).sort()).toEqual(['chain', 'lotId', 'maxTransitFeeWei']);
+        expect(schema.maxTransitFeeWei?.safeParse(undefined).success).toBe(false);
+        expect(schema.maxTransitFeeWei?.safeParse('700000000000000000').success).toBe(true);
+        expect(schema.maxTransitFeeWei?.safeParse('0.7').success).toBe(false);
+    });
+
+    it('tells the caller where the ceiling comes from and that a stale one is refused', () => {
+        const schema = returnTool().inputSchema;
+        const description = schema.maxTransitFeeWei?.description ?? '';
+        expect(description).toMatch(/cpu_quote_lot_return/);
+        expect(description).toMatch(/wei/i);
+        expect(description).toMatch(/refused/i);
+    });
+
+    it('carries the ceiling the caller passed through to the service', async () => {
+        const seen: Array<unknown> = [];
+        const service = {
+            returnLot: async (args: unknown) => {
+                seen.push(args);
+                return result;
+            },
+        };
+        const tool = captureTool(
+            (server: ToolRegistrar, context: AppContext) => registerReturnLotTool(server, context, service),
+            {},
+        );
+        await tool.handler({ lotId: '7', chain: [20, 31], maxTransitFeeWei: '700000000000000000' } as never);
+        expect(seen[0]).toEqual({ lotId: '7', chain: [20, 31], maxTransitFeeWei: '700000000000000000' });
     });
 
     it('summarizes a cancelled Open lot with the units, the delivery and the fee', async () => {

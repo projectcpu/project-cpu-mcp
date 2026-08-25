@@ -4,6 +4,7 @@ import type {
     ITradeClient,
     LotReturnInput,
     LotReturnQuote,
+    LotReturnQuoteInput,
     LotReturnResult,
 } from './types.js';
 import type { ILogger } from '../logger/types.js';
@@ -22,6 +23,6 @@ export interface LotReturnServiceOptions {
 
 /** One player intent — send a lot's whole remainder home — quoted and then settled. */
 export interface ILotReturnService {
-    quoteReturn(input: LotReturnInput): Promise<LotReturnQuote>;
+    quoteReturn(input: LotReturnQuoteInput): Promise<LotReturnQuote>;
     returnLot(input: LotReturnInput): Promise<LotReturnResult>;
 }

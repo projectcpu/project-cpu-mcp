@@ -26,8 +26,9 @@ export function summarizeLotReturnQuote(quote: LotReturnQuote, resources: Resour
         `${resourceLabel(resources, quote.resourceId)}, from Hub ${quote.hubTokenId} to your cell ` +
         `${quote.destinationTokenId} over ${quote.totalDistance} grid steps, arriving ` +
         `${formatUnixSeconds(quote.arrivalAt)}. Transit fee ` +
-        `${summarizeTransit(quote.transitPaid, quote.transitDiscount)} — cpu_return_lot carries exactly this fee ` +
-        `as its ceiling, so quote it again if you wait. ${describeCapacity(quote)}`
+        `${summarizeTransit(quote.maxTransitFee, quote.transitDiscount)} — pass ` +
+        `maxTransitFeeWei=${quote.maxTransitFeeWei} to cpu_return_lot and it refuses rather than pay more than ` +
+        `this, so quote it again if you wait. ${describeCapacity(quote)}`
     );
 }
 
