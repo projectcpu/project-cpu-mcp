@@ -236,6 +236,7 @@ function catalogScaleConfig(): AppConfig {
 function capture(config: AppConfig): (args: never) => Promise<ToolResult> {
     const context = {
         appConfig: { load: async () => config },
+        tradeRules: { loadLotListingRules: async () => null },
         logger: new NoopLogger(),
     } as unknown as AppContext;
     let captured: ((args: never) => Promise<ToolResult>) | null = null;

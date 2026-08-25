@@ -356,6 +356,18 @@ export const storageConfigSchema = z
         }
     });
 
+/**
+ * Both parameters are surfaced as live rules, so neither may be defaulted: a zero burn and a zero
+ * ceiling are quotable numbers an agent would plan against, and a response without them is a stale
+ * shape, not a network that charges nothing.
+ */
+export const tradeParametersSchema = z.object({
+    saleBurnPercent: z.number(),
+    maxSaleFeeBp: z.number(),
+});
+
+export type TradeParameters = z.infer<typeof tradeParametersSchema>;
+
 export const appConfigResponseSchema = z
     .object({
         network: z.literal(LAUNCH_NETWORK),
@@ -379,10 +391,7 @@ export const appConfigResponseSchema = z
         buildings: z.array(buildingConfigSchema).default([]),
         reveal: z.unknown().nullable().default(null),
         transport: transportRoutingSchema,
-        trade: z
-            .object({ saleBurnPercent: z.number().default(0), maxSaleFeeBp: z.number().default(0) })
-            .passthrough()
-            .default({}),
+        trade: z.unknown(),
     })
     .passthrough();
 
@@ -416,10 +425,16 @@ export interface DeliveriesResponse {
 
 // ---- Trade (lot marketplace) ----
 
-/** Lifecycle of a lot — mirrors the Trade contract, projected by the game API. */
+/**
+ * Lifecycle of a lot as the game API names it. The contract stores the same lifecycle as an ordinal
+ * (`OnChainLotState`); the two representations are converted only through the explicit mapping in
+ * `src/services/trade.helpers.ts`.
+ */
 export enum LotState {
     Delivering = 'delivering',
     Open = 'open',
+    /** Thrown out of its hub: still the seller's goods, unbuyable, and owing a Lot return. */
+    Evicted = 'evicted',
     Sold = 'sold',
     Cancelled = 'cancelled',
 }
@@ -501,8 +516,8 @@ export interface ApiMarketResourceSummary {
     minPricePerUnit: string | null;
     incomingLots: number;
     incomingRemaining: string;
-    frozenLots: number | null;
-    frozenRemaining: string | null;
+    frozenLots: number;
+    frozenRemaining: string;
     distanceFromAnchor: number | null;
 }
 
@@ -514,63 +529,62 @@ export interface MarketResourceSummary {
     minPricePerUnit: string | null;
     incomingLots: number;
     incomingRemaining: string;
-    frozenLots: number | null;
-    frozenRemaining: string | null;
+    frozenLots: number;
+    frozenRemaining: string;
     distanceFromAnchor: number | null;
 }
 
-export const apiLotViewSchema = z
-    .object({
-        id: z.string(),
-        hubTokenId: z.string(),
-        sellerAddress: z.string(),
-        resourceId: z.number(),
-        listed: z.string(),
-        remaining: z.string(),
-        pricePerUnit: z.string(),
-        saleFeeBp: z.number(),
-        maxSaleFeeBp: z.number(),
-        state: z.string(),
-        distanceFromAnchor: z.number().nullable(),
-        createdAt: z.number(),
-        updated: z.number(),
-    })
-    .passthrough();
+/**
+ * Every Trade schema below is strict about what the deployed projection owes: a required field stays
+ * required, a nullable field stays explicitly nullable, and nothing is passed through untouched. An
+ * optional fallback here would let a stale deployment answer a read the MCP then reports as fact.
+ */
+export const apiLotViewSchema = z.object({
+    id: z.string(),
+    hubTokenId: z.string(),
+    sellerAddress: z.string(),
+    resourceId: z.number(),
+    listed: z.string(),
+    remaining: z.string(),
+    pricePerUnit: z.string(),
+    saleFeeBp: z.number(),
+    maxSaleFeeBp: z.number(),
+    state: z.nativeEnum(LotState),
+    distanceFromAnchor: z.number().nullable(),
+    createdAt: z.number(),
+    updated: z.number(),
+});
 
-export const apiMarketResourceSummarySchema = z
-    .object({
-        hubTokenId: z.string(),
-        resourceId: z.number(),
-        openLots: z.number(),
-        openRemaining: z.string(),
-        minPricePerUnit: z.string().nullable(),
-        incomingLots: z.number(),
-        incomingRemaining: z.string(),
-        frozenLots: z.number().nullable().optional(),
-        frozenRemaining: z.string().nullable().optional(),
-        distanceFromAnchor: z.number().nullable(),
-    })
-    .passthrough();
+export const apiMarketResourceSummarySchema = z.object({
+    hubTokenId: z.string(),
+    resourceId: z.number(),
+    openLots: z.number(),
+    openRemaining: z.string(),
+    minPricePerUnit: z.string().nullable(),
+    incomingLots: z.number(),
+    incomingRemaining: z.string(),
+    frozenLots: z.number(),
+    frozenRemaining: z.string(),
+    distanceFromAnchor: z.number().nullable(),
+});
 
-export const apiFillViewSchema = z
-    .object({
-        lotId: z.string(),
-        blockNumber: z.number().int(),
-        logIndex: z.number().int(),
-        transactionHash: z.string(),
-        hubTokenId: z.string(),
-        resourceId: z.number().int(),
-        seller: z.string(),
-        buyer: z.string(),
-        value: z.string(),
-        remaining: z.string(),
-        sale: z.string(),
-        hubFee: z.string(),
-        burn: z.string(),
-        pricePerUnit: z.string(),
-        settledAt: z.number().int(),
-    })
-    .passthrough();
+export const apiFillViewSchema = z.object({
+    lotId: z.string(),
+    blockNumber: z.number().int(),
+    logIndex: z.number().int(),
+    transactionHash: z.string(),
+    hubTokenId: z.string(),
+    resourceId: z.number().int(),
+    seller: z.string(),
+    buyer: z.string(),
+    value: z.string(),
+    remaining: z.string(),
+    sale: z.string(),
+    hubFee: z.string(),
+    burn: z.string(),
+    pricePerUnit: z.string(),
+    settledAt: z.number().int(),
+});
 
 export interface ApiMarketIndexRow {
     resourceId: number;
@@ -598,22 +612,18 @@ export interface MarketIndex {
     resources: Array<MarketIndexRow>;
 }
 
-export const apiMarketIndexRowSchema = z
-    .object({
-        resourceId: z.number().int(),
-        priceCpu: z.string().nullable(),
-        changePct: z.number().nullable(),
-        volume: z.string().nullable(),
-        spark: z.array(z.string().nullable()),
-    })
-    .passthrough();
+export const apiMarketIndexRowSchema = z.object({
+    resourceId: z.number().int(),
+    priceCpu: z.string().nullable(),
+    changePct: z.number().nullable(),
+    volume: z.string().nullable(),
+    spark: z.array(z.string().nullable()),
+});
 
-export const apiMarketIndexSchema = z
-    .object({
-        computedAt: z.number().int(),
-        resources: z.array(apiMarketIndexRowSchema),
-    })
-    .passthrough();
+export const apiMarketIndexSchema = z.object({
+    computedAt: z.number().int(),
+    resources: z.array(apiMarketIndexRowSchema),
+});
 
 // ---- Syndicate registry ----
 

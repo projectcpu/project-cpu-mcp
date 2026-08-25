@@ -1,12 +1,7 @@
+import { EVICTED_LOT_EXPLANATION, EVICTED_LOT_HEADLINE, FROZEN_LOT_RETURN_NOTE } from './constants.js';
 import type { EnrichedMarketSummary } from './types.js';
-import type { FillView, LotView, MarketIndex, MarketIndexRow } from '../../api/types.js';
-import type {
-    BuyLotResult,
-    CancelLotResult,
-    CreateLotResult,
-    SetSaleFeeResult,
-    TradeQuote,
-} from '../../services/types.js';
+import { type FillView, type LotView, type MarketIndex, type MarketIndexRow, LotState } from '../../api/types.js';
+import type { BuyLotResult, CreateLotResult, SetSaleFeeResult, TradeQuote } from '../../services/types.js';
 import { formatUnixSeconds, resourceLabel, summarizeTransit, type ResourceNames } from '../../utils/format.utils.js';
 
 /** Human header for a confirmed `create_lot`. */
@@ -16,7 +11,8 @@ export function summarizeCreateLot(result: CreateLotResult, resources: ResourceN
         `Listed lot ${result.lotId}: ${result.value} ${resourceLabel(resources, result.resourceId)} @ ` +
         `${result.pricePerUnit} $CPU/u at Hub ${result.hubTokenId} (sale-fee tolerance ${result.maxSaleFeePercent}% ` +
         `locked in — the hub settles its live rate on each sale, but if it ever rises above your tolerance the lot ` +
-        `freezes and buys revert until the hub lowers it; cancel_lot is always fee-free and returns the escrow). ` +
+        `freezes and buys revert until the hub lowers it; you can send the remainder home at any time, paying no ` +
+        `sale fee but still paying transit for the route). ` +
         `Escrow shipping to the Hub (delivery ${result.deliveryId}, ETA ${formatUnixSeconds(result.arrivalAt)}); the ` +
         `lot opens once it arrives — run finalize_delivery on ${result.deliveryId} after the ETA (or wait). Transit ` +
         `fee ${summarizeTransit(result.transitPaid, result.transitDiscount)}. ${approve}create tx ${result.txHash} ` +
@@ -51,18 +47,6 @@ export function summarizeBuyLot(result: BuyLotResult, resources: ResourceNames):
         `on the lot. Goods shipping to your cell (delivery ${result.deliveryId}, ETA ` +
         `${formatUnixSeconds(result.arrivalAt)}) — run finalize_delivery on ${result.deliveryId} after the ETA. ` +
         `${approve}buy tx ${result.txHash} in block ${result.blockNumber}.`
-    );
-}
-
-/** Human header for a confirmed `cancel_lot`. */
-export function summarizeCancelLot(result: CancelLotResult, resources: ResourceNames): string {
-    const approve = result.approveTxHash !== null ? `approve tx ${result.approveTxHash}, ` : '';
-    return (
-        `Cancelled lot ${result.lotId}: ${result.returned} ${resourceLabel(resources, result.resourceId)} ` +
-        `returning to you (delivery ${result.deliveryId}, ETA ${formatUnixSeconds(result.arrivalAt)}) — run ` +
-        `finalize_delivery on ${result.deliveryId} after the ETA to reclaim them. Transit fee ` +
-        `${summarizeTransit(result.transitPaid, result.transitDiscount)}. ${approve}cancel tx ${result.txHash} ` +
-        `in block ${result.blockNumber}.`
     );
 }
 
@@ -135,23 +119,27 @@ export function summarizeLots(lots: Array<LotView>, resources: ResourceNames): s
 
 export function summarizeLot(lot: LotView, resources: ResourceNames): string {
     const line = summarizeLotLine(lot, resources);
+    if (lot.state === LotState.Evicted) {
+        return `${line}\n${EVICTED_LOT_EXPLANATION}`;
+    }
     if (!lot.frozen) {
         return line;
     }
     return (
         `${line}\nFrozen: the hub's live sale fee (${lot.saleFeePercent}%) exceeds your tolerance ` +
         `(${lot.maxSaleFeePercent}%), so every buy reverts until the hub owner lowers the rate to your tolerance ` +
-        `or below — or you cancel the lot (fee-free, the escrow returns to you).`
+        `or below — or you send the remainder home. ${FROZEN_LOT_RETURN_NOTE}`
     );
 }
 
 function summarizeLotLine(lot: LotView, resources: ResourceNames): string {
     const dist = lot.distanceFromAnchor !== null ? `, ${lot.distanceFromAnchor} grid steps away` : '';
     const frozen = lot.frozen ? ` · FROZEN (live ${lot.saleFeePercent}% > tolerance ${lot.maxSaleFeePercent}%)` : '';
+    const evicted = lot.state === LotState.Evicted ? ` · ${EVICTED_LOT_HEADLINE}` : '';
     return (
         `lot ${lot.id} [${lot.state}] · ${resourceLabel(resources, lot.resourceId)} · ${lot.remaining}/${lot.listed} ` +
-        `left @ ${lot.pricePerUnit} $CPU/u (sale fee ${lot.saleFeePercent}%)${frozen} · Hub ${lot.hubTokenId}${dist} · ` +
-        `seller ${lot.sellerAddress}`
+        `left @ ${lot.pricePerUnit} $CPU/u (sale fee ${lot.saleFeePercent}%)${frozen}${evicted} · ` +
+        `Hub ${lot.hubTokenId}${dist} · seller ${lot.sellerAddress}`
     );
 }
 

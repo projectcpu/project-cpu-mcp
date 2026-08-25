@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
+import { BuildingType } from '../../../api/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import { MapReadiness, MapScope, type MapQuery, type MapQueryResult, type MapSummary } from '../../../map/types.js';
+import { makeCell, makeResource, makeStorage, projectCell } from '../../../map/__tests__/fixtures.js';
+import {
+    MapReadiness,
+    MapScope,
+    type EnrichedCell,
+    type MapQuery,
+    type MapQueryResult,
+    type MapSummary,
+} from '../../../map/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
+import { GET_MAP_DESCRIPTION } from '../get-map/constants.js';
 import { registerGetMapTool } from '../get-map/get-map.js';
 
 interface ToolResult {
@@ -27,6 +37,7 @@ const SUMMARY: MapSummary = {
 function harness(
     walletReady: boolean,
     address: string | null = '0xMe',
+    cells: MapQueryResult['cells'] = [],
 ): { handler: Handler; queries: Array<MapQuery> } {
     const queries: Array<MapQuery> = [];
     const map = {
@@ -36,8 +47,8 @@ function harness(
                 summary: SUMMARY,
                 scope: query.scope,
                 resourceIndex: null,
-                cells: [],
-                returnedCells: 0,
+                cells,
+                returnedCells: cells.length,
                 note: null,
             };
         },
@@ -109,5 +120,36 @@ describe('get_map tool', () => {
         expect(parsed.summary.totalCells).toBe(3);
         expect(parsed.resourceNames).toEqual({ 3: 'Silica' });
         expect(parsed.server.reachable).toBe(true);
+    });
+
+    it('reports hub storage held by lots as a reservation, never as a marketplace offer', async () => {
+        const hub: EnrichedCell = {
+            ...projectCell(
+                makeCell({
+                    tokenId: '5',
+                    building: { type: BuildingType.Hub, buildFinishAt: 0, modeResource: null, modeRecipeId: null },
+                    resources: [
+                        makeResource({
+                            resourceId: 3,
+                            storage: makeStorage({ used: '40', reserved: { incomingTransport: '0', lots: '40' } }),
+                        }),
+                    ],
+                }),
+            ),
+            pos: { face: 0, i: 0, j: 0 },
+            neighbors: [],
+        };
+        const { handler } = harness(true, '0xMe', [hub]);
+        const result = await handler(NULL_ARGS);
+        const payload = result.content[1]?.text ?? '';
+        expect(payload).toMatch(/"lots":"40"/);
+        for (const offerField of ['pricePerUnit', 'sellerAddress', 'lotId', 'maxSaleFeeBp', 'remaining']) {
+            expect(payload.includes(offerField)).toBe(false);
+        }
+    });
+
+    it('sends the agent to the trade tools for what is actually buyable', async () => {
+        expect(GET_MAP_DESCRIPTION).toMatch(/cpu_list_lots|cpu_get_markets/);
+        expect(GET_MAP_DESCRIPTION).toMatch(/offer/i);
     });
 });

@@ -7,4 +7,6 @@ export const GET_MAP_DESCRIPTION = [
     '= uncapped). Scopes: mine | around',
     '(grid radius from aroundTokenId) | cells | all | summary. version/updated are epoch ms, serverTime/startAt',
     'unix seconds. `server.reachable` false means actions will fail; your to-do list is `cpu_get_attention`.',
+    'This is land and storage, not the marketplace: `storage.reserved.lots` is how much of a hub box lot escrow',
+    'holds, never an offer you can buy. For offers use `cpu_get_markets` and `cpu_list_lots`.',
 ].join(' ');

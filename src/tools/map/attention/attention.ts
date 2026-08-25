@@ -1,6 +1,8 @@
-import { GET_ATTENTION_DESCRIPTION } from './constants.js';
+import { EVICTED_COUNT_UNREACHABLE_NOTE, GET_ATTENTION_DESCRIPTION, LOT_RETURN_COST_NOTE } from './constants.js';
+import { createEvictedLotCountService } from './evicted.service.js';
+import { evictedAttentionItems, liveHubTokenIds } from './evicted.utils.js';
 import { warehousePressurePanel } from './panel.utils.js';
-import { getAttentionInputSchema } from './types.js';
+import { getAttentionInputSchema, type IEvictedLotCounts } from './types.js';
 import { LotState, type LotView } from '../../../api/types.js';
 import { attentionItem, meetsSeverity, revealAttentionItems, withExtraItems } from '../../../map/attention.utils.js';
 import { type AttentionItem, AttentionReason } from '../../../map/types.js';
@@ -35,7 +37,7 @@ function lotItem(lot: LotView): AttentionItem | null {
             message:
                 `Frozen: the hub's live sale fee (${lot.saleFeePercent}%) exceeds your tolerance ` +
                 `(${lot.maxSaleFeePercent}%); buys revert until the hub lowers the rate to your tolerance or below. ` +
-                `Cancel is fee-free.`,
+                LOT_RETURN_COST_NOTE,
         });
     }
     if (lot.saleFeePercent === lot.maxSaleFeePercent) {
@@ -44,14 +46,17 @@ function lotItem(lot: LotView): AttentionItem | null {
             lotId: lot.id,
             message:
                 `At risk: the hub's live sale fee (${lot.saleFeePercent}%) sits at your tolerance ` +
-                `(${lot.maxSaleFeePercent}%); the next hike freezes this lot and buys would revert. Cancel stays ` +
-                `fee-free.`,
+                `(${lot.maxSaleFeePercent}%); the next hike freezes this lot and buys would revert. ` +
+                LOT_RETURN_COST_NOTE,
         });
     }
     return null;
 }
 
 export function registerGetAttentionTool(server: ToolRegistrar, context: AppContext): void {
+    // Built on first use, not at registration: registration runs before the process has a wallet or a
+    // chain client, and nothing here may depend on either being live that early.
+    let evictedCounts: IEvictedLotCounts | null = null;
     server.registerTool(
         'cpu_get_attention',
         { description: GET_ATTENTION_DESCRIPTION, inputSchema: getAttentionInputSchema },
@@ -78,12 +83,18 @@ export function registerGetAttentionTool(server: ToolRegistrar, context: AppCont
 
                 if (!scouting) {
                     try {
-                        const lots = await context.trade.listMyLots(LotState.Open);
+                        const lots = await context.trade.listMyLots(null);
                         for (const lot of lots) {
                             const item = lotItem(lot);
                             if (item !== null) {
                                 extraItems.push(item);
                             }
+                        }
+                        evictedCounts ??= createEvictedLotCountService(context);
+                        const counts = await evictedCounts.forHubs(liveHubTokenIds(lots));
+                        extraItems.push(...evictedAttentionItems(lots, counts));
+                        if (counts.some((entry) => entry.count === null)) {
+                            notes.push(EVICTED_COUNT_UNREACHABLE_NOTE);
                         }
                     } catch (error) {
                         context.logger.warn('attention: lots fetch failed', { error: errorMessage(error) });

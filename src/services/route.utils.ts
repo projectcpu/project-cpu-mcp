@@ -1,3 +1,5 @@
+import { formatEther, parseEther } from 'viem';
+
 import { INCOMPLETE_SNAPSHOT_MESSAGE, UNREADABLE_ROWS_MESSAGE, UNREADABLE_UPDATES_MESSAGE } from './route.constants.js';
 import { BuildingKind } from '../api/types.js';
 import { neighbors } from '../geometry/adjacency.js';
@@ -384,6 +386,58 @@ export function endpointRefusal(
         );
     }
     return null;
+}
+
+/** A waypoint plus what it charges today — everything the historical source needs from the live map. */
+export interface HistoricalSourceCell extends WaypointCell {
+    transitFeeOverrides: Record<number, string> | null;
+}
+
+/**
+ * The listed hub of an Evicted lot, admitted as a source on the reach the lot recorded. Every other fact is
+ * read off the live map, so the node never claims a building or an owner that is no longer there.
+ */
+export function historicalSourceNode(
+    tokenId: string,
+    cell: HistoricalSourceCell | null,
+    address: string,
+    listedRadius: number,
+): RouteNode {
+    if (cell === null) {
+        return { tokenId, isOwn: false, isHub: false, isVirgin: true, radius: listedRadius };
+    }
+    return {
+        tokenId,
+        isOwn: cell.owner.toLowerCase() === address,
+        isHub: cell.activeHub,
+        isVirgin: isVirginCell(cell),
+        radius: listedRadius,
+    };
+}
+
+/**
+ * What the cell charges for passage today. Nothing stands there any more — no live rate at all, which is a
+ * different answer from a free one: the lot's own recorded rate is then what the return is measured against.
+ */
+export function liveSourceRate(
+    cell: HistoricalSourceCell | null,
+    isOwn: boolean,
+    resourceId: number,
+    floors: Record<number, string>,
+): string | null {
+    if (cell === null || !cell.activeHub) {
+        return null;
+    }
+    return isOwn ? '0' : effectiveTransitFee(cell.transitFeeOverrides, resourceId, floors);
+}
+
+/**
+ * The rate the source contributes: never above what the lot recorded, and lower where the hub standing there
+ * today asks less. Compared in wei, because two decimal strings do not order correctly as text.
+ */
+export function cheaperTransitRate(listedWei: bigint, live: string | null): string {
+    const liveWei = live === null ? null : parseEther(live);
+    return formatEther(liveWei !== null && liveWei < listedWei ? liveWei : listedWei);
 }
 
 /** Tells a half-loaded map apart from one whose rows this client could not read — the remedies differ. */

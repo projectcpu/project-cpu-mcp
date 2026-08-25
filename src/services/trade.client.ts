@@ -6,11 +6,23 @@ import type {
     BuyQuoteResult,
     CancelLotParams,
     CreateLotParams,
+    EvictLotParams,
+    GetLotParams,
+    GetLotsParams,
     GetSaleFeeParams,
+    GetTradeConfigParams,
     ITradeClient,
+    LotBoundParams,
+    OnChainLot,
+    OnChainTradeConfig,
     QuoteBuyParams,
+    QuoteReturnParams,
     QuoteSaleParams,
+    ReclaimLotParams,
+    ReturnQuoteResult,
     SaleQuoteResult,
+    SellerEvictedCountParams,
+    SellerLotCountParams,
     SetSaleFeeParams,
     TradeClientOptions,
 } from './types.js';
@@ -73,6 +85,26 @@ export class TradeClient implements ITradeClient {
         return this.contracts.send({ to: params.trade, data, value: null, gas: null }, TRADE_ABI);
     }
 
+    async reclaim(params: ReclaimLotParams): Promise<Hash> {
+        const data = encodeFunctionData({
+            abi: TRADE_ABI,
+            functionName: 'reclaim',
+            args: [params.lotId, params.returnTokenIds, params.maxFee],
+        });
+        this.logger.info('submitting reclaim lot', {
+            trade: params.trade,
+            lotId: params.lotId.toString(),
+            maxFeeWei: params.maxFee.toString(),
+        });
+        return this.contracts.send({ to: params.trade, data, value: null, gas: null }, TRADE_ABI);
+    }
+
+    async evict(params: EvictLotParams): Promise<Hash> {
+        const data = encodeFunctionData({ abi: TRADE_ABI, functionName: 'evict', args: [params.lotId] });
+        this.logger.info('submitting evict lot', { trade: params.trade, lotId: params.lotId.toString() });
+        return this.contracts.send({ to: params.trade, data, value: null, gas: null }, TRADE_ABI);
+    }
+
     async setSaleFee(params: SetSaleFeeParams): Promise<Hash> {
         const data = encodeFunctionData({
             abi: TRADE_ABI,
@@ -96,6 +128,82 @@ export class TradeClient implements ITradeClient {
             args: [params.hub, params.res],
         });
         return Number(feeBp);
+    }
+
+    async getLot(params: GetLotParams): Promise<OnChainLot> {
+        return this.contracts.read<OnChainLot>({
+            address: params.trade,
+            abi: TRADE_ABI,
+            functionName: 'getLot',
+            args: [params.lotId],
+        });
+    }
+
+    async getLots(params: GetLotsParams): Promise<Array<OnChainLot>> {
+        return this.contracts.read<Array<OnChainLot>>({
+            address: params.trade,
+            abi: TRADE_ABI,
+            functionName: 'getLots',
+            args: [params.lotIds],
+        });
+    }
+
+    async getConfig(params: GetTradeConfigParams): Promise<OnChainTradeConfig> {
+        return this.contracts.read<OnChainTradeConfig>({
+            address: params.trade,
+            abi: TRADE_ABI,
+            functionName: 'getConfig',
+            args: [],
+        });
+    }
+
+    async getMinLotValue(params: LotBoundParams): Promise<bigint> {
+        return this.contracts.read<bigint>({
+            address: params.trade,
+            abi: TRADE_ABI,
+            functionName: 'getMinLotValue',
+            args: [params.hub, params.res],
+        });
+    }
+
+    async getMaxLotValue(params: LotBoundParams): Promise<bigint> {
+        return this.contracts.read<bigint>({
+            address: params.trade,
+            abi: TRADE_ABI,
+            functionName: 'getMaxLotValue',
+            args: [params.hub, params.res],
+        });
+    }
+
+    async getSellerLotCount(params: SellerLotCountParams): Promise<bigint> {
+        return this.contracts.read<bigint>({
+            address: params.trade,
+            abi: TRADE_ABI,
+            functionName: 'getSellerLotCount',
+            args: [params.seller, params.hub, params.res],
+        });
+    }
+
+    async getSellerEvictedCount(params: SellerEvictedCountParams): Promise<bigint> {
+        return this.contracts.read<bigint>({
+            address: params.trade,
+            abi: TRADE_ABI,
+            functionName: 'getSellerEvictedCount',
+            args: [params.seller, params.hub],
+        });
+    }
+
+    async quoteReturn(params: QuoteReturnParams): Promise<ReturnQuoteResult> {
+        try {
+            return await this.contracts.read<ReturnQuoteResult>({
+                address: params.trade,
+                abi: TRADE_ABI,
+                functionName: 'quoteReturn',
+                args: [params.lotId, params.returnTokenIds, params.seller],
+            });
+        } catch (error) {
+            throw namedQuoteRevert(error);
+        }
     }
 
     async quoteSale(params: QuoteSaleParams): Promise<SaleQuoteResult> {

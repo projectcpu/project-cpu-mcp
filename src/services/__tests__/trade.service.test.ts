@@ -21,6 +21,7 @@ import {
     LotState,
 } from '../../api/types.js';
 import { TRADE_ABI } from '../../contracts/trade.abi.js';
+import { OnChainLotState } from '../../contracts/trade.types.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import {
     type ConfirmedTx,
@@ -35,16 +36,28 @@ import type {
     BuyQuoteResult,
     CancelLotParams,
     CreateLotParams,
+    EvictLotParams,
     FinalizeParams,
+    GetLotParams,
+    GetLotsParams,
     GetSaleFeeParams,
+    GetTradeConfigParams,
     ITradeClient,
     ITransportClient,
+    LotBoundParams,
     MoveParams,
+    OnChainLot,
+    OnChainTradeConfig,
     QuoteBuyParams,
+    QuoteReturnParams,
     QuoteRouteParams,
     QuoteSaleParams,
+    ReclaimLotParams,
+    ReturnQuoteResult,
     RouteQuote,
     SaleQuoteResult,
+    SellerEvictedCountParams,
+    SellerLotCountParams,
     SetSaleFeeParams,
 } from '../types.js';
 import {
@@ -77,6 +90,8 @@ const CREATE_HASH = `0x${'1'.repeat(64)}` as Hash;
 const BUY_HASH = `0x${'2'.repeat(64)}` as Hash;
 const CANCEL_HASH = `0x${'3'.repeat(64)}` as Hash;
 const SET_FEE_HASH = `0x${'4'.repeat(64)}` as Hash;
+const RECLAIM_HASH = `0x${'5'.repeat(64)}` as Hash;
+const EVICT_HASH = `0x${'6'.repeat(64)}` as Hash;
 
 const CREATE_INPUT = {
     chain: [72, 73],
@@ -114,8 +129,8 @@ function marketRow(over: Partial<ApiMarketResourceSummary> = {}): ApiMarketResou
         minPricePerUnit: '0.5',
         incomingLots: 0,
         incomingRemaining: '0',
-        frozenLots: null,
-        frozenRemaining: null,
+        frozenLots: 0,
+        frozenRemaining: '0',
         distanceFromAnchor: null,
         ...over,
     };
@@ -366,6 +381,30 @@ class FakeTradeClient implements ITradeClient {
     public readonly saleFeeReads: Array<GetSaleFeeParams> = [];
     public readonly saleQuotes: Array<QuoteSaleParams> = [];
     public readonly buyQuotes: Array<QuoteBuyParams> = [];
+    public readonly reclaims: Array<ReclaimLotParams> = [];
+    public readonly evictions: Array<EvictLotParams> = [];
+    public readonly lotReads: Array<GetLotParams> = [];
+    public readonly returnQuotes: Array<QuoteReturnParams> = [];
+    private readonly onChainLot: OnChainLot = {
+        seller: WALLET_ADDRESS,
+        hub: 20n,
+        resource: 3,
+        remaining: 100n,
+        pricePerUnit: parseEther('0.5'),
+        state: OnChainLotState.Open,
+        maxSaleFeeBp: 5000,
+        hubRadius: 5,
+        hubMoveFee: 0n,
+    };
+    private readonly tradeConfig: OnChainTradeConfig = {
+        minPricePerUnit: 0n,
+        saleBurnPercent: 1,
+        minLotShareBp: 10,
+        maxLotShareBp: 200,
+        maxLotsPerSellerResource: 5,
+        minUncappedLotValue: 10_000n,
+        maxUncappedLotValue: 100_000n,
+    };
     constructor(
         private readonly liveSaleFeeBp: number = 0,
         private readonly createError: Error | null = null,
@@ -413,6 +452,40 @@ class FakeTradeClient implements ITradeClient {
             throw this.quoteError;
         }
         return this.buyQuote;
+    }
+    async reclaim(p: ReclaimLotParams): Promise<Hash> {
+        this.reclaims.push(p);
+        return RECLAIM_HASH;
+    }
+    async evict(p: EvictLotParams): Promise<Hash> {
+        this.evictions.push(p);
+        return EVICT_HASH;
+    }
+    async getLot(p: GetLotParams): Promise<OnChainLot> {
+        this.lotReads.push(p);
+        return this.onChainLot;
+    }
+    async getLots(p: GetLotsParams): Promise<Array<OnChainLot>> {
+        return p.lotIds.map(() => this.onChainLot);
+    }
+    async getConfig(_p: GetTradeConfigParams): Promise<OnChainTradeConfig> {
+        return this.tradeConfig;
+    }
+    async getMinLotValue(_p: LotBoundParams): Promise<bigint> {
+        return 0n;
+    }
+    async getMaxLotValue(_p: LotBoundParams): Promise<bigint> {
+        return 0n;
+    }
+    async getSellerLotCount(_p: SellerLotCountParams): Promise<bigint> {
+        return 0n;
+    }
+    async getSellerEvictedCount(_p: SellerEvictedCountParams): Promise<bigint> {
+        return 0n;
+    }
+    async quoteReturn(p: QuoteReturnParams): Promise<ReturnQuoteResult> {
+        this.returnQuotes.push(p);
+        return { transitFee: 0n, transitDiscount: 0n, totalDistance: 0n, arrivalAt: 0n, amount: 0n };
     }
 }
 
@@ -753,7 +826,7 @@ describe('TradeService.buyLot', () => {
         });
 
         await expect(h.service.buyLot({ lotId: '7', chain: [20, 21], value: '10' })).rejects.toThrow(
-            /this lot is frozen.*seller can\s+cancel the lot fee-free/is,
+            /this lot is frozen.*seller can\s+send the remainder home.*paying no sale fee but still paying transit/is,
         );
         expect(h.tradeClient.buys).toHaveLength(1);
     });
@@ -929,14 +1002,14 @@ describe('TradeService.quoteBuy', () => {
         );
     });
 
-    it('names a foreign frozen hub on the route from a bubbled transport revert', async () => {
+    it('names an unroutable hub on the route from a bubbled transport revert', async () => {
         const h = makeTrade({
             response: { status: 200, data: lotView({ id: '7', remaining: '100' }) },
             tradeQuoteError: new Error('Quote reverted: NotEligibleWaypoint()'),
         });
 
         await expect(h.service.quoteBuy({ lotId: '7', value: '10', chain: [20, 75] })).rejects.toThrow(
-            /foreign frozen hub blocks the path/,
+            /cannot serve as a live node right now/,
         );
     });
 });
@@ -1029,14 +1102,11 @@ describe('TradeService reads', () => {
         expect(rows[0]?.frozenRemaining).toBe('40');
     });
 
-    it('getMarkets normalises absent frozen aggregates to null (server has not shipped them)', async () => {
+    it('getMarkets rejects a market row missing the frozen aggregates — the deployed projection always serves them', async () => {
         const { frozenLots: _f, frozenRemaining: _r, ...noFrozen } = marketRow();
         const h = makeTrade({ response: { status: 200, data: [noFrozen] } });
 
-        const rows = await h.service.getMarkets({ ...MARKETS_QUERY });
-
-        expect(rows[0]?.frozenLots).toBeNull();
-        expect(rows[0]?.frozenRemaining).toBeNull();
+        await expect(h.service.getMarkets({ ...MARKETS_QUERY })).rejects.toThrow();
     });
 });
 

@@ -25,6 +25,23 @@ export const transportInputSchema = {
         .describe('Units to move, as a positive integer string (matches on-map resource balances).'),
 };
 
+/**
+ * The Lot return context, shared by both route actions. Naming a lot switches the plan to that lot's way
+ * home; leaving it null keeps ordinary planning, exception and all.
+ */
+const lotReturnContextSchema = z
+    .string()
+    .regex(/^\d+$/)
+    .nullable()
+    .default(null)
+    .describe(
+        'Optional lot id — plan the way home for this lot instead of an ordinary shipment. For an Evicted ' +
+            'lot the source is the hub it was listed on, admitted from the lot itself with the reach and the ' +
+            'rate recorded there, so the plan survives that hub being demolished, rebuilt or sold. Nothing ' +
+            'after the source changes: the destination is still your own revealed cell and every waypoint ' +
+            'follows the ordinary rules. Verify the chain with cpu_quote_lot_return.',
+    );
+
 export const routeNetworkInputSchema = {
     from: tokenIdSchema.describe(
         'Source cell tokenId — where the cargo stands now. Must be your own cell past its first completed ' +
@@ -45,6 +62,7 @@ export const routeNetworkInputSchema = {
             'Units to move, as a positive integer string (matches on-map resource balances). Carried through ' +
                 'the graph and into the prefilled quote call unchanged.',
         ),
+    lotId: lotReturnContextSchema,
 };
 
 export const nextHopsInputSchema = {
@@ -60,6 +78,7 @@ export const nextHopsInputSchema = {
         .nullable()
         .default(null)
         .describe('Optional destination — adds the remaining grid distance to it for each candidate (a compass).'),
+    lotId: lotReturnContextSchema,
 };
 
 export const getTransportStatusInputSchema = {

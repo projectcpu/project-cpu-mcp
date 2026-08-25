@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
+import { LotState } from '../../../api/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
-import { NEXT_HOPS_NOTE } from '../../../services/route.constants.js';
+import { LOT_RETURN_NEXT_HOPS_NOTE, NEXT_HOPS_NOTE } from '../../../services/route.constants.js';
+import {
+    RouteSourcePolicy,
+    type LotReturnPlanView,
+    type LotReturnRouteContext,
+    type PlannedNextHopsResult,
+} from '../../../services/route.types.js';
 import { hopReachLimit, type RouteNode } from '../../../services/route.utils.js';
-import type { NextHopsResult, NextHopView } from '../../../services/types.js';
+import type { NextHopView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { NEXT_HOPS_DESCRIPTION } from '../constants.js';
@@ -17,7 +25,7 @@ interface ToolResult {
 
 const NOTE = 'Chain hops yourself.';
 
-function capture(result: NextHopsResult): (args: never) => Promise<ToolResult> {
+function capture(result: PlannedNextHopsResult): (args: never) => Promise<ToolResult> {
     const route = { nextHops: async () => result };
     const context = { route, logger: new NoopLogger() } as unknown as AppContext;
     let captured: ((args: never) => Promise<ToolResult>) | null = null;
@@ -50,7 +58,7 @@ function hop(overrides: Partial<NextHopView> = {}): NextHopView {
     };
 }
 
-function nextHopsResult(overrides: Partial<NextHopsResult> = {}): NextHopsResult {
+function nextHopsResult(overrides: Partial<PlannedNextHopsResult> = {}): PlannedNextHopsResult {
     return {
         from: '72',
         fromIsHub: false,
@@ -61,11 +69,27 @@ function nextHopsResult(overrides: Partial<NextHopsResult> = {}): NextHopsResult
         targetDistance: null,
         hops: [hop()],
         note: NOTE,
+        lotReturn: null,
         ...overrides,
     };
 }
 
-async function summaryOf(result: NextHopsResult): Promise<string> {
+function lotReturnPlan(): LotReturnPlanView {
+    return {
+        lotId: '77',
+        lotState: LotState.Evicted,
+        sourcePolicy: RouteSourcePolicy.HistoricalHub,
+        historicalSource: {
+            tokenId: '72',
+            radius: 13,
+            listedTransitFeePerUnit: '0.4',
+            liveTransitFeePerUnit: null,
+            transitFeePerUnit: '0.4',
+        },
+    };
+}
+
+async function summaryOf(result: PlannedNextHopsResult): Promise<string> {
     const handler = capture(result);
     const out = await handler({ from: 72, resourceId: 3, towards: null } as never);
     return out.content[0]?.text ?? '';
@@ -150,7 +174,7 @@ describe('next_hops candidate listing', () => {
 
         const out = await handler({ from: 72, resourceId: 3, towards: null } as never);
         const summary = out.content[0]?.text ?? '';
-        const payload = JSON.parse(out.content[1]?.text ?? '{}') as NextHopsResult;
+        const payload = JSON.parse(out.content[1]?.text ?? '{}') as PlannedNextHopsResult;
 
         expect(payload.hops).toHaveLength(hops.length);
         expect(summary).toContain(`${hops.length} legal next hop(s)`);
@@ -191,6 +215,67 @@ describe('next_hops fee documentation', () => {
     });
 });
 
+describe('next_hops Lot return context', () => {
+    function recording(result: PlannedNextHopsResult): {
+        handler: (args: never) => Promise<ToolResult>;
+        seen: Array<LotReturnRouteContext | null>;
+    } {
+        const seen: Array<LotReturnRouteContext | null> = [];
+        const route = {
+            nextHops: async (_input: unknown, lotReturn: LotReturnRouteContext | null = null) => {
+                seen.push(lotReturn);
+                return result;
+            },
+        };
+        const context = { route, logger: new NoopLogger() } as unknown as AppContext;
+        let captured: ((args: never) => Promise<ToolResult>) | null = null;
+        const server = {
+            registerTool(_name: string, _def: unknown, handler: (args: never) => Promise<ToolResult>): void {
+                captured = handler;
+            },
+        } as unknown as ToolRegistrar;
+        registerNextHopsTool(server, context);
+        if (captured === null) {
+            throw new Error('tool was not registered');
+        }
+        return { handler: captured, seen };
+    }
+
+    it('accepts an optional lot id and leaves ordinary surveys without one', () => {
+        const schema = z.object(nextHopsInputSchema);
+
+        expect(schema.parse({ from: 72, resourceId: 3 })).toMatchObject({ lotId: null });
+        expect(schema.parse({ from: 72, resourceId: 3, lotId: '77' })).toMatchObject({ lotId: '77' });
+    });
+
+    it('forwards the lot as the return context, and forwards nothing when none was given', async () => {
+        const plain = recording(nextHopsResult());
+        await plain.handler({ from: 72, resourceId: 3, towards: null, lotId: null } as never);
+        expect(plain.seen).toEqual([null]);
+
+        const returning = recording(nextHopsResult({ lotReturn: lotReturnPlan(), note: LOT_RETURN_NEXT_HOPS_NOTE }));
+        await returning.handler({ from: 72, resourceId: 3, towards: null, lotId: '77' } as never);
+        expect(returning.seen).toEqual([{ lotId: '77' }]);
+    });
+
+    it('says the origin was admitted from the lot, and sends the chain to the Lot return quote', async () => {
+        const summary = await summaryOf(
+            nextHopsResult({ lotReturn: lotReturnPlan(), fromRadius: 13, note: LOT_RETURN_NEXT_HOPS_NOTE }),
+        );
+
+        expect(summary).toContain('lot 77');
+        expect(summary).toMatch(/listed hub/i);
+        expect(summary).toContain('cpu_quote_lot_return');
+    });
+
+    it('says nothing about a lot when the survey carries no return plan', async () => {
+        const summary = await summaryOf(nextHopsResult());
+
+        expect(summary).not.toMatch(/lot 77/);
+        expect(summary).not.toMatch(/listed hub/i);
+    });
+});
+
 describe('next_hops strings name the fields the payload really carries', () => {
     function backtickedNames(text: string): Array<string> {
         return [...text.matchAll(/`([A-Za-z][A-Za-z0-9]*)`/g)].map((match) => match[1] ?? '');
@@ -216,6 +301,7 @@ describe('next_hops strings name the fields the payload really carries', () => {
 
     it.each([
         ['the note returned in the payload', NEXT_HOPS_NOTE],
+        ['the note returned in Lot return context', LOT_RETURN_NEXT_HOPS_NOTE],
         ['the tool description', NEXT_HOPS_DESCRIPTION],
     ])('%s points at no field the answer does not carry', (_name, text) => {
         const served = servedNames();
@@ -227,6 +313,7 @@ describe('next_hops strings name the fields the payload really carries', () => {
 
     it.each([
         ['the note returned in the payload', NEXT_HOPS_NOTE],
+        ['the note returned in Lot return context', LOT_RETURN_NEXT_HOPS_NOTE],
         ['the tool description', NEXT_HOPS_DESCRIPTION],
     ])('%s names the origin reach and the candidate reach by their own field names', (_name, text) => {
         const result = nextHopsResult();

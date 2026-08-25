@@ -1,6 +1,12 @@
+import { formatEther } from 'viem';
+
 import { defaultRouteGraphDirectory, writeRouteGraph } from './route.artifact.js';
 import {
     DISTANCE_SCAN_CAP,
+    LOT_RETURN_GRAPH_INSTRUCTIONS,
+    LOT_RETURN_NETWORK_NOTE,
+    LOT_RETURN_NEXT_HOPS_NOTE,
+    LOT_RETURN_QUOTE_TOOL_NAME,
     NEXT_HOPS_NOTE,
     QUOTE_TOOL_NAME,
     ROUTE_AMOUNT_PATTERN,
@@ -8,10 +14,25 @@ import {
     ROUTE_GRAPH_SCHEMA_VERSION,
     ROUTE_NETWORK_NOTE,
 } from './route.constants.js';
+import { createLotSnapshots } from './route.lots.js';
 import {
+    RouteSourcePolicy,
+    type ILotSnapshots,
+    type LotReturnPlan,
+    type LotReturnRouteContext,
+    type PlannedNextHopsResult,
+    type PlannedQuoteCallView,
+    type PlannedRouteGraphArtifact,
+    type PlannedRouteNetworkResult,
+    type PlannedRouteRequestView,
+} from './route.types.js';
+import {
+    cheaperTransitRate,
     distancesFrom,
     endpointRefusal,
+    historicalSourceNode,
     incompleteSnapshotMessage,
+    liveSourceRate,
     radiusPolicy,
     reachableWaypoints,
     relevantSubgraph,
@@ -25,20 +46,17 @@ import {
     type NodeResolver,
     type RouteNode,
 } from './route.utils.js';
+import { lotStateFromChain } from './trade.helpers.js';
 import type {
     AppConfig,
     IAppConfig,
     NextHopsInput,
-    NextHopsResult,
     NextHopView,
     RouteCellReader,
-    RouteGraphArtifact,
     RouteNetworkInput,
-    RouteNetworkResult,
-    RouteRequestView,
     RouteServiceOptions,
 } from './types.js';
-import { BuildingKind } from '../api/types.js';
+import { BuildingKind, LotState, type TransportRoutingView } from '../api/types.js';
 import { parseTokenId, tokenIdToPos } from '../geometry/token.utils.js';
 import type { ILogger } from '../logger/types.js';
 import type { Cell, RoutingSnapshot } from '../map/types.js';
@@ -51,16 +69,21 @@ export class RouteService {
     private readonly mapReader: RouteCellReader;
     private readonly logger: ILogger;
     private readonly artifactDirectory: string;
+    private readonly lots: ILotSnapshots;
 
-    constructor(options: RouteServiceOptions) {
+    constructor(options: RouteServiceOptions, lots: ILotSnapshots | null = null) {
         this.wallet = options.wallet;
         this.appConfig = options.appConfig;
         this.mapReader = options.mapReader;
         this.logger = options.logger;
         this.artifactDirectory = options.artifactDirectory ?? defaultRouteGraphDirectory();
+        this.lots = lots ?? createLotSnapshots(options.appConfig, options.wallet, options.logger);
     }
 
-    async nextHops(input: NextHopsInput): Promise<NextHopsResult> {
+    async nextHops(
+        input: NextHopsInput,
+        lotReturn: LotReturnRouteContext | null = null,
+    ): Promise<PlannedNextHopsResult> {
         const from = String(parseTokenId(input.from));
         const towards = input.towards === null ? null : String(parseTokenId(input.towards));
         if (from === towards) {
@@ -79,7 +102,8 @@ export class RouteService {
         const nodes = waypointNodes(snapshot.cells, address, policy);
         const resolve = waypointResolver(nodes, new Set(cellsByToken.keys()), policy);
 
-        const fromNode = this.assertEligible(from, resolve, cellsByToken, config);
+        const plan = await this.planLotReturn(lotReturn, from, address, cellsByToken, input.resourceId, routing);
+        const fromNode = plan?.sourceNode ?? this.assertEligible(from, resolve, cellsByToken, config);
         const fromCell = cellsByToken.get(from) ?? null;
 
         const reachable = reachableWaypoints(fromNode, resolve, widestReach(nodes, policy));
@@ -132,11 +156,15 @@ export class RouteService {
             towards,
             targetDistance,
             hops,
-            note: NEXT_HOPS_NOTE,
+            note: plan === null ? NEXT_HOPS_NOTE : LOT_RETURN_NEXT_HOPS_NOTE,
+            lotReturn: plan === null ? null : plan.view,
         };
     }
 
-    async network(input: RouteNetworkInput): Promise<RouteNetworkResult> {
+    async network(
+        input: RouteNetworkInput,
+        lotReturn: LotReturnRouteContext | null = null,
+    ): Promise<PlannedRouteNetworkResult> {
         const from = String(parseTokenId(input.from));
         const towards = String(parseTokenId(input.towards));
         if (from === towards) {
@@ -153,19 +181,27 @@ export class RouteService {
         const snapshot = await this.mapReader.routingSnapshot();
         this.assertComplete(snapshot);
         const cellsByToken = new Map(snapshot.cells.map((cell): [string, Cell] => [cell.tokenId, cell]));
-        this.assertEndpoint(from, RouteEndpointRole.Source, cellsByToken, address);
+        const plan = await this.planLotReturn(lotReturn, from, address, cellsByToken, input.resourceId, routing);
+        if (plan?.sourceNode == null) {
+            this.assertEndpoint(from, RouteEndpointRole.Source, cellsByToken, address);
+        }
         this.assertEndpoint(towards, RouteEndpointRole.Target, cellsByToken, address);
 
         const nodes = routeGraphNodes(snapshot.cells, address, policy);
+        if (plan?.sourceNode != null) {
+            nodes.set(from, plan.sourceNode);
+        }
         const graph = relevantSubgraph(nodes, routeGraphEdges(nodes, policy), from, towards);
 
-        const request: RouteRequestView = {
+        const request: PlannedRouteRequestView = {
             from,
             towards,
             resourceId: input.resourceId,
             amount: input.amount,
+            lotReturn: plan === null ? null : plan.view,
         };
-        const artifact: RouteGraphArtifact = {
+        const historicalFee = plan?.view.historicalSource?.transitFeePerUnit ?? null;
+        const artifact: PlannedRouteGraphArtifact = {
             schemaVersion: ROUTE_GRAPH_SCHEMA_VERSION,
             snapshotVersion: snapshot.version,
             request,
@@ -179,12 +215,15 @@ export class RouteService {
                     isOwn: node.isOwn,
                     isHub: node.isHub,
                     radius: node.radius,
-                    transitFeePerUnit: waypointTransitFee(
-                        node,
-                        cell === null ? null : cell.transitFeeOverrides,
-                        input.resourceId,
-                        routing.moveFeeFloors,
-                    ),
+                    transitFeePerUnit:
+                        historicalFee !== null && node.tokenId === from
+                            ? historicalFee
+                            : waypointTransitFee(
+                                  node,
+                                  cell === null ? null : cell.transitFeeOverrides,
+                                  input.resourceId,
+                                  routing.moveFeeFloors,
+                              ),
                 };
             }),
             edges: graph.edges,
@@ -205,12 +244,93 @@ export class RouteService {
             connected: artifact.connected,
             nodeCount: artifact.nodes.length,
             edgeCount: artifact.edges.length,
-            instructions: ROUTE_GRAPH_INSTRUCTIONS,
-            quoteTemplate: {
+            instructions: plan === null ? ROUTE_GRAPH_INSTRUCTIONS : LOT_RETURN_GRAPH_INSTRUCTIONS,
+            quoteTemplate: this.quoteTemplate(input, plan),
+            note: plan === null ? ROUTE_NETWORK_NOTE : LOT_RETURN_NETWORK_NOTE,
+        };
+    }
+
+    private quoteTemplate(input: RouteNetworkInput, plan: LotReturnPlan | null): PlannedQuoteCallView {
+        if (plan === null) {
+            return {
                 tool: QUOTE_TOOL_NAME,
                 arguments: { path: [], resourceId: input.resourceId, amount: input.amount },
+            };
+        }
+        return { tool: LOT_RETURN_QUOTE_TOOL_NAME, arguments: { lotId: plan.view.lotId, chain: [] } };
+    }
+
+    /**
+     * The whole historical exception, in one place: it needs a Lot return context, an Evicted lot of the
+     * caller's, and it admits nothing but that lot's own listed hub. Every other node the graph and the
+     * survey build afterwards is judged on today's map, which is why this returns a source and nothing else.
+     */
+    private async planLotReturn(
+        context: LotReturnRouteContext | null,
+        from: string,
+        address: string,
+        cells: Map<string, Cell>,
+        resourceId: number,
+        routing: TransportRoutingView,
+    ): Promise<LotReturnPlan | null> {
+        if (context === null) {
+            return null;
+        }
+        const lot = await this.lots.readLot(context.lotId);
+        const state = lotStateFromChain(lot.state);
+        if (state === null) {
+            throw new Error(
+                `Lot ${context.lotId} is no longer held by the Trade contract: it was bought out, cancelled or ` +
+                    'already returned, so there is no way home left to plan.',
+            );
+        }
+        if (lot.seller.toLowerCase() !== address) {
+            throw new Error(
+                `Lot ${context.lotId} belongs to ${lot.seller}, not to you. Only the seller of a lot plans and ` +
+                    'pays for its way home.',
+            );
+        }
+        if (state === LotState.Delivering) {
+            throw new Error(
+                `Lot ${context.lotId} is still on its way to the hub. Finalize its delivery first; a Lot return ` +
+                    'plans the way back only for a lot that has arrived.',
+            );
+        }
+        const hub = String(lot.hub);
+        if (from !== hub) {
+            throw new Error(
+                `A Lot return starts at the hub it was listed on — cell ${hub} for lot ${context.lotId}, not ` +
+                    `${from}. Plan from that hub, and pick your own revealed cell as the destination.`,
+            );
+        }
+        if (state !== LotState.Evicted) {
+            return {
+                view: {
+                    lotId: context.lotId,
+                    lotState: state,
+                    sourcePolicy: RouteSourcePolicy.Live,
+                    historicalSource: null,
+                },
+                sourceNode: null,
+            };
+        }
+        const cell = cells.get(hub) ?? null;
+        const sourceNode = historicalSourceNode(hub, cell, address, lot.hubRadius);
+        const live = liveSourceRate(cell, sourceNode.isOwn, resourceId, routing.moveFeeFloors);
+        return {
+            view: {
+                lotId: context.lotId,
+                lotState: state,
+                sourcePolicy: RouteSourcePolicy.HistoricalHub,
+                historicalSource: {
+                    tokenId: hub,
+                    radius: lot.hubRadius,
+                    listedTransitFeePerUnit: formatEther(lot.hubMoveFee),
+                    liveTransitFeePerUnit: live,
+                    transitFeePerUnit: cheaperTransitRate(lot.hubMoveFee, live),
+                },
             },
-            note: ROUTE_NETWORK_NOTE,
+            sourceNode,
         };
     }
 

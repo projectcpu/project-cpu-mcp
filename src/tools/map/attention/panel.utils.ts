@@ -60,6 +60,7 @@ export function warehousePressurePanel(input: WarehousePressureInput): string {
                 },
                 { label: labels.peakFill, value: peakFill(input.items, input.resources) },
                 { label: labels.stalled, value: `${countReasons(input.items, STALLED_REASONS)}` },
+                { label: labels.evicted, value: `${countReasons(input.items, [AttentionReason.LotEvicted])}` },
             ],
             [{ label: labels.note, value: input.ownerKnown ? input.note : WAREHOUSE_PRESSURE_NO_OWNER_NOTE }],
         ],

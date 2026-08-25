@@ -36,6 +36,7 @@ const REASON_SEVERITY: Record<AttentionReason, AttentionSeverity> = {
     [AttentionReason.DemolishCooldown]: Info,
     [AttentionReason.LotFrozen]: Warning,
     [AttentionReason.LotAtRisk]: Info,
+    [AttentionReason.LotEvicted]: Critical,
     [AttentionReason.RevealStuck]: Critical,
     [AttentionReason.RevealSourceRetired]: Critical,
 };

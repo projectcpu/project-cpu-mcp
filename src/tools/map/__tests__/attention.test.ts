@@ -15,7 +15,7 @@ import { type AttentionItem, AttentionReason, type AttentionReport, AttentionSev
 import { FulfilmentClaims } from '../../../randomness/claims.js';
 import { SelfServiceRandomnessResolver } from '../../../randomness/self-service.resolver.js';
 import type { IRandomnessStrategyFactory, RandomnessStrategy } from '../../../randomness/types.js';
-import { FakeAppConfig, makeConfig } from '../../../services/__tests__/service-fakes.js';
+import { FakeAppConfig, makeConfig, TRADE } from '../../../services/__tests__/service-fakes.js';
 import { RevealFulfilmentService } from '../../../services/reveal-fulfilment.service.js';
 import type { AppConfig, DeliveryView } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
@@ -28,12 +28,14 @@ import {
 import type { IContractClient, WalletProvider } from '../../../wallet/types.js';
 import type { ToolRegistrar } from '../../types.js';
 import { registerGetAttentionTool } from '../attention/attention.js';
-import { WAREHOUSE_PRESSURE_LABELS } from '../attention/constants.js';
+import { GET_ATTENTION_DESCRIPTION, WAREHOUSE_PRESSURE_LABELS } from '../attention/constants.js';
 
 const CURRENT_SOURCE = getAddress('0xabc1230000000000000000000000000000000001');
 const CURRENT_SOURCE_ON_WIRE = CURRENT_SOURCE.toLowerCase();
 const RETIRED_SOURCE_ON_WIRE = '0x00000000000000000000000000000000000000b2';
 const REQUESTS_SERVER_TIME = 1_700_000_500;
+const SELF_ADDRESS = '0xMe';
+const CHAIN_ID = 1;
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -176,14 +178,43 @@ function chainConfig(selfService: boolean): AppConfig {
 interface HarnessOpts {
     walletReady: boolean | null;
     deliveries: (() => Promise<Array<DeliveryView>>) | null;
-    lots: (() => Promise<Array<LotView>>) | null;
+    lots: ((state: LotState | null) => Promise<Array<LotView>>) | null;
     selfService: boolean | null;
     revealRequests: FakeRevealRequests | null;
     report: AttentionReport | null;
+    evictedCounts: Record<string, bigint> | null;
+    chainDown: boolean | null;
 }
 
-function harness(opts: Partial<HarnessOpts> = {}): Handler {
+interface ChainRead {
+    address: string;
+    functionName: string;
+    args: ReadonlyArray<unknown>;
+}
+
+interface Harness {
+    handler: Handler;
+    chainReads: Array<ChainRead>;
+}
+
+function buildHarness(opts: Partial<HarnessOpts> = {}): Harness {
     const walletReady = opts.walletReady ?? true;
+    const chainReads: Array<ChainRead> = [];
+    const evictedCounts = opts.evictedCounts ?? {};
+    const walletManager = {
+        getAddress: () => SELF_ADDRESS,
+        getChainId: () => CHAIN_ID,
+        readContract: async (params: ChainRead): Promise<bigint> => {
+            chainReads.push(params);
+            if (opts.chainDown === true) {
+                throw new Error('the chain is unreachable');
+            }
+            if (params.functionName !== 'getSellerEvictedCount') {
+                throw new Error(`unexpected chain read ${params.functionName}`);
+            }
+            return evictedCounts[String(params.args[1])] ?? 0n;
+        },
+    };
     const map = {
         attention: (owner: string | null): AttentionReport =>
             owner === null
@@ -197,10 +228,7 @@ function harness(opts: Partial<HarnessOpts> = {}): Handler {
                   }
                 : (opts.report ?? mapReport()),
     };
-    const wallet = { isReady: () => walletReady, get: () => ({ getAddress: () => '0xMe' }) };
-    const appConfig = {
-        load: async () => ({ resources: { 3: 'Silica', 101: 'Power' }, recipes: [], buildings: [] }),
-    };
+    const wallet = { isReady: () => walletReady, get: () => walletManager };
     const transport = {
         listReadyToFinalizeForOwner: opts.deliveries ?? (async () => []),
     };
@@ -208,7 +236,10 @@ function harness(opts: Partial<HarnessOpts> = {}): Handler {
         listMyLots: opts.lots ?? (async () => []),
     };
     const logger = new NoopLogger();
-    const config = new FakeAppConfig(chainConfig(opts.selfService ?? true));
+    const config = new FakeAppConfig({
+        ...chainConfig(opts.selfService ?? true),
+        resources: { 3: 'Silica', 101: 'Power' },
+    });
     const revealFulfilment = new RevealFulfilmentService({
         wallet: wallet as unknown as WalletProvider,
         appConfig: config,
@@ -225,7 +256,7 @@ function harness(opts: Partial<HarnessOpts> = {}): Handler {
     const context = {
         mapReader: map,
         wallet,
-        appConfig,
+        appConfig: config,
         transport,
         trade,
         revealFulfilment,
@@ -242,7 +273,11 @@ function harness(opts: Partial<HarnessOpts> = {}): Handler {
     if (captured === null) {
         throw new Error('get_attention was not registered');
     }
-    return captured;
+    return { handler: captured, chainReads };
+}
+
+function harness(opts: Partial<HarnessOpts> = {}): Handler {
+    return buildHarness(opts).handler;
 }
 
 describe('get_attention tool', () => {
@@ -301,7 +336,7 @@ describe('get_attention tool', () => {
         expect(payload.items.some((i: { reason: string }) => i.reason === AttentionReason.StalledMining)).toBe(true);
     });
 
-    it('warns about a frozen own lot, naming the live rate, tolerance and fee-free cancel', async () => {
+    it('warns about a frozen own lot, naming the live rate, the tolerance and what a return costs', async () => {
         const handler = harness({
             lots: async () => [
                 makeLot({ id: '900', hubTokenId: '77', saleFeePercent: 12, maxSaleFeePercent: 10, frozen: true }),
@@ -315,7 +350,9 @@ describe('get_attention tool', () => {
         expect(frozen.tokenId).toBe('77');
         expect(frozen.message).toMatch(/12%/);
         expect(frozen.message).toMatch(/10%/);
-        expect(frozen.message).toMatch(/cancel is fee-free/i);
+        expect(frozen.message).not.toMatch(/fee-free/i);
+        expect(frozen.message).toMatch(/transit fee/i);
+        expect(frozen.message).toMatch(/not free/i);
     });
 
     it('flags an own lot at exactly the tolerance as at-risk info', async () => {
@@ -553,6 +590,7 @@ const PANEL_LABELS = [
     'Near full',
     'Peak fill',
     'Stalled',
+    'Evicted',
     'Note',
 ];
 const SCOUTED = '0x00000000000000000000000000000000000000c3';
@@ -930,5 +968,224 @@ describe('get_attention panel, hostile and partial inputs', () => {
         for (const label of Object.values(WAREHOUSE_PRESSURE_LABELS)) {
             expect(label.length).toBeLessThanOrEqual(PANEL_MAX_LABEL_LENGTH);
         }
+    });
+});
+
+interface PayloadItem {
+    tokenId: string;
+    severity: string;
+    reason: string;
+    resourceId: number | null;
+    resourceName: string | null;
+    lotId: string | null;
+    message: string | null;
+}
+
+function payloadOf(result: ToolResult): { items: Array<PayloadItem>; note: string | null } {
+    return JSON.parse(result.content[1]?.text ?? '{}');
+}
+
+function evictedItems(result: ToolResult): Array<PayloadItem> {
+    return payloadOf(result).items.filter((item) => item.reason === AttentionReason.LotEvicted);
+}
+
+function evictedLot(over: Partial<LotView> = {}): LotView {
+    return makeLot({ id: '700', hubTokenId: '42', state: LotState.Evicted, remaining: '60', ...over });
+}
+
+describe('get_attention evicted lots', () => {
+    it('raises a critical return action for an evicted lot, naming lot, hub, remainder and hub count', async () => {
+        const handler = harness({ lots: async () => [evictedLot()], evictedCounts: { 42: 1n } });
+        const result = await handler({ minSeverity: null });
+
+        const items = evictedItems(result);
+        expect(items).toHaveLength(1);
+        expect(items[0]?.severity).toBe(AttentionSeverity.Critical);
+        expect(items[0]?.tokenId).toBe('42');
+        expect(items[0]?.lotId).toBe('700');
+        expect(items[0]?.resourceId).toBe(3);
+        expect(items[0]?.resourceName).toBe('Silica');
+        expect(items[0]?.message).toContain('lot 700');
+        expect(items[0]?.message).toContain('hub 42');
+        expect(items[0]?.message).toContain('60');
+        expect(items[0]?.message).toMatch(/sells to nobody/i);
+        expect(items[0]?.message).toMatch(/return it to a cell of your own/i);
+        expect(items[0]?.message).toMatch(/1 evicted lot of yours outstanding/i);
+        expect(items[0]?.message).toMatch(/no lot of any resource can be listed on this hub/i);
+    });
+
+    it('keeps two evicted lots on one hub as two return actions carrying the hub-level count', async () => {
+        const handler = harness({
+            lots: async () => [evictedLot(), evictedLot({ id: '701', remaining: '20' })],
+            evictedCounts: { 42: 2n },
+        });
+        const result = await handler({ minSeverity: null });
+
+        const items = evictedItems(result);
+        expect(items.map((item) => item.lotId)).toEqual(['700', '701']);
+        for (const item of items) {
+            expect(item.message).toMatch(/2 evicted lots of yours outstanding/i);
+            expect(item.message).toMatch(/returning this one does not clear the others/i);
+            expect(item.message).toMatch(/until that outstanding count reaches zero/i);
+        }
+    });
+
+    it('keeps evicted items at a critical floor', async () => {
+        const handler = harness({ lots: async () => [evictedLot()], evictedCounts: { 42: 1n } });
+        const result = await handler({ minSeverity: AttentionSeverity.Critical });
+
+        expect(evictedItems(result)).toHaveLength(1);
+    });
+
+    it('asks the lot list for every state, so an evicted lot an open-only query would hide still lands', async () => {
+        const asked: Array<LotState | null> = [];
+        const handler = harness({
+            lots: async (state) => {
+                asked.push(state);
+                return state === null ? [evictedLot()] : [];
+            },
+            evictedCounts: { 42: 1n },
+        });
+        const result = await handler({ minSeverity: null });
+
+        expect(evictedItems(result)).toHaveLength(1);
+        expect(evictedItems(result)[0]?.lotId).toBe('700');
+        expect(asked).toEqual([null]);
+    });
+
+    it('drops a stale evicted row the hub itself no longer counts', async () => {
+        const handler = harness({ lots: async () => [evictedLot()], evictedCounts: { 42: 0n } });
+        const result = await handler({ minSeverity: null });
+
+        expect(evictedItems(result)).toHaveLength(0);
+        expect(payloadOf(result).note).toBeNull();
+    });
+
+    it('keeps the hub blocked when the chain counts more evicted lots than the list shows', async () => {
+        const handler = harness({ lots: async () => [evictedLot()], evictedCounts: { 42: 3n } });
+        const result = await handler({ minSeverity: null });
+
+        const items = evictedItems(result);
+        expect(items).toHaveLength(2);
+        const backlog = items.find((item) => item.lotId === null);
+        expect(backlog?.severity).toBe(AttentionSeverity.Critical);
+        expect(backlog?.tokenId).toBe('42');
+        expect(backlog?.message).toMatch(/3 evicted lots of yours outstanding/i);
+        expect(backlog?.message).toMatch(/only 1 of them is listed here/i);
+        expect(backlog?.message).toMatch(/catching up with the chain/i);
+        expect(backlog?.message).toMatch(/this hub is not clear/i);
+    });
+
+    it('raises the hub blocker even when the lot list shows no evicted row at all', async () => {
+        const handler = harness({
+            lots: async () => [makeLot({ id: '800', hubTokenId: '42' })],
+            evictedCounts: { 42: 1n },
+        });
+        const result = await handler({ minSeverity: null });
+
+        const items = evictedItems(result);
+        expect(items).toHaveLength(1);
+        expect(items[0]?.lotId).toBeNull();
+        expect(items[0]?.tokenId).toBe('42');
+        expect(items[0]?.message).toMatch(/only 0 of them are listed here/i);
+    });
+
+    it('never reports a hub clear when the outstanding count cannot be read', async () => {
+        const handler = harness({ lots: async () => [evictedLot()], chainDown: true });
+        const result = await handler({ minSeverity: null });
+
+        const payload = payloadOf(result);
+        const items = payload.items.filter((item) => item.reason === AttentionReason.LotEvicted);
+        expect(items).toHaveLength(1);
+        expect(items[0]?.lotId).toBe('700');
+        expect(items[0]?.message).toMatch(/could not be asked how many evicted lots/i);
+        expect(items[0]?.message).toMatch(/treat the listing block as in force/i);
+        expect(payload.note).toMatch(/could not be read from the chain/i);
+    });
+
+    it('asks the chain for the authenticated seller on every hub that still holds a live lot', async () => {
+        const built = buildHarness({
+            lots: async () => [evictedLot(), makeLot({ id: '800', hubTokenId: '55' })],
+            evictedCounts: { 42: 1n, 55: 0n },
+        });
+        await built.handler({ minSeverity: null });
+
+        expect(built.chainReads.map((read) => read.functionName)).toEqual([
+            'getSellerEvictedCount',
+            'getSellerEvictedCount',
+        ]);
+        expect(built.chainReads.every((read) => read.address === TRADE)).toBe(true);
+        expect(built.chainReads.map((read) => String(read.args[0]))).toEqual([SELF_ADDRESS, SELF_ADDRESS]);
+        expect(built.chainReads.map((read) => String(read.args[1])).sort()).toEqual(['42', '55']);
+    });
+
+    it('never reads or reveals the seller evicted lots while scouting another owner', async () => {
+        const lots = vi.fn(async () => [evictedLot()]);
+        const built = buildHarness({ lots, evictedCounts: { 42: 3n } });
+        const result = await built.handler({ minSeverity: null, owner: '0xNeighbor' });
+
+        expect(evictedItems(result)).toHaveLength(0);
+        expect(lots).not.toHaveBeenCalled();
+        expect(built.chainReads).toEqual([]);
+        expect(result.content[1]?.text).not.toContain('700');
+    });
+
+    it('counts the evicted items on the panel instead of leaving them to the item list alone', async () => {
+        const handler = harness({
+            lots: async () => [evictedLot(), evictedLot({ id: '701' })],
+            evictedCounts: { 42: 2n },
+        });
+        const result = await handler({ minSeverity: null });
+
+        expect(result.content[0]?.text).toMatch(/Evicted: 2/);
+    });
+
+    it('keeps an evicted item on exactly the shared item shape', async () => {
+        const handler = harness({ lots: async () => [evictedLot()], evictedCounts: { 42: 1n } });
+        const result = await handler({ minSeverity: null });
+
+        expect(Object.keys(evictedItems(result)[0] ?? {}).sort()).toEqual([
+            'arrivalAt',
+            'breakdown',
+            'cap',
+            'deliveryId',
+            'demolishingType',
+            'depositRemaining',
+            'fillPct',
+            'lotId',
+            'message',
+            'reason',
+            'requestId',
+            'requestedAt',
+            'resourceId',
+            'resourceName',
+            'severity',
+            'tokenId',
+            'used',
+        ]);
+    });
+});
+
+describe('get_attention lot return terminology', () => {
+    it('promises no fee-free cancel on an at-risk lot', async () => {
+        const handler = harness({
+            lots: async () => [makeLot({ id: '901', saleFeePercent: 10, maxSaleFeePercent: 10 })],
+        });
+        const result = await handler({ minSeverity: null });
+
+        const atRisk = payloadOf(result).items.find((item) => item.reason === AttentionReason.LotAtRisk);
+        expect(atRisk?.message).not.toMatch(/fee-free/i);
+        expect(atRisk?.message).toMatch(/transit fee/i);
+        expect(atRisk?.message).toMatch(/not free/i);
+    });
+
+    it('never promises a fee-free cancel anywhere in the tool description', () => {
+        expect(GET_ATTENTION_DESCRIPTION).not.toMatch(/fee-free/i);
+        expect(GET_ATTENTION_DESCRIPTION).toMatch(/transit fee/i);
+    });
+
+    it('names the evicted lot as a critical item of the tool description', () => {
+        expect(GET_ATTENTION_DESCRIPTION).toMatch(/evicted/i);
+        expect(GET_ATTENTION_DESCRIPTION).toMatch(/blocks you from listing any resource on that hub/i);
     });
 });

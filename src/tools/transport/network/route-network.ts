@@ -9,12 +9,15 @@ export function registerRouteNetworkTool(server: ToolRegistrar, context: AppCont
         'cpu_route_network',
         { description: ROUTE_NETWORK_DESCRIPTION, inputSchema: routeNetworkInputSchema },
         async (args) => {
-            const result = await context.route.network({
-                from: args.from,
-                towards: args.towards,
-                resourceId: args.resourceId,
-                amount: args.amount,
-            });
+            const result = await context.route.network(
+                {
+                    from: args.from,
+                    towards: args.towards,
+                    resourceId: args.resourceId,
+                    amount: args.amount,
+                },
+                args.lotId === null ? null : { lotId: args.lotId },
+            );
 
             return {
                 content: [

@@ -1,6 +1,7 @@
 import { BUY_LOT_DESCRIPTION } from './constants.js';
 import type { AppContext } from '../../../types.js';
 import { ToolEventType, type ToolRegistrar } from '../../types.js';
+import { requireOpenLot } from '../buyer-guard/lot-open.guard.js';
 import { summarizeBuyLot } from '../format.utils.js';
 import { buyLotInputSchema } from '../types.js';
 
@@ -9,6 +10,7 @@ export function registerBuyLotTool(server: ToolRegistrar, context: AppContext): 
         'cpu_buy_lot',
         { description: BUY_LOT_DESCRIPTION, inputSchema: buyLotInputSchema },
         async (args) => {
+            await requireOpenLot(context.trade, args.lotId);
             const result = await context.trade.buyLot({
                 lotId: args.lotId,
                 chain: args.chain,
