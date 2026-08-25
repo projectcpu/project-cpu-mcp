@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { SERVER_INSTRUCTIONS } from '../server.constants.js';
 import { createServer } from '../server.js';
+import { LOT_RETURN_REVERT_REASONS } from '../services/lot-return.constants.js';
+import { QUOTE_REVERT_REASONS } from '../services/trade.constants.js';
 import { PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
 import type { AppContext } from '../types.js';
 
@@ -186,5 +188,57 @@ describe('a hub that cannot route right now', () => {
         expect(quoteBuy).toMatch(/temporarily/iu);
         expect(quoteBuy).toMatch(/unroutable/iu);
         expect(tools.filter((tool) => /frozen\s+hub/iu.test(tool.description)).map((tool) => tool.name)).toEqual([]);
+    });
+});
+
+/**
+ * CONTEXT.md: a hub is never frozen. A LOT is, and only over the Sale fee. The rule below is about how the
+ * word may be attached, not a pin on one sentence — a paraphrase that still calls a hub frozen has to fail,
+ * and the two runtime revert maps are scanned because a decoder string reaches the agent exactly like a
+ * tool description does.
+ */
+const HUB_CALLED_FROZEN =
+    /\bfrozen[-\s]+hubs?\b|\bhubs?\b[^.;]{0,40}?\b(?:is|are|was|were|gets?|stays?|remains?|becomes?)\s+(?!not\s)frozen\b/iu;
+
+const HUB_FROZEN_SENTENCES: ReadonlyArray<string> = [
+    'a foreign frozen hub blocks the path',
+    'a waypoint on the route is not eligible — the hub is frozen right now',
+    'frozen hubs cannot serve as live nodes',
+    'a hub on the path stays frozen until the owner acts',
+];
+
+const HUB_VOCABULARY_ALLOWED: ReadonlyArray<string> = [
+    "the lot is frozen: the hub's live sale fee now exceeds the seller's tolerance, so the buy reverts",
+    'a hub on the path cannot serve as a live node right now (temporarily unroutable, not frozen)',
+];
+
+describe('the frozen-hub vocabulary no shipped string may use', () => {
+    it.each(HUB_FROZEN_SENTENCES)('is what the rule actually catches: %s', (sentence) => {
+        expect(sentence).toMatch(HUB_CALLED_FROZEN);
+    });
+
+    it.each(HUB_VOCABULARY_ALLOWED)('leaves a frozen LOT and a denial alone: %s', (sentence) => {
+        expect(sentence).not.toMatch(HUB_CALLED_FROZEN);
+    });
+
+    it('is used by no lot return revert reason', () => {
+        const offenders = Object.entries(LOT_RETURN_REVERT_REASONS).filter(([, reason]) =>
+            HUB_CALLED_FROZEN.test(reason),
+        );
+
+        expect(offenders.map(([name]) => name)).toEqual([]);
+    });
+
+    it('is used by no buy quote revert reason', () => {
+        const offenders = QUOTE_REVERT_REASONS.filter((entry) => HUB_CALLED_FROZEN.test(entry.reason));
+
+        expect(offenders.map((entry) => entry.name)).toEqual([]);
+    });
+
+    it('is used by no tool description and not by the server instructions', async () => {
+        const tools = await bootServer();
+
+        expect(tools.filter((tool) => HUB_CALLED_FROZEN.test(tool.description)).map((tool) => tool.name)).toEqual([]);
+        expect(SERVER_INSTRUCTIONS).not.toMatch(HUB_CALLED_FROZEN);
     });
 });

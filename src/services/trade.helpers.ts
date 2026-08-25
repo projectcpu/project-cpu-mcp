@@ -1,5 +1,6 @@
 import { type Abi } from 'viem';
 
+import { QUOTE_REVERT_REASONS } from './trade.constants.js';
 import {
     type ApiLotView,
     type ApiMarketIndex,
@@ -112,32 +113,6 @@ export function enrichSaleFeeToleranceError(error: unknown): unknown {
     }
     return error;
 }
-
-const QUOTE_REVERT_REASONS: ReadonlyArray<{ name: string; reason: string }> = [
-    { name: 'LotNotOpen', reason: 'the lot is closed — sold out, still delivering, or cancelled' },
-    { name: 'ExceedsRemaining', reason: "the amount exceeds the lot's remaining units" },
-    { name: 'InvalidValue', reason: 'the buy amount must be greater than zero' },
-    {
-        name: 'SaleFeeExceedsMax',
-        reason:
-            "the lot is frozen: the hub's live sale fee now exceeds the seller's tolerance, so the buy reverts " +
-            'until the hub lowers the rate (or the seller sends the remainder home)',
-    },
-    { name: 'WrongHub', reason: "the route must start at the lot's hub" },
-    { name: 'NotDestOwner', reason: 'the destination cell (route end) must be one you own' },
-    { name: 'PathTooShort', reason: 'the route needs at least the hub and your destination cell' },
-    {
-        name: 'NotEligibleWaypoint',
-        reason:
-            'a waypoint on the route is not eligible — a hub on the path cannot serve as a live node right now ' +
-            '(temporarily unroutable, not frozen)',
-    },
-    { name: 'HopOutOfRange', reason: "a hop on the route is longer than transport's reach" },
-    { name: 'NotWaypointOwner', reason: 'a non-hub waypoint on the route is not owned by you' },
-    { name: 'DegenerateWaypoint', reason: 'the route repeats a waypoint' },
-    { name: 'NotRevealed', reason: 'a cell on the route (or the hub) is not revealed yet' },
-    { name: 'BelowMinAmount', reason: "the amount is below transport's minimum" },
-];
 
 export function enrichBuyQuoteRevert(error: unknown): unknown {
     if (!(error instanceof Error) || !error.message.includes('Quote reverted:')) {
