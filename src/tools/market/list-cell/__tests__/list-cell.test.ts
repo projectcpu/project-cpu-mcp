@@ -5,6 +5,7 @@ import {
     COLLECTION,
     CREATOR_FEE,
     EXPIRES_AT,
+    FakeAppConfig,
     FakeSellerWallet,
     FEE_RECIPIENT,
     INTENT_DEADLINE,
@@ -12,6 +13,8 @@ import {
     listCellHarness,
     listingsPageWire,
     MarketRoute,
+    NATIVE_ADDRESS,
+    NATIVE_CURRENCY,
     NOW_SECONDS,
     ORDER_HASH,
     PLATFORM_FEE,
@@ -23,6 +26,7 @@ import {
     parsed,
     reply,
     RESERVED_BUYER,
+    reservedPreparedWire,
     RoutedMarketTransport,
     seaportOrderWire,
     SELLER,
@@ -92,10 +96,7 @@ describe('publishing a Cell listing', () => {
     });
 
     it('reserves the listing for one buyer when an address is supplied', async () => {
-        const prepared = preparedWire({
-            listing: { ...(preparedWire().listing as object), buyerAddress: RESERVED_BUYER },
-        });
-        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, prepared)] }));
+        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, reservedPreparedWire())] }));
 
         const result = parsed(await harness.handler(listCellArgs({ buyerAddress: RESERVED_BUYER })));
 
@@ -237,6 +238,19 @@ describe('the fee split a listing discloses', () => {
         expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
     });
 
+    it('refuses to sign a fee split that does not add up, even when the order collects the right total', async () => {
+        const prepared = preparedWire({
+            fees: { platformFee: PLATFORM_FEE, creatorFee: '0', estimatedProceeds: PROCEEDS },
+        });
+        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, prepared)] }));
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.signed).toHaveLength(0);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
+    });
+
     it('refuses to sign an order that pays the seller side something other than the gross price', async () => {
         const prepared = preparedWire({
             order: seaportOrderWire({
@@ -344,6 +358,11 @@ function considerationWire(over: Record<string, unknown> = {}): Array<Record<str
 function firstConsiderationWire(over: Record<string, unknown>): Array<Record<string, unknown>> {
     const consideration = considerationWire();
     return consideration.map((item, index) => (index === 0 ? { ...item, ...over } : item));
+}
+
+function lastConsiderationWire(over: Record<string, unknown>): Array<Record<string, unknown>> {
+    const consideration = considerationWire();
+    return consideration.map((item, index) => (index === consideration.length - 1 ? { ...item, ...over } : item));
 }
 
 describe('the complete order a listing asks the wallet to sign', () => {
@@ -459,6 +478,81 @@ describe('the complete order a listing asks the wallet to sign', () => {
 
         const { totalOriginalConsiderationItems: _count, ...expected } = seaportOrderWire();
         expect(harness.wallet.signed[0]?.message).toEqual(expected);
+    });
+
+    it('refuses to sign an order whose payments overshoot the gross price the seller set', async () => {
+        const prepared = preparedWire({
+            order: seaportOrderWire({
+                consideration: lastConsiderationWire({
+                    startAmount: '50000000000000001',
+                    endAmount: '50000000000000001',
+                }),
+            }),
+        });
+        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, prepared)] }));
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.signed).toHaveLength(0);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
+    });
+
+    it('names an order that pays the seller side nothing at all for what it is', async () => {
+        const prepared = preparedWire({
+            order: seaportOrderWire({ consideration: [], totalOriginalConsiderationItems: 0 }),
+        });
+        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, prepared)] }));
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(error.message).toContain('pays the seller side nothing at all');
+        expect(harness.wallet.signed).toHaveLength(0);
+    });
+
+    it('publishes a listing priced in the chain currency, whose payments are native amounts', async () => {
+        const prepared = preparedWire({
+            listing: { ...(preparedWire().listing as object), currency: NATIVE_CURRENCY },
+            order: seaportOrderWire({ consideration: considerationWire({ itemType: 0, token: NATIVE_ADDRESS }) }),
+        });
+        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, prepared)] }));
+
+        const result = parsed(await harness.handler(listCellArgs()));
+
+        expect(result.status).toBe(MarketActionStatus.Completed);
+        expect((result.currency as { symbol: string }).symbol).toBe('ETH');
+        expect(harness.wallet.signed).toHaveLength(1);
+    });
+
+    it('refuses to sign a chain-currency price paid as a token amount', async () => {
+        const prepared = preparedWire({
+            listing: { ...(preparedWire().listing as object), currency: NATIVE_CURRENCY },
+            order: seaportOrderWire({ consideration: considerationWire({ token: NATIVE_ADDRESS }) }),
+        });
+        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, prepared)] }));
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.signed).toHaveLength(0);
+    });
+
+    it('refuses to prepare at all when the Cell collection is not configured for this network', async () => {
+        const recovery = new MarketRecoveryStore();
+        const harness = listCellHarness(
+            routes(),
+            new FakeSellerWallet(),
+            recovery,
+            new FakeAppConfig('the-cell-collection-is-missing'),
+        );
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
+        expect(harness.wallet.signed).toHaveLength(0);
+        expect(recovery.size()).toBe(0);
     });
 
     it('accepts an order whose whole price reaches a seller who is also the fee recipient', async () => {
@@ -905,6 +999,217 @@ describe('a submit whose outcome is uncertain', () => {
         expect(error.code).toBe(MarketErrorCode.PreparedIntentExpired);
         expect(error.stage).toBe(MarketActionStage.Submit);
         expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(1);
+    });
+});
+
+describe('the restriction the signed order carries', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(NOW_SECONDS * 1_000);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('signs a restricted order with a zone for a listing reserved to one buyer', async () => {
+        const harness = listCellHarness(routes({ [MarketRoute.Prepare]: [reply(200, reservedPreparedWire())] }));
+
+        const result = parsed(await harness.handler(listCellArgs({ buyerAddress: RESERVED_BUYER })));
+
+        expect(result.status).toBe(MarketActionStatus.Completed);
+        expect(harness.wallet.signed[0]?.message.orderType).toBe(2);
+    });
+
+    it.each([
+        ['an order anyone may fill', { orderType: 0, zone: `0x${'0'.repeat(40)}` }],
+        ['a restricted order with no zone to enforce the reservation', { zone: `0x${'0'.repeat(40)}` }],
+    ])('refuses to sign a listing reserved to one buyer that is carried by %s', async (_label, orderOver) => {
+        const harness = listCellHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, reservedPreparedWire(orderOver))] }),
+        );
+
+        const error = await failure(harness.handler(listCellArgs({ buyerAddress: RESERVED_BUYER })));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.signed).toHaveLength(0);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
+    });
+
+    it.each([
+        ['a zone of its own', { orderType: 2, zone: `0x${'a'.repeat(40)}` }],
+        ['no zone at all', { orderType: 2 }],
+    ])('refuses to sign a listing anyone may buy that is restricted by %s', async (_label, orderOver) => {
+        const harness = listCellHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ order: seaportOrderWire(orderOver) }))] }),
+        );
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.signed).toHaveLength(0);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
+    });
+});
+
+describe('how many submissions one submit attempt may place on the wire', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(NOW_SECONDS * 1_000);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it.each([
+        ['the connection drops', new Error('socket hang up')],
+        ['the service answers 503', reply(503, { code: 'x', message: 'down' })],
+    ])('reconciles rather than resending the same submission when %s', async (_label, first) => {
+        const harness = listCellHarness(
+            routes({
+                [MarketRoute.MyListings]: [EMPTY_PAGE, reply(200, listingsPageWire([publishedListingWire()], null))],
+                [MarketRoute.Submit]: [
+                    first,
+                    reply(400, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }),
+                ],
+            }),
+        );
+
+        const result = parsed((await settle(harness.handler(listCellArgs()))) as never);
+
+        expect(result.status).toBe(MarketActionStatus.AlreadyCompleted);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(1);
+        expect(harness.recovery.size()).toBe(0);
+    });
+
+    it('keeps the intent when a dropped submission is refused on the next attempt', async () => {
+        const recovery = new MarketRecoveryStore();
+        const first = listCellHarness(
+            routes({
+                [MarketRoute.MyListings]: [EMPTY_PAGE],
+                [MarketRoute.Submit]: [
+                    new Error('socket hang up'),
+                    reply(400, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }),
+                ],
+            }),
+            new FakeSellerWallet(),
+            recovery,
+        );
+
+        const error = await failure(first.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.OutcomeUnknown);
+        expect(first.transport.callsOn(MarketRoute.Submit)).toHaveLength(2);
+        expect(recovery.size()).toBe(1);
+
+        const second = listCellHarness(
+            routes({ [MarketRoute.Submit]: [reply(200, submittedWire())] }),
+            new FakeSellerWallet(),
+            recovery,
+        );
+        const result = parsed((await settle(second.handler(listCellArgs()))) as never);
+
+        expect(result.status).toBe(MarketActionStatus.Completed);
+        expect(second.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
+    });
+
+    it('reconciles a submission refused after re-authentication rather than calling it unpublished', async () => {
+        const harness = listCellHarness(
+            routes({
+                [MarketRoute.MyListings]: [EMPTY_PAGE, reply(200, listingsPageWire([publishedListingWire()], null))],
+                [MarketRoute.Submit]: [reply(401, { code: 'unauthorized', message: 'the session is gone' })],
+            }),
+        );
+
+        const result = parsed((await settle(harness.handler(listCellArgs()))) as never);
+
+        expect(result.status).toBe(MarketActionStatus.AlreadyCompleted);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(1);
+        expect(harness.recovery.size()).toBe(0);
+    });
+
+    it('settles a first submission the server says it never prepared without repeating it', async () => {
+        const harness = listCellHarness(
+            routes({
+                [MarketRoute.MyListings]: [EMPTY_PAGE],
+                [MarketRoute.Submit]: [reply(400, { code: 'preparedIntentNotFound', message: 'that prepare is gone' })],
+            }),
+        );
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.OutcomeUnknown);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(1);
+        expect(harness.recovery.size()).toBe(1);
+    });
+
+    it('treats a refusal of the second attempt as an outcome the first attempt may already have decided', async () => {
+        const harness = listCellHarness(
+            routes({
+                [MarketRoute.MyListings]: [EMPTY_PAGE],
+                [MarketRoute.Submit]: [
+                    reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '600' }),
+                    reply(400, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }),
+                ],
+            }),
+        );
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.OutcomeUnknown);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(2);
+        expect(harness.recovery.size()).toBe(1);
+    });
+
+    it('keeps a resumed intent the server refuses, because an earlier call may have published it', async () => {
+        const recovery = new MarketRecoveryStore();
+        const first = listCellHarness(
+            routes({
+                [MarketRoute.MyListings]: [EMPTY_PAGE, reply(503, { code: 'x', message: 'down' })],
+                [MarketRoute.Submit]: [
+                    reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '600' }),
+                ],
+            }),
+            new FakeSellerWallet(),
+            recovery,
+        );
+        await settle(first.handler(listCellArgs()));
+        expect(recovery.size()).toBe(1);
+
+        const second = listCellHarness(
+            routes({
+                [MarketRoute.MyListings]: [EMPTY_PAGE],
+                [MarketRoute.Submit]: [reply(400, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' })],
+            }),
+            new FakeSellerWallet(),
+            recovery,
+        );
+        const error = await failure(second.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.OutcomeUnknown);
+        expect(second.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
+        expect(recovery.size()).toBe(1);
+    });
+
+    it('releases the reserved capacity when a listing fails before it is ever submitted', async () => {
+        const recovery = new MarketRecoveryStore();
+        const harness = listCellHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire(COLLECTION)] }))] }),
+            new FakeSellerWallet({ receiptStatus: TxStatus.Reverted }),
+            recovery,
+        );
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.TransactionReverted);
+        expect(recovery.size()).toBe(0);
+
+        const next = listCellHarness(routes(), new FakeSellerWallet(), recovery);
+        const result = parsed((await settle(next.handler(listCellArgs()))) as never);
+
+        expect(result.status).toBe(MarketActionStatus.Completed);
+        expect(next.transport.callsOn(MarketRoute.Prepare)).toHaveLength(1);
     });
 });
 

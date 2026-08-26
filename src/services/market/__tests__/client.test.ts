@@ -268,6 +268,92 @@ describe('MarketApiClient', () => {
         expect(transport.calls).toHaveLength(1);
     });
 
+    it('never repeats a single-shot call when the connection drops', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport([], new Error('socket hang up'));
+        const startedAt = Date.now();
+
+        const error = (await settle(clientOver(transport).sendOnce({ ...request(), method: 'POST' }))) as MarketError;
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect(error.code).toBe(MarketErrorCode.NetworkFailure);
+        expect(error.retryable).toBe(true);
+        expect(transport.calls).toHaveLength(1);
+        expect(Date.now() - startedAt).toBe(0);
+    });
+
+    it('never repeats a single-shot call the service answers with a 5xx', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+
+        const error = (await settle(clientOver(transport).sendOnce({ ...request(), method: 'POST' }))) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.ServiceUnavailable);
+        expect(error.retryable).toBe(true);
+        expect(transport.calls).toHaveLength(1);
+    });
+
+    it('never repeats a single-shot call the service rate limits', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport(
+            [],
+            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '5' }),
+        );
+        const startedAt = Date.now();
+
+        const error = (await settle(clientOver(transport).sendOnce({ ...request(), method: 'POST' }))) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.UpstreamRateLimited);
+        expect(error.retryable).toBe(true);
+        expect(error.retryAfterSeconds).toBe(5);
+        expect(transport.calls).toHaveLength(1);
+        expect(Date.now() - startedAt).toBe(0);
+    });
+
+    it('carries the terminal code of a single-shot failure through unchanged', async () => {
+        const transport = new FakeMarketTransport([
+            reply(409, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }),
+        ]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST', stage: MarketActionStage.Submit })
+            .catch((e: unknown) => e)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.PreparedIntentFlowMismatch);
+        expect(error.retryable).toBe(false);
+        expect(error.stage).toBe(MarketActionStage.Submit);
+        expect(transport.calls).toHaveLength(1);
+    });
+
+    it('reports a single-shot 401 as terminal, since the transport already re-sent it once', async () => {
+        const transport = new FakeMarketTransport([reply(401, { code: 'unauthorized', message: 'no' })]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST' })
+            .catch((e: unknown) => e)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.Unauthorized);
+        expect(transport.calls).toHaveLength(1);
+    });
+
+    it('returns schema-validated data from a successful single-shot call', async () => {
+        const transport = new FakeMarketTransport([reply(201, { ok: true })]);
+
+        await expect(clientOver(transport).sendOnce({ ...request(), method: 'POST' })).resolves.toEqual({ ok: true });
+        expect(transport.calls).toHaveLength(1);
+    });
+
+    it('rejects single-shot wire data that does not match the declared schema', async () => {
+        const transport = new FakeMarketTransport([reply(200, { ok: 'yes' })]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST' })
+            .catch((e: unknown) => e)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(error.retryable).toBe(false);
+    });
+
     it('backs off on its own when the 429 carries no usable Retry-After at all', async () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport([], reply(429, null, { 'retry-after': 'soon' }));

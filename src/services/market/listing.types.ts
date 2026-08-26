@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { IMarketRecoveryStore, IMarketSingleFlight } from './action.types.js';
+import type { IMarketSingleShotClient } from './client.types.js';
 import type { IMarketProfileReader } from './profile.schemas.js';
 import {
     baseUnitAmountSchema,
@@ -14,7 +15,6 @@ import {
     seaportConsiderationItemSchema,
     seaportOrderParametersSchema,
     unixSecondsSchema,
-    type IMarketApiClient,
     type MarketActionStage,
     type MarketActionStatus,
     type MarketCurrency,
@@ -90,7 +90,7 @@ export interface ListingRecoveryPayload {
 }
 
 export interface MarketListingServiceOptions {
-    client: IMarketApiClient;
+    client: IMarketSingleShotClient;
     profile: IMarketProfileReader;
     appConfig: IAppConfig;
     wallet: WalletProvider;

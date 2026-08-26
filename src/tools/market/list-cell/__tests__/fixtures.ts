@@ -36,6 +36,12 @@ export const FEE_RECIPIENT = `0x${'4'.repeat(40)}`;
 
 export const COLLECTION = `0x${'5'.repeat(40)}`;
 
+export const ZONE = `0x${'6'.repeat(40)}`;
+
+export const NATIVE_ADDRESS = `0x${'0'.repeat(40)}`;
+
+export const NATIVE_CURRENCY = { address: NATIVE_ADDRESS, symbol: 'ETH', decimals: 18 };
+
 export const TOKEN_ID = '1234';
 
 export const PRICE = '1000000000000000000';
@@ -155,6 +161,13 @@ export function preparedWire(over: Record<string, unknown> = {}): Record<string,
         order: seaportOrderWire(),
         ...over,
     };
+}
+
+export function reservedPreparedWire(orderOver: Record<string, unknown> = {}): Record<string, unknown> {
+    return preparedWire({
+        listing: { ...(preparedWire().listing as object), buyerAddress: RESERVED_BUYER },
+        order: seaportOrderWire({ orderType: 2, zone: ZONE, ...orderOver }),
+    });
 }
 
 export function publishedListingWire(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -330,13 +343,14 @@ export function listCellHarness(
     transport: RoutedMarketTransport,
     wallet: FakeSellerWallet = new FakeSellerWallet(),
     recovery: MarketRecoveryStore = new MarketRecoveryStore(),
+    appConfig: IAppConfig = new FakeAppConfig(),
 ): ListCellHarness {
     const logger = new NoopLogger();
     const client = new MarketApiClient({ api: transport, logger });
     const service = new MarketListingService({
         client,
         profile: new MarketProfileClient({ client, logger }),
-        appConfig: new FakeAppConfig(),
+        appConfig,
         wallet,
         network: 'robinhood',
         singleFlight: new MarketSingleFlight(),

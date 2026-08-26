@@ -6,12 +6,12 @@ import {
     type IMarketSingleFlight,
     type MarketRecoveryRecord,
 } from './action.types.js';
+import type { IMarketSingleShotClient } from './client.types.js';
 import { MS_PER_SECOND, PROVEN_UNPUBLISHED_MARKET_ERROR_CODES } from './constants.js';
 import { MarketError } from './error.js';
 import { marketActionKey } from './idempotency.utils.js';
 import {
     LISTING_NO_IDENTIFIER,
-    LISTING_ORDER_TYPES,
     LISTING_SINGLE_UNIT,
     LISTING_START_TIME_SKEW_SECONDS,
     LISTING_SUBMIT_MAX_ATTEMPTS,
@@ -53,7 +53,6 @@ import {
     MarketTransactionKind,
     positiveBaseUnitAmountSchema,
     unixSecondsSchema,
-    type IMarketApiClient,
     type MarketListing,
     type MarketTransaction,
 } from './types.js';
@@ -71,7 +70,7 @@ import { TxStatus, type WalletProvider } from '../../wallet/types.js';
 import type { IAppConfig } from '../types.js';
 
 export class MarketListingService implements IMarketListingService {
-    private readonly client: IMarketApiClient;
+    private readonly client: IMarketSingleShotClient;
     private readonly profile: IMarketProfileReader;
     private readonly appConfig: IAppConfig;
     private readonly wallet: WalletProvider;
@@ -177,7 +176,7 @@ export class MarketListingService implements IMarketListingService {
             reachedServer = true;
 
             try {
-                const response = await this.client.send({
+                const response = await this.client.sendOnce({
                     path: MARKET_LISTING_SUBMIT_PATH,
                     method: 'POST',
                     body: { prepareId: prepared.prepareId, signature: payload.signature },
@@ -542,22 +541,30 @@ export class MarketListingService implements IMarketListingService {
     private requireOrderShape(request: ListCellRequest, prepared: PrepareListingResponse): void {
         const order = prepared.order;
 
-        if (!LISTING_ORDER_TYPES.has(order.orderType)) {
+        const reserved = request.buyerAddress !== null;
+        const expected = reserved ? SeaportOrderType.FullRestricted : SeaportOrderType.FullOpen;
+
+        if (order.orderType !== expected) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
-                `the order it asks the wallet to sign is of type ${order.orderType}, which a Cell listing signed by ` +
-                    'a wallet never uses',
+                `the order it asks the wallet to sign is of type ${order.orderType}, while a listing ` +
+                    `${reserved ? 'reserved for one buyer' : 'anyone may buy'} is of type ${expected}`,
                 request,
             );
         }
-        if (
-            order.orderType === SeaportOrderType.FullOpen &&
-            (!sameAddress(order.zone, zeroAddress) || order.zoneHash !== zeroHash)
-        ) {
+        if (!reserved && (!sameAddress(order.zone, zeroAddress) || order.zoneHash !== zeroHash)) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 `the order it asks the wallet to sign hands zone ${order.zone} a say over an order nothing ` +
                     'restricts',
+                request,
+            );
+        }
+        if (reserved && sameAddress(order.zone, zeroAddress)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                'the order it asks the wallet to sign names no zone, so nothing would hold the sale to the buyer ' +
+                    'you reserved it for',
                 request,
             );
         }
