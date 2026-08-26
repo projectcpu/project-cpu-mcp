@@ -105,6 +105,9 @@ class MintWallet implements WalletManager, WalletProvider {
     async signMessage(): Promise<Hex> {
         return '0x';
     }
+    async signTypedData(): Promise<Hex> {
+        return '0x';
+    }
 }
 
 function makeConfig(contracts: Partial<AppContracts> = {}): AppConfig {

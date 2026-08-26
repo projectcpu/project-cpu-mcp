@@ -26,6 +26,10 @@ export const MARKET_BACKOFF_MAX_MS = 4_000;
 
 export const HTTP_INTERNAL_SERVER_ERROR = 500;
 
+export const HTTP_SUCCESS_MIN = 200;
+
+export const HTTP_SUCCESS_MAX = 299;
+
 export const RETRYABLE_MARKET_ERROR_CODES: ReadonlySet<MarketErrorCode> = new Set([
     MarketErrorCode.UpstreamRateLimited,
     MarketErrorCode.PreparedIntentInProgress,

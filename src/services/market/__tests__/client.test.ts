@@ -243,6 +243,31 @@ describe('MarketApiClient', () => {
         expect(transport.calls.length).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS / MARKET_BACKOFF_MAX_MS + 5);
     });
 
+    it('accepts a 201 Created as a successful result, so a publication is never reported as a failure', async () => {
+        const transport = new FakeMarketTransport([reply(201, { ok: true })]);
+
+        await expect(clientOver(transport).send(request())).resolves.toEqual({ ok: true });
+    });
+
+    it('never calls a terminal market failure carried inside a 429 safe to repeat', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport([
+            reply(429, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }, { 'retry-after': '5' }),
+        ]);
+        const startedAt = Date.now();
+
+        const error = (await settle(
+            clientOver(transport).send({ ...request(), stage: MarketActionStage.Submit }),
+        )) as MarketError;
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect(error.code).toBe(MarketErrorCode.PreparedIntentFlowMismatch);
+        expect(error.retryable).toBe(false);
+        expect(error.message).toContain('will fail the same way');
+        expect(Date.now() - startedAt).toBe(0);
+        expect(transport.calls).toHaveLength(1);
+    });
+
     it('backs off on its own when the 429 carries no usable Retry-After at all', async () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport([], reply(429, null, { 'retry-after': 'soon' }));

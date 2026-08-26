@@ -1,0 +1,9 @@
+export const MARKET_UNRESOLVED_ACTION_LIMIT = 100;
+
+export const MARKET_PROFILE_CACHE_MS = 10_000;
+
+export const MARKET_RECONCILE_MAX_PAGES = 20;
+
+export const ACTION_KEY_FIELD_SEPARATOR = '\u001f';
+
+export const ACTION_KEY_NULL_INPUT = '\u0000';

@@ -1,4 +1,6 @@
 import {
+    HTTP_SUCCESS_MAX,
+    HTTP_SUCCESS_MIN,
     MARKET_BACKOFF_BASE_MS,
     MARKET_BACKOFF_FACTOR,
     MARKET_BACKOFF_MAX_MS,
@@ -13,6 +15,10 @@ export function toMarketErrorCode(value: unknown): MarketErrorCode | null {
     }
     const known = Object.values(MarketErrorCode).find((code) => code === value);
     return known ?? null;
+}
+
+export function isMarketSuccessStatus(status: number): boolean {
+    return status >= HTTP_SUCCESS_MIN && status <= HTTP_SUCCESS_MAX;
 }
 
 export function isRetryableMarketCode(code: MarketErrorCode): boolean {

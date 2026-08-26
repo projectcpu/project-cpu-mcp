@@ -1,5 +1,12 @@
+import type { ListCellResult } from '../../services/market/listing.types.js';
 import type { MarketListingPage, MarketOfferPage } from '../../services/market/profile.schemas.js';
-import type { CellMarketSnapshot, MarketCurrency, MarketListing, MarketOffer } from '../../services/market/types.js';
+import {
+    MarketActionStatus,
+    type CellMarketSnapshot,
+    type MarketCurrency,
+    type MarketListing,
+    type MarketOffer,
+} from '../../services/market/types.js';
 
 function describeMoney(amount: string, currency: MarketCurrency): string {
     return `${amount} ${currency.symbol} base units (decimals=${currency.decimals})`;
@@ -50,6 +57,26 @@ export function summarizeOfferPage(heading: string, page: MarketOfferPage): stri
         `${heading} — ${page.items.length} on this page`,
         ...page.items.map(describeOfferRow),
         describeNextCursor(page.nextCursor),
+    ].join('\n');
+}
+
+export function summarizeListedCell(result: ListCellResult): string {
+    const opening =
+        result.status === MarketActionStatus.AlreadyCompleted
+            ? `Cell ${result.tokenId} was already listed on these exact terms — no second listing was published`
+            : `Cell ${result.tokenId} is listed`;
+    const approvals =
+        result.approvalTxHashes.length === 0
+            ? 'no collection approval was needed'
+            : `collection approvals broadcast in order: ${result.approvalTxHashes.join(', ')}`;
+
+    return [
+        `${opening} (order ${result.listing.orderHash}, seller ${result.wallet})`,
+        `gross price: ${describeMoney(result.grossPrice, result.currency)}`,
+        `platform fee ${result.platformFee}, creator fee ${result.creatorFee}, ` +
+            `your estimated proceeds ${result.estimatedProceeds} (same base units)`,
+        `expires at ${result.listing.expirationTime}`,
+        approvals,
     ].join('\n');
 }
 

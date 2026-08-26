@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { HTTP_INTERNAL_SERVER_ERROR, MARKET_RETRY_BUDGET_MS } from './constants.js';
 import { MarketError } from './error.js';
 import {
+    isMarketSuccessStatus,
     isRetryableMarketCode,
     marketBackoffDelayMs,
     rateLimitDelayMs,
@@ -75,7 +76,7 @@ export class MarketApiClient implements IMarketApiClient {
                 });
             }
 
-            if (response.status !== HttpStatus.Ok) {
+            if (!isMarketSuccessStatus(response.status)) {
                 throw this.terminalFailure(input, response);
             }
 
@@ -132,13 +133,14 @@ export class MarketApiClient implements IMarketApiClient {
         const code = (body.success ? toMarketErrorCode(body.data.code) : null) ?? MarketErrorCode.UpstreamRateLimited;
         const message = body.success ? body.data.message : `${input.label} is rate limited upstream.`;
         const retryAfterSeconds = retryAfterSecondsFrom(response.headers);
+        const retryable = isRetryableMarketCode(code);
         const delayMs = rateLimitDelayMs(retryAfterSeconds, attempt.index);
 
-        if (delayMs > this.remainingBudgetMs(attempt)) {
+        if (!retryable || delayMs > this.remainingBudgetMs(attempt)) {
             throw new MarketError({
                 code,
                 message,
-                retryable: true,
+                retryable,
                 retryAfterSeconds,
                 stage: input.stage,
                 txHash: null,

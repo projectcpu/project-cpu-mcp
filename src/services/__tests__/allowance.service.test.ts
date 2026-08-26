@@ -60,6 +60,9 @@ class FakeWallet implements WalletManager, WalletProvider {
     async signMessage(): Promise<Hex> {
         return '0x';
     }
+    async signTypedData(): Promise<Hex> {
+        return '0x';
+    }
 }
 
 function makeService(wallet: FakeWallet): AllowanceService {

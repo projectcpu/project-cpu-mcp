@@ -55,6 +55,9 @@ class BalanceWallet implements WalletManager, WalletProvider {
     async signMessage(): Promise<Hex> {
         return '0x';
     }
+    async signTypedData(): Promise<Hex> {
+        return '0x';
+    }
 }
 
 function makeService(wallet: BalanceWallet, cpuToken: string = CPU_TOKEN): BalanceService {
