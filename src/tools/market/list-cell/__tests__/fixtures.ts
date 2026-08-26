@@ -12,6 +12,7 @@ import { MarketProfileClient } from '../../../../services/market/profile.client.
 import { MarketRecoveryStore } from '../../../../services/market/recovery.store.js';
 import { MarketSingleFlight } from '../../../../services/market/single-flight.js';
 import { MarketTransactionKind, type IMarketTransport } from '../../../../services/market/types.js';
+import type { AppConfig, IAppConfig } from '../../../../services/types.js';
 import {
     TxStatus,
     type GasEstimateRequest,
@@ -232,6 +233,18 @@ export class RoutedMarketTransport implements IMarketTransport {
     }
 }
 
+export class FakeAppConfig implements IAppConfig {
+    private readonly cell: string;
+
+    constructor(cell: string = COLLECTION) {
+        this.cell = cell;
+    }
+
+    async load(): Promise<AppConfig> {
+        return { contracts: { cell: this.cell } } as AppConfig;
+    }
+}
+
 export interface FakeWalletOptions {
     chainId: number;
     receiptStatus: TxStatus;
@@ -323,6 +336,7 @@ export function listCellHarness(
     const service = new MarketListingService({
         client,
         profile: new MarketProfileClient({ client, logger }),
+        appConfig: new FakeAppConfig(),
         wallet,
         network: 'robinhood',
         singleFlight: new MarketSingleFlight(),

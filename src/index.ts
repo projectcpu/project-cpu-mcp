@@ -129,6 +129,7 @@ async function main(): Promise<void> {
     const marketListing = new MarketListingService({
         client: marketClient,
         profile: marketProfile,
+        appConfig,
         wallet,
         network: config.NETWORK,
         singleFlight: new MarketSingleFlight(),

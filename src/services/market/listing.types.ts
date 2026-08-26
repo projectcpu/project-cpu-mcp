@@ -11,6 +11,7 @@ import {
     marketListingSchema,
     marketPreparedIntentSchema,
     marketTransactionSchema,
+    seaportConsiderationItemSchema,
     seaportOrderParametersSchema,
     unixSecondsSchema,
     type IMarketApiClient,
@@ -21,6 +22,18 @@ import {
 } from './types.js';
 import type { ILogger } from '../../logger/types.js';
 import type { WalletProvider } from '../../wallet/types.js';
+import type { IAppConfig } from '../types.js';
+
+export enum MarketScanOutcome {
+    Found = 'found',
+    Absent = 'absent',
+    Exhausted = 'exhausted',
+}
+
+export interface MarketListingScan {
+    outcome: MarketScanOutcome;
+    listing: MarketListing | null;
+}
 
 export const preparedListingTermsSchema = z.object({
     maker: evmAddressSchema,
@@ -40,6 +53,8 @@ export const prepareListingResponseSchema = marketPreparedIntentSchema.extend({
 });
 
 export const submitListingResponseSchema = z.object({ listing: marketListingSchema });
+
+export type SeaportConsiderationItem = z.infer<typeof seaportConsiderationItemSchema>;
 
 export type PreparedListingTerms = z.infer<typeof preparedListingTermsSchema>;
 
@@ -77,6 +92,7 @@ export interface ListingRecoveryPayload {
 export interface MarketListingServiceOptions {
     client: IMarketApiClient;
     profile: IMarketProfileReader;
+    appConfig: IAppConfig;
     wallet: WalletProvider;
     network: string;
     singleFlight: IMarketSingleFlight;

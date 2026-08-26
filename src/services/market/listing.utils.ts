@@ -54,8 +54,12 @@ export function seaportSignableOrder(order: SeaportOrderParameters): Record<stri
     };
 }
 
-export function currencyConsiderationTotal(order: SeaportOrderParameters, currencyAddress: string): string {
+export function considerationStartTotal(order: SeaportOrderParameters): string {
+    return sumBaseUnits(order.consideration.map((item) => item.startAmount));
+}
+
+export function recipientConsiderationTotal(order: SeaportOrderParameters, recipient: string): string {
     return sumBaseUnits(
-        order.consideration.filter((item) => sameAddress(item.token, currencyAddress)).map((item) => item.startAmount),
+        order.consideration.filter((item) => sameAddress(item.recipient, recipient)).map((item) => item.startAmount),
     );
 }

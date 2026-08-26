@@ -30,6 +30,14 @@ export const HTTP_SUCCESS_MIN = 200;
 
 export const HTTP_SUCCESS_MAX = 299;
 
+export const PROVEN_UNPUBLISHED_MARKET_ERROR_CODES: ReadonlySet<MarketErrorCode> = new Set([
+    MarketErrorCode.Unauthorized,
+    MarketErrorCode.InvalidInput,
+    MarketErrorCode.SignatureMismatch,
+    MarketErrorCode.PreparedIntentFlowMismatch,
+    MarketErrorCode.PreparedIntentExpired,
+]);
+
 export const RETRYABLE_MARKET_ERROR_CODES: ReadonlySet<MarketErrorCode> = new Set([
     MarketErrorCode.UpstreamRateLimited,
     MarketErrorCode.PreparedIntentInProgress,

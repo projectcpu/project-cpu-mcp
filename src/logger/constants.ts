@@ -15,6 +15,8 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
     'apikey',
     'accesstoken',
     'authorization',
+    'signature',
+    'prepared',
 ]);
 
 /**

@@ -1,29 +1,42 @@
-import type { Address, Hex } from 'viem';
+import { zeroAddress, zeroHash, type Address, type Hex } from 'viem';
 
-import { MarketActionTool, type IMarketRecoveryStore, type IMarketSingleFlight } from './action.types.js';
-import { MS_PER_SECOND } from './constants.js';
+import {
+    MarketActionTool,
+    type IMarketRecoveryStore,
+    type IMarketSingleFlight,
+    type MarketRecoveryRecord,
+} from './action.types.js';
+import { MS_PER_SECOND, PROVEN_UNPUBLISHED_MARKET_ERROR_CODES } from './constants.js';
 import { MarketError } from './error.js';
 import { marketActionKey } from './idempotency.utils.js';
 import {
+    LISTING_NO_IDENTIFIER,
+    LISTING_ORDER_TYPES,
+    LISTING_SINGLE_UNIT,
+    LISTING_START_TIME_SKEW_SECONDS,
     LISTING_SUBMIT_MAX_ATTEMPTS,
     MARKET_LISTING_PREPARE_PATH,
     MARKET_LISTING_SUBMIT_PATH,
 } from './listing.constants.js';
 import {
+    MarketScanOutcome,
     prepareListingResponseSchema,
     submitListingResponseSchema,
     type IMarketListingService,
     type ListCellRequest,
     type ListCellResult,
     type ListingRecoveryPayload,
+    type MarketListingScan,
     type MarketListingServiceOptions,
     type PrepareListingResponse,
+    type SeaportConsiderationItem,
 } from './listing.types.js';
 import {
-    currencyConsiderationTotal,
+    considerationStartTotal,
     effectiveListingDeadline,
     isEquivalentActiveListing,
     listingActionInputs,
+    recipientConsiderationTotal,
     sameAddress,
     sameOptionalAddress,
     seaportSignableOrder,
@@ -51,13 +64,16 @@ import {
     SEAPORT_ORDER_COMPONENTS_TYPES,
     SEAPORT_ORDER_PRIMARY_TYPE,
 } from '../../contracts/seaport.constants.js';
+import { SeaportItemType, SeaportOrderType } from '../../contracts/seaport.types.js';
 import type { ILogger } from '../../logger/types.js';
 import { sleep } from '../../utils/async.utils.js';
 import { TxStatus, type WalletProvider } from '../../wallet/types.js';
+import type { IAppConfig } from '../types.js';
 
 export class MarketListingService implements IMarketListingService {
     private readonly client: IMarketApiClient;
     private readonly profile: IMarketProfileReader;
+    private readonly appConfig: IAppConfig;
     private readonly wallet: WalletProvider;
     private readonly network: string;
     private readonly singleFlight: IMarketSingleFlight;
@@ -68,6 +84,7 @@ export class MarketListingService implements IMarketListingService {
     constructor(options: MarketListingServiceOptions) {
         this.client = options.client;
         this.profile = options.profile;
+        this.appConfig = options.appConfig;
         this.wallet = options.wallet;
         this.network = options.network;
         this.singleFlight = options.singleFlight;
@@ -90,7 +107,7 @@ export class MarketListingService implements IMarketListingService {
     private async publish(key: string, request: ListCellRequest): Promise<ListCellResult> {
         const unresolved = this.recovery.read<ListingRecoveryPayload>(key);
         if (unresolved !== null && unresolved.payload.prepared !== null) {
-            return this.resume(key, request, unresolved.payload);
+            return this.resume(key, request, unresolved);
         }
 
         this.reserve(key, MarketActionStage.Reconcile, this.emptyPayload());
@@ -113,14 +130,15 @@ export class MarketListingService implements IMarketListingService {
             throw error;
         }
 
-        return this.submit(key, request, payload);
+        return this.submit(key, request, payload, false);
     }
 
     private async resume(
         key: string,
         request: ListCellRequest,
-        payload: ListingRecoveryPayload,
+        record: MarketRecoveryRecord<ListingRecoveryPayload>,
     ): Promise<ListCellResult> {
+        const payload = record.payload;
         const prepared = payload.prepared;
         if (prepared === null) {
             this.recovery.forget(key);
@@ -138,21 +156,25 @@ export class MarketListingService implements IMarketListingService {
             };
             const signed = { ...resumed, signature: await this.sign(prepared) };
             this.reserve(key, MarketActionStage.Sign, signed);
-            return this.submit(key, request, signed);
+            return this.submit(key, request, signed, false);
         }
 
-        return this.submit(key, request, payload);
+        return this.submit(key, request, payload, record.stage === MarketActionStage.Submit);
     }
 
     private async submit(
         key: string,
         request: ListCellRequest,
         payload: ListingRecoveryPayload,
+        submittedBefore: boolean,
     ): Promise<ListCellResult> {
         const prepared = this.requirePrepared(payload);
+        let reachedServer = submittedBefore;
 
         for (let attempt = 1; attempt <= LISTING_SUBMIT_MAX_ATTEMPTS; attempt += 1) {
             this.requireWithinDeadline(prepared, MarketActionStage.Submit);
+            const priorSubmission = reachedServer;
+            reachedServer = true;
 
             try {
                 const response = await this.client.send({
@@ -167,7 +189,7 @@ export class MarketListingService implements IMarketListingService {
                 this.recovery.forget(key);
                 return this.result(MarketActionStatus.Completed, request, payload, response.listing);
             } catch (error) {
-                if (error instanceof MarketError && !error.retryable) {
+                if (this.provenUnpublished(error, priorSubmission)) {
                     this.recovery.forget(key);
                     throw error;
                 }
@@ -183,10 +205,23 @@ export class MarketListingService implements IMarketListingService {
                     this.recovery.forget(key);
                     return this.result(MarketActionStatus.AlreadyCompleted, request, payload, published);
                 }
+
+                if (error instanceof MarketError && !error.retryable) {
+                    throw this.outcomeUnknown(request, MarketActionStage.Submit);
+                }
             }
         }
 
         throw this.outcomeUnknown(request, MarketActionStage.Submit);
+    }
+
+    private provenUnpublished(error: unknown, priorSubmission: boolean): boolean {
+        return (
+            !priorSubmission &&
+            error instanceof MarketError &&
+            !error.retryable &&
+            PROVEN_UNPUBLISHED_MARKET_ERROR_CODES.has(error.code)
+        );
     }
 
     private async reconcileExpired(
@@ -221,8 +256,9 @@ export class MarketListingService implements IMarketListingService {
     private async reconcile(request: ListCellRequest, stage: MarketActionStage): Promise<MarketListing | null> {
         await this.waitForProfileCacheHorizon();
 
+        let scan: MarketListingScan;
         try {
-            return await this.findEquivalentActiveListing(request);
+            scan = await this.scanActiveListings(request);
         } catch (error) {
             this.logger.error('cannot reconcile an uncertain listing against the marketplace', {
                 tokenId: request.tokenId,
@@ -230,10 +266,37 @@ export class MarketListingService implements IMarketListingService {
             });
             throw this.outcomeUnknown(request, stage);
         }
+
+        if (scan.outcome === MarketScanOutcome.Exhausted) {
+            this.logger.error('the active listings run past the pages this tool may read, so nothing is settled', {
+                tokenId: request.tokenId,
+                pages: MARKET_RECONCILE_MAX_PAGES,
+            });
+            throw this.outcomeUnknown(request, stage);
+        }
+
+        return scan.listing;
     }
 
     private async requireNoEquivalentActiveListing(request: ListCellRequest): Promise<void> {
-        const active = await this.findEquivalentActiveListing(request);
+        const scan = await this.scanActiveListings(request);
+
+        if (scan.outcome === MarketScanOutcome.Exhausted) {
+            throw new MarketError({
+                code: MarketErrorCode.OutcomeUnknown,
+                message:
+                    `Your active listings run past the ${MARKET_RECONCILE_MAX_PAGES} pages this tool reads, so it ` +
+                    `cannot rule out that Cell ${request.tokenId} already carries an equivalent listing, and it ` +
+                    'will not prepare another one blindly. Cancel listings you no longer need, then call the tool ' +
+                    'again.',
+                retryable: true,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Reconcile,
+                txHash: null,
+            });
+        }
+
+        const active = scan.listing;
         if (active === null) {
             return;
         }
@@ -252,7 +315,7 @@ export class MarketListingService implements IMarketListingService {
         });
     }
 
-    private async findEquivalentActiveListing(request: ListCellRequest): Promise<MarketListing | null> {
+    private async scanActiveListings(request: ListCellRequest): Promise<MarketListingScan> {
         const wallet = this.walletAddress();
         let cursor: string | null = null;
 
@@ -262,16 +325,16 @@ export class MarketListingService implements IMarketListingService {
 
             const match = listings.items.find((listing) => isEquivalentActiveListing(listing, request, wallet));
             if (match !== undefined) {
-                return match;
+                return { outcome: MarketScanOutcome.Found, listing: match };
             }
 
             cursor = listings.nextCursor;
             if (cursor === null) {
-                return null;
+                return { outcome: MarketScanOutcome.Absent, listing: null };
             }
         }
 
-        return null;
+        return { outcome: MarketScanOutcome.Exhausted, listing: null };
     }
 
     private async waitForProfileCacheHorizon(): Promise<void> {
@@ -296,6 +359,7 @@ export class MarketListingService implements IMarketListingService {
             body.buyerAddress = request.buyerAddress;
         }
 
+        const collection = await this.requireCellCollection();
         const prepared = await this.client.send({
             path: MARKET_LISTING_PREPARE_PATH,
             method: 'POST',
@@ -305,11 +369,35 @@ export class MarketListingService implements IMarketListingService {
             label: `Preparing the listing for Cell ${request.tokenId}`,
         });
 
-        this.requireTrustworthyPreparation(request, prepared);
+        this.requireTrustworthyPreparation(request, prepared, collection);
         return prepared;
     }
 
-    private requireTrustworthyPreparation(request: ListCellRequest, prepared: PrepareListingResponse): void {
+    private async requireCellCollection(): Promise<string> {
+        const config = await this.appConfig.load();
+        const collection = config.contracts.cell;
+
+        if (!evmAddressSchema.safeParse(collection).success) {
+            throw new MarketError({
+                code: MarketErrorCode.InvalidMarketResponse,
+                message:
+                    'The Cell collection contract is not configured for this network, so the order a listing asks ' +
+                    'the wallet to sign cannot be checked against the collection it must offer.',
+                retryable: false,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Prepare,
+                txHash: null,
+            });
+        }
+
+        return collection;
+    }
+
+    private requireTrustworthyPreparation(
+        request: ListCellRequest,
+        prepared: PrepareListingResponse,
+        collection: string,
+    ): void {
         const wallet = this.walletAddress();
         const chainId = this.wallet.get().getChainId();
 
@@ -338,7 +426,9 @@ export class MarketListingService implements IMarketListingService {
         this.requireRequestedTerms(request, prepared);
         this.requireFeeArithmetic(request, prepared);
         this.requireApprovalsOnly(request, prepared);
-        this.requireSignableOrder(request, prepared);
+        this.requireOfferedCell(request, prepared, collection);
+        this.requireOrderShape(request, prepared);
+        this.requireConsideration(request, prepared);
     }
 
     private requireRequestedTerms(request: ListCellRequest, prepared: PrepareListingResponse): void {
@@ -370,6 +460,14 @@ export class MarketListingService implements IMarketListingService {
                 MarketErrorCode.InvalidMarketResponse,
                 `its reserved buyer is ${listing.buyerAddress ?? 'nobody'} instead of ` +
                     `${request.buyerAddress ?? 'nobody'}`,
+                request,
+            );
+        }
+        if (listing.startTime > this.nowSeconds() + LISTING_START_TIME_SKEW_SECONDS) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `it does not become fillable until ${listing.startTime}, so it would not be the listing you asked ` +
+                    'for now',
                 request,
             );
         }
@@ -406,7 +504,7 @@ export class MarketListingService implements IMarketListingService {
         }
     }
 
-    private requireSignableOrder(request: ListCellRequest, prepared: PrepareListingResponse): void {
+    private requireOfferedCell(request: ListCellRequest, prepared: PrepareListingResponse, collection: string): void {
         const order = prepared.order;
         const sold = order.offer.length === 1 ? (order.offer[0] ?? null) : null;
 
@@ -417,6 +515,60 @@ export class MarketListingService implements IMarketListingService {
                 request,
             );
         }
+        if (sold.itemType !== SeaportItemType.Erc721) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign offers item type ${sold.itemType} rather than the ERC-721 Cell`,
+                request,
+            );
+        }
+        if (!sameAddress(sold.token, collection)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign offers a token of collection ${sold.token} instead of the ` +
+                    `Cell collection ${collection}`,
+                request,
+            );
+        }
+        if (sold.startAmount !== LISTING_SINGLE_UNIT || sold.endAmount !== LISTING_SINGLE_UNIT) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign offers ${sold.startAmount} units of the Cell rather than one`,
+                request,
+            );
+        }
+    }
+
+    private requireOrderShape(request: ListCellRequest, prepared: PrepareListingResponse): void {
+        const order = prepared.order;
+
+        if (!LISTING_ORDER_TYPES.has(order.orderType)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign is of type ${order.orderType}, which a Cell listing signed by ` +
+                    'a wallet never uses',
+                request,
+            );
+        }
+        if (
+            order.orderType === SeaportOrderType.FullOpen &&
+            (!sameAddress(order.zone, zeroAddress) || order.zoneHash !== zeroHash)
+        ) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign hands zone ${order.zone} a say over an order nothing ` +
+                    'restricts',
+                request,
+            );
+        }
+        if (order.startTime !== prepared.listing.startTime.toString()) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign becomes fillable at ${order.startTime} instead of the ` +
+                    `prepared ${prepared.listing.startTime}`,
+                request,
+            );
+        }
         if (order.endTime !== request.expirationTime.toString()) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
@@ -424,13 +576,89 @@ export class MarketListingService implements IMarketListingService {
                 request,
             );
         }
+    }
 
-        const paid = currencyConsiderationTotal(order, prepared.listing.currency.address);
+    private requireConsideration(request: ListCellRequest, prepared: PrepareListingResponse): void {
+        const order = prepared.order;
+        const currency = prepared.listing.currency.address;
+        const expected = sameAddress(currency, zeroAddress) ? SeaportItemType.Native : SeaportItemType.Erc20;
+
+        if (order.consideration.length === 0) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                'the order it asks the wallet to sign pays the seller side nothing at all',
+                request,
+            );
+        }
+        if (order.totalOriginalConsiderationItems !== order.consideration.length) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign declares ${order.totalOriginalConsiderationItems} original ` +
+                    `payment items while carrying ${order.consideration.length}`,
+                request,
+            );
+        }
+
+        for (const item of order.consideration) {
+            this.requireConsiderationItem(request, item, currency, expected);
+        }
+
+        const paid = considerationStartTotal(order);
         if (paid !== prepared.listing.price) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 `the order it asks the wallet to sign collects ${paid} for the seller side rather than the gross ` +
                     `price ${prepared.listing.price}`,
+                request,
+            );
+        }
+
+        const kept = recipientConsiderationTotal(order, this.walletAddress());
+        if (BigInt(kept) < BigInt(prepared.fees.estimatedProceeds)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign pays this wallet ${kept} while its fee preview promises ` +
+                    `${prepared.fees.estimatedProceeds}`,
+                request,
+            );
+        }
+    }
+
+    private requireConsiderationItem(
+        request: ListCellRequest,
+        item: SeaportConsiderationItem,
+        currency: string,
+        expected: SeaportItemType,
+    ): void {
+        if (!sameAddress(item.token, currency)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign pays part of the price in ${item.token} instead of the ` +
+                    `listing currency ${currency}`,
+                request,
+            );
+        }
+        if (item.itemType !== expected) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign pays part of the price as item type ${item.itemType} instead ` +
+                    `of ${expected}`,
+                request,
+            );
+        }
+        if (item.identifierOrCriteria !== LISTING_NO_IDENTIFIER) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign pays part of the price with token ` +
+                    `${item.identifierOrCriteria} rather than a plain amount`,
+                request,
+            );
+        }
+        if (item.startAmount !== item.endAmount) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign starts a payment at ${item.startAmount} and ends it at ` +
+                    `${item.endAmount}, so it could be filled for less than the price you set`,
                 request,
             );
         }
