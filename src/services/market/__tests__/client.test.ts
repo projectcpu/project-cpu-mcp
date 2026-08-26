@@ -111,6 +111,20 @@ describe('MarketApiClient', () => {
         expect(transport.calls).toHaveLength(1);
     });
 
+    it('names the spent wait budget in the error when it refuses to wait out the delay it was asked for', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport([
+            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '600' }),
+        ]);
+
+        const error = (await settle(clientOver(transport).send(request()))) as MarketError;
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect(error.message).toMatch(/wait budget/i);
+        expect(error.message).toMatch(/spent/i);
+        expect(error.message).not.toMatch(/deadline/i);
+    });
+
     it('reads Retry-After off the response headers, since the structured 429 body carries no numeric delay', async () => {
         vi.useFakeTimers();
         const body = { code: 'upstreamRateLimited', message: 'slow down' };

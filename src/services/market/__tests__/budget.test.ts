@@ -60,6 +60,15 @@ describe('MarketWaitBudget', () => {
         expect(open.remainingMs).toBe(0);
     });
 
+    it('clips a wait at the effective deadline instead of sleeping past the order it prepared', async () => {
+        const open = budget(NOW_SECONDS + 4);
+
+        const [clipped] = await Promise.all([open.waitAtMost(10_000), vi.advanceTimersByTimeAsync(10_000)]);
+
+        expect(clipped).toBe(4_000);
+        expect(open.remainingMs).toBe(MARKET_RETRY_BUDGET_MS - 4_000);
+    });
+
     it('lets the snapshot wait inside an invocation draw on that invocation budget', async () => {
         const startedAt = Date.now();
 

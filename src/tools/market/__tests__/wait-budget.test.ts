@@ -103,6 +103,21 @@ describe('the automatic wait budget of one marketplace tool invocation', () => {
         expect(Date.now() - startedAt).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS);
     });
 
+    it('honours no wait that would carry the call past the deadline of the listing it prepared', async () => {
+        const transport = new RoutedMarketTransport({
+            [MarketRoute.MyListings]: [reply(200, listingsPageWire([], null))],
+            [MarketRoute.Prepare]: [reply(200, preparedWire({ expiresAt: NOW_SECONDS + 3 }))],
+            [MarketRoute.Submit]: [reply(503, { code: 'x', message: 'down' })],
+        });
+        const handler = listCellHandler(transport);
+        const startedAt = Date.now();
+
+        const outcome = await settle(Promise.resolve(handler(listCellArgs())));
+
+        expect(outcome).toBeInstanceOf(MarketError);
+        expect(Date.now() - startedAt).toBeLessThanOrEqual(3_000);
+    });
+
     it('cannot be reset or extended by a long run of failing responses', async () => {
         const transport = new RoutedMarketTransport({
             [MarketRoute.MyListings]: [
