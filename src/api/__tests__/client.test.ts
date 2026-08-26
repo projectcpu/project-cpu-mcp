@@ -72,7 +72,7 @@ describe('ApiClient', () => {
             const client = createClient();
             const result = await client.request<typeof payload>('/test');
 
-            expect(result).toEqual({ status: 200, data: payload });
+            expect(result).toMatchObject({ status: 200, data: payload });
         });
 
         it('should return non-200 status without throwing', async () => {
@@ -150,6 +150,72 @@ describe('ApiClient', () => {
             await client.request('/test');
             expect(client.getServerHealth().reachable).toBe(true);
             expect(client.getServerHealth().reason).toBeNull();
+        });
+    });
+
+    describe('response headers', () => {
+        it('hands the caller the response headers alongside the status, so Retry-After can be read', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'retry-after': '7' } }),
+            );
+
+            const client = createClient();
+            const result = await client.request('/test');
+
+            expect(result.status).toBe(200);
+            expect(result.headers.get('retry-after')).toBe('7');
+        });
+
+        it('preserves the headers of an error response too', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response(JSON.stringify({ code: 'upstreamRateLimited', message: 'slow down' }), {
+                    status: 429,
+                    headers: { 'retry-after': '30' },
+                }),
+            );
+
+            const client = createClient();
+            const result = await client.request('/test');
+
+            expect(result.status).toBe(429);
+            expect(result.headers.get('retry-after')).toBe('30');
+            expect(result.data).toEqual({ code: 'upstreamRateLimited', message: 'slow down' });
+        });
+    });
+
+    describe('bare rate limiting', () => {
+        it('returns a non-JSON 429 as a status and headers rather than failing to parse it', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response('<html>Too Many Requests</html>', {
+                    status: 429,
+                    headers: { 'content-type': 'text/html', 'retry-after': '60' },
+                }),
+            );
+
+            const client = createClient();
+            const result = await client.request('/test');
+
+            expect(result.status).toBe(429);
+            expect(result.headers.get('retry-after')).toBe('60');
+            expect(result.data).toBeNull();
+        });
+
+        it('does not treat a bare 429 as proof that the whole game API is unreachable', async () => {
+            mockFetch.mockResolvedValueOnce(new Response('', { status: 429, headers: { 'retry-after': '60' } }));
+
+            const client = createClient();
+            await client.request('/test');
+
+            expect(client.getServerHealth().reachable).toBe(true);
+        });
+
+        it('still rejects a non-JSON body on any other status', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response('<html>err</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+            );
+
+            const client = createClient();
+            await expect(client.request('/test')).rejects.toThrow(/non-JSON/i);
         });
     });
 

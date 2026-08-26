@@ -66,6 +66,7 @@ describe('AuthService', () => {
         // Nonce must satisfy viem's EIP-4361 rules (alphanumeric, >= 8 chars).
         const nonceResponse = () => ({
             status: 200,
+            headers: new Headers(),
             data: {
                 nonce: 'abc123def456',
                 issuedAt: new Date(Date.now()).toISOString(),
@@ -74,6 +75,7 @@ describe('AuthService', () => {
         });
         const verifyResponse = () => ({
             status: 200,
+            headers: new Headers(),
             data: { accessToken: 'jwt-token', user: { id: 'user-1', address: ADDRESS.toLowerCase() } },
         });
 
@@ -82,7 +84,7 @@ describe('AuthService', () => {
                 vi.mocked(session.getStatus).mockReturnValue(SessionStatus.Missing);
                 vi.mocked(api.getBaseUrl).mockReturnValue('https://api.test.com');
                 vi.mocked(api.request).mockResolvedValueOnce(nonceResponse());
-                vi.mocked(api.request).mockResolvedValueOnce({ status: 401, data: {} });
+                vi.mocked(api.request).mockResolvedValueOnce({ status: 401, headers: new Headers(), data: {} });
 
                 await expect(service.authenticateSiwe()).rejects.toThrow(/SIWE verification failed/);
                 expect(session.setSession).not.toHaveBeenCalled();

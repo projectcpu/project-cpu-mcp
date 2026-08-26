@@ -118,6 +118,10 @@ export class ApiClient {
         try {
             data = await parseJsonBody<T>(response);
         } catch (error) {
+            if (response.status === HttpStatus.TooManyRequests) {
+                this.logger.warn('api rate limited with a non-JSON body', { method, path });
+                return { status: response.status, headers: response.headers, data: null as T };
+            }
             if (trackHealth) {
                 this.setReachable(false, errorMessage(error));
             }
@@ -129,7 +133,7 @@ export class ApiClient {
         }
         this.logger.debug('api response', { method, path, status: response.status });
 
-        return { status: response.status, data };
+        return { status: response.status, headers: response.headers, data };
     }
 
     private setReachable(reachable: boolean, reason: string | null): void {

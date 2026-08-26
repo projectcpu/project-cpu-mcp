@@ -8,6 +8,7 @@ import type { AuthService } from './services/auth.service.js';
 import type { BalanceService } from './services/balance.service.js';
 import type { BuildService } from './services/build.service.js';
 import type { CraftService } from './services/craft.service.js';
+import type { IMarketService } from './services/market/types.js';
 import type { MiningService } from './services/mining.service.js';
 import type { MintService } from './services/mint.service.js';
 import type { RevealFulfilmentService } from './services/reveal-fulfilment.service.js';
@@ -39,6 +40,7 @@ export interface AppContext {
     route: RouteService;
     trade: TradeService;
     tradeRules: TradeRulesService;
+    market: IMarketService;
     syndicate: SyndicateService;
     swap: SwapService;
     mint: MintService;

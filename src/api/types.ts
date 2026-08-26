@@ -11,6 +11,7 @@ export enum HttpStatus {
     Unauthorized = 401,
     NotFound = 404,
     Conflict = 409,
+    TooManyRequests = 429,
 }
 
 export interface ApiClientOptions {
@@ -42,6 +43,7 @@ export interface SiweVerifyResponse {
 
 export interface ApiResponse<T> {
     status: number;
+    headers: Headers;
     data: T;
 }
 
