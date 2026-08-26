@@ -2,6 +2,7 @@ import type { RequestOptions } from '../../../api/client.js';
 import type { ApiResponse } from '../../../api/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
 import { MarketApiClient } from '../client.js';
+import { MarketProfileClient } from '../profile.client.js';
 import { MarketService } from '../service.js';
 import { MarketOfferKind, type IMarketTransport } from '../types.js';
 
@@ -91,4 +92,21 @@ export class FakeMarketTransport implements IMarketTransport {
 export function marketServiceOver(transport: IMarketTransport): MarketService {
     const logger = new NoopLogger();
     return new MarketService({ client: new MarketApiClient({ api: transport, logger }), logger });
+}
+
+export function marketProfileClientOver(transport: IMarketTransport): MarketProfileClient {
+    const logger = new NoopLogger();
+    return new MarketProfileClient({ client: new MarketApiClient({ api: transport, logger }), logger });
+}
+
+export function pageWire(items: Array<unknown>, nextCursor: string | null): Record<string, unknown> {
+    return { items, nextCursor };
+}
+
+export function listingWireFor(tokenId: string, orderHash: string): Record<string, unknown> {
+    return { ...listingWire, tokenId, orderHash };
+}
+
+export function offerWireFrom(kind: MarketOfferKind, tokenId: string | null, maker: string): Record<string, unknown> {
+    return { ...offerWire(kind, tokenId), maker };
 }

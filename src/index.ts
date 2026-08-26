@@ -26,6 +26,7 @@ import { BuildService } from './services/build.service.js';
 import { CellClient } from './services/cell.client.js';
 import { CraftService } from './services/craft.service.js';
 import { MarketApiClient } from './services/market/client.js';
+import { MarketProfileClient } from './services/market/profile.client.js';
 import { MarketService } from './services/market/service.js';
 import { MiningService } from './services/mining.service.js';
 import { MintService } from './services/mint.service.js';
@@ -116,9 +117,11 @@ async function main(): Promise<void> {
         tradeClient,
         logger: logger.child('trade:rules'),
     });
-    const market = new MarketService({
-        client: new MarketApiClient({ api, logger: logger.child('market:api') }),
-        logger: logger.child('market'),
+    const marketClient = new MarketApiClient({ api, logger: logger.child('market:api') });
+    const market = new MarketService({ client: marketClient, logger: logger.child('market') });
+    const marketProfile = new MarketProfileClient({
+        client: marketClient,
+        logger: logger.child('market:profile'),
     });
     const syndicateRegistry = new SyndicateRegistryClient({ contracts, logger: logger.child('syndicate:client') });
     const syndicate = new SyndicateService({
@@ -262,6 +265,7 @@ async function main(): Promise<void> {
         trade,
         tradeRules,
         market,
+        marketProfile,
         syndicate,
         swap,
         mint,

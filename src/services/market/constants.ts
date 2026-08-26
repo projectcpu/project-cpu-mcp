@@ -4,6 +4,16 @@ export const MARKET_BASE_PATH = '/api/v1/market';
 
 export const MARKET_CELL_PATH = `${MARKET_BASE_PATH}/cells`;
 
+export const MARKET_MY_LISTINGS_PATH = `${MARKET_BASE_PATH}/me/listings`;
+
+export const MARKET_MY_OFFERS_PATH = `${MARKET_BASE_PATH}/me/offers`;
+
+export const MARKET_MY_OFFERS_RECEIVED_PATH = `${MARKET_BASE_PATH}/me/offers-received`;
+
+export const MARKET_CURSOR_PARAM = 'cursor';
+
+export const MARKET_PAGE_SIZE_HINT = 50;
+
 export const MARKET_RETRY_BUDGET_MS = 60_000;
 
 export const MS_PER_SECOND = 1_000;
