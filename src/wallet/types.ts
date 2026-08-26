@@ -2,8 +2,6 @@ import type { Abi, Address, Hash, Hex, Log } from 'viem';
 
 import type { EnvConfig } from '../config/types.js';
 import type { ILogger } from '../logger/types.js';
-import type { SessionManager } from '../session/manager.js';
-import type { AgwSessionConfig } from '../session/types.js';
 import type { RetryOptions } from '../utils/retry.utils.js';
 
 export interface GasEstimateRequest {
@@ -86,15 +84,7 @@ export interface EvmWalletManagerOptions {
     logger: ILogger;
 }
 
-export interface AgwWalletManagerOptions {
-    sessionPrivateKey: Hex;
-    sessionConfig: AgwSessionConfig;
-    rpcUrl: string | null;
-    logger: ILogger;
-}
-
 export interface CreateWalletProviderInput {
     config: EnvConfig;
-    session: SessionManager;
     logger: ILogger;
 }

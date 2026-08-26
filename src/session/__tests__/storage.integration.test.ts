@@ -4,20 +4,16 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { SESSION_DIR, SESSION_FILE, SESSION_KEY_FILE } from '../../config/constants.js';
+import { SESSION_DIR, SESSION_FILE } from '../../config/constants.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
-import { WalletMode } from '../../types.js';
 import { SessionStorage } from '../storage.js';
 import type { SessionData } from '../types.js';
 
 function createSessionData(overrides: Partial<SessionData> = {}): SessionData {
     const now = new Date().toISOString();
     return {
-        walletMode: WalletMode.EVM,
         address: '0x1234567890123456789012345678901234567890',
-        sessionPrivateKey: null,
         jwt: 'header.payload.signature',
-        sessionConfig: null,
         createdAt: now,
         updatedAt: now,
         ...overrides,
@@ -69,19 +65,42 @@ describe('SessionStorage', () => {
             expect(loaded?.jwt).toBe('new-jwt');
         });
 
-        it('preserves AGW session config when saved', () => {
-            const data = createSessionData({
-                walletMode: WalletMode.AGW,
-                sessionConfig: {
-                    accountAddress: '0xabcdef1234567890abcdef1234567890abcdef12',
-                    sessionHash: '0xdeadbeef',
-                    policies: { target: '0x1111', selector: '0x2222' },
-                    expiresAt: 1234567890,
-                },
+        it('persists only the address, JWT and timestamps', () => {
+            storage.save(createSessionData());
+            const written = JSON.parse(
+                fs.readFileSync(path.join(tempDir, SESSION_DIR, SESSION_FILE), 'utf-8'),
+            ) as Record<string, unknown>;
+            expect(Object.keys(written).sort()).toEqual(['address', 'createdAt', 'jwt', 'updatedAt']);
+        });
+
+        it('writes nothing beside session.json', () => {
+            storage.save(createSessionData());
+            expect(fs.readdirSync(path.join(tempDir, SESSION_DIR))).toEqual([SESSION_FILE]);
+        });
+
+        it('reads a session file written by an older runtime and drops its discarded fields', () => {
+            const now = new Date().toISOString();
+            const sessionFile = path.join(tempDir, SESSION_DIR, SESSION_FILE);
+            fs.mkdirSync(path.dirname(sessionFile), { recursive: true, mode: 0o700 });
+            fs.writeFileSync(
+                sessionFile,
+                JSON.stringify({
+                    walletMode: 'evm',
+                    address: '0x1234567890123456789012345678901234567890',
+                    jwt: 'header.payload.signature',
+                    sessionConfig: null,
+                    createdAt: now,
+                    updatedAt: now,
+                }),
+                { mode: 0o600 },
+            );
+
+            expect(storage.load()).toEqual({
+                address: '0x1234567890123456789012345678901234567890',
+                jwt: 'header.payload.signature',
+                createdAt: now,
+                updatedAt: now,
             });
-            storage.save(data);
-            const loaded = storage.load();
-            expect(loaded).toEqual(data);
         });
 
         it('deletes session files and returns null when session.json is corrupted', () => {
@@ -106,56 +125,10 @@ describe('SessionStorage', () => {
             expect(() => storage.delete()).not.toThrow();
         });
 
-        it('removes both session.json and session-key files', () => {
-            const validKey = '0x' + 'a'.repeat(64);
-            storage.save(createSessionData({ sessionPrivateKey: validKey }));
-            const keyPath = path.join(tempDir, SESSION_DIR, SESSION_KEY_FILE);
-            expect(fs.existsSync(keyPath)).toBe(true);
+        it('leaves the session directory empty', () => {
+            storage.save(createSessionData());
             storage.delete();
-            expect(fs.existsSync(keyPath)).toBe(false);
-        });
-    });
-
-    describe('key file persistence', () => {
-        const validKey = '0x' + 'b'.repeat(64);
-
-        it('stores sessionPrivateKey in a separate session-key file, not session.json', () => {
-            storage.save(createSessionData({ sessionPrivateKey: validKey }));
-            const jsonContent = fs.readFileSync(path.join(tempDir, SESSION_DIR, SESSION_FILE), 'utf-8');
-            expect(jsonContent).not.toContain(validKey);
-            const keyContent = fs.readFileSync(path.join(tempDir, SESSION_DIR, SESSION_KEY_FILE), 'utf-8');
-            expect(keyContent.trim()).toBe(validKey);
-        });
-
-        it('creates key file with 0o600 permissions', () => {
-            storage.save(createSessionData({ sessionPrivateKey: validKey }));
-            const stat = fs.statSync(path.join(tempDir, SESSION_DIR, SESSION_KEY_FILE));
-            expect(stat.mode & 0o777).toBe(0o600);
-        });
-
-        it('load returns null sessionPrivateKey when key file is absent', () => {
-            storage.save(createSessionData({ sessionPrivateKey: null }));
-            const loaded = storage.load();
-            expect(loaded?.sessionPrivateKey).toBeNull();
-        });
-
-        it('save with null key removes a previously-persisted key file', () => {
-            storage.save(createSessionData({ sessionPrivateKey: validKey }));
-            const keyPath = path.join(tempDir, SESSION_DIR, SESSION_KEY_FILE);
-            expect(fs.existsSync(keyPath)).toBe(true);
-            storage.save(createSessionData({ sessionPrivateKey: null }));
-            expect(fs.existsSync(keyPath)).toBe(false);
-        });
-
-        it('deletes both files and returns null when the key file is corrupted', () => {
-            storage.save(createSessionData({ sessionPrivateKey: validKey }));
-            const sessionFile = path.join(tempDir, SESSION_DIR, SESSION_FILE);
-            const keyFile = path.join(tempDir, SESSION_DIR, SESSION_KEY_FILE);
-            fs.writeFileSync(keyFile, 'not-a-valid-hex-key', { mode: 0o600 });
-
-            expect(storage.load()).toBeNull();
-            expect(fs.existsSync(sessionFile)).toBe(false);
-            expect(fs.existsSync(keyFile)).toBe(false);
+            expect(fs.readdirSync(path.join(tempDir, SESSION_DIR))).toEqual([]);
         });
     });
 

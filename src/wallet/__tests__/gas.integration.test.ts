@@ -3,16 +3,14 @@ import type { AddressInfo } from 'node:net';
 
 import { createPublicClient, http, parseTransaction, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { abstractTestnet, mainnet } from 'viem/chains';
+import { mainnet } from 'viem/chains';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NoopLogger } from '../../logger/noop.logger.js';
-import { AgwWalletManager } from '../agw.manager.js';
 import { EvmWalletManager } from '../evm.manager.js';
 
 const TEST_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as Hex;
 const SIGNER_ADDRESS = privateKeyToAccount(TEST_KEY).address;
-const AGW_ACCOUNT = '0x000000000000000000000000000000000000dEaD' as Address;
 const TARGET = '0x1111111111111111111111111111111111111111' as Address;
 const DATA = '0xdeadbeef' as Hex;
 const ESTIMATE = 31337n;
@@ -91,19 +89,6 @@ class FakeNode {
         }
     }
 }
-
-const AGW_SESSION = {
-    accountAddress: AGW_ACCOUNT,
-    sessionHash: `0x${'b'.repeat(64)}`,
-    policies: {
-        signer: SIGNER_ADDRESS,
-        expiresAt: 0n,
-        feeLimit: { limitType: 0, limit: 0n, period: 0n },
-        callPolicies: [],
-        transferPolicies: [],
-    },
-    expiresAt: Math.floor(Date.now() / 1000) + 3600,
-};
 
 describe('wallet gas limit and estimation', () => {
     let node: FakeNode;
@@ -215,37 +200,5 @@ describe('wallet gas limit and estimation', () => {
         await keyless.getGasPrice();
 
         expect(node.calls).toEqual(managerCalls);
-    });
-
-    it('AgwWalletManager reads the gas price without the session signer key', async () => {
-        const rpcUrl = await node.start(abstractTestnet.id);
-        const manager = new AgwWalletManager({
-            sessionPrivateKey: TEST_KEY,
-            sessionConfig: AGW_SESSION,
-            rpcUrl,
-            logger: new NoopLogger(),
-        });
-
-        const gasPrice = await manager.getGasPrice();
-
-        expect(gasPrice).toBe(GAS_PRICE);
-        expect(node.methods()).toEqual(['eth_gasPrice']);
-    });
-
-    it('AgwWalletManager estimates for the account address without the session signer key', async () => {
-        const rpcUrl = await node.start(abstractTestnet.id);
-        const manager = new AgwWalletManager({
-            sessionPrivateKey: TEST_KEY,
-            sessionConfig: AGW_SESSION,
-            rpcUrl,
-            logger: new NoopLogger(),
-        });
-
-        const estimate = await manager.estimateGas({ to: TARGET, data: DATA, value: null });
-
-        expect(estimate).toBe(ESTIMATE);
-        expect(node.calls).toEqual([
-            { method: 'eth_estimateGas', params: [{ from: AGW_ACCOUNT, to: TARGET, data: DATA }] },
-        ]);
     });
 });

@@ -106,7 +106,7 @@ Every command above pins `@latest`, so restarting the server is how you update â
 
 ## Environment variables
 
-**Required** â€” for the default `WALLET_MODE=evm`; not needed in `agw` mode, see below.
+**Required** â€” the server refuses to start without it.
 
 | Variable | Description |
 | --- | --- |
@@ -116,14 +116,13 @@ Every command above pins `@latest`, so restarting the server is how you update â
 
 | Variable | Default | When you need it |
 | --- | --- | --- |
-| `WALLET_MODE` | `evm` | Switch to `agw` to authenticate via a Device Authorization flow instead of a `PRIVATE_KEY` in env. |
 | `API_URL` | `https://api.projectcpu.cc` | Point the client at a different game API deployment. |
 | `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
 | `RPC_URL` | Robinhood public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
 | `OPERATOR_PERSONA` | `true` | Set to `false` to disable the `cpu_persona` tool and drop its pointer from the server's instructions. |
 | `DEBUG` | `false` | Set to `true` for debug-level logging on stderr. |
 
-Session state (JWT / session keys) is persisted to `~/.project-cpu/`.
+Session state (the signed-in address and its JWT) is persisted to `~/.project-cpu/`.
 
 ## What the agent can do
 

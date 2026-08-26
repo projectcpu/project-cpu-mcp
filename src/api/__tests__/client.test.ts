@@ -54,19 +54,19 @@ describe('ApiClient', () => {
             mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
 
             const client = createClient();
-            await client.request('/test', { method: 'POST', body: { signerAddress: '0xABC' } });
+            await client.request('/test', { method: 'POST', body: { address: '0xABC' } });
 
             expect(mockFetch).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.objectContaining({
                     method: 'POST',
-                    body: '{"signerAddress":"0xABC"}',
+                    body: '{"address":"0xABC"}',
                 }),
             );
         });
 
         it('should return status and parsed data', async () => {
-            const payload = { deviceCode: 'abc', userCode: 'XXXX-YYYY' };
+            const payload = { nonce: 'abc123def456', issuedAt: '2026-01-01T00:00:00.000Z' };
             mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(payload), { status: 200 }));
 
             const client = createClient();

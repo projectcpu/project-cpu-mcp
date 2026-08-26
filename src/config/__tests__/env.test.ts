@@ -22,6 +22,40 @@ describe('loadEnvConfig NETWORK', () => {
     );
 });
 
+describe('loadEnvConfig PRIVATE_KEY', () => {
+    it('rejects a startup without a private key', () => {
+        expect(() => loadEnvConfig({})).toThrow(/PRIVATE_KEY/);
+    });
+
+    it('rejects a malformed private key', () => {
+        expect(() => loadEnvConfig({ PRIVATE_KEY: '0xdeadbeef' })).toThrow(/PRIVATE_KEY/);
+    });
+});
+
+describe('loadEnvConfig shape', () => {
+    it('carries exactly the variables the runtime reads', () => {
+        expect(Object.keys(loadEnvConfig({ PRIVATE_KEY })).sort()).toEqual([
+            'API_URL',
+            'NETWORK',
+            'OPERATOR_PERSONA',
+            'PRIVATE_KEY',
+            'RPC_URL',
+        ]);
+    });
+});
+
+describe('loadEnvConfig RPC_URL', () => {
+    it('is null when the override is absent', () => {
+        expect(loadEnvConfig({ PRIVATE_KEY }).RPC_URL).toBeNull();
+    });
+
+    it('keeps an explicit override', () => {
+        expect(loadEnvConfig({ PRIVATE_KEY, RPC_URL: 'https://rpc.example/robinhood' }).RPC_URL).toBe(
+            'https://rpc.example/robinhood',
+        );
+    });
+});
+
 describe('loadEnvConfig OPERATOR_PERSONA', () => {
     it('is on when the variable is absent', () => {
         expect(loadEnvConfig({ PRIVATE_KEY }).OPERATOR_PERSONA).toBe(true);

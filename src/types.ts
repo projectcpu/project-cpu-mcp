@@ -23,11 +23,6 @@ import type { SessionManager } from './session/manager.js';
 import type { IBackendVersionSignal, IPackageVersionSignal } from './version/types.js';
 import type { WalletProvider } from './wallet/types.js';
 
-export enum WalletMode {
-    EVM = 'evm',
-    AGW = 'agw',
-}
-
 export interface AppContext {
     config: EnvConfig;
     session: SessionManager;

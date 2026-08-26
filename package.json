@@ -43,7 +43,6 @@
         "format": "prettier --write 'src/**/*.ts'"
     },
     "dependencies": {
-        "@abstract-foundation/agw-client": "^1.12.3",
         "@modelcontextprotocol/sdk": "^1.0.0",
         "@uniswap/sdk-core": "^7.17.0",
         "@uniswap/universal-router-sdk": "^5.7.0",

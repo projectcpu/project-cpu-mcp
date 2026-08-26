@@ -5,7 +5,6 @@ import { ApiClient } from '../../api/client.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import { SessionManager } from '../../session/manager.js';
 import { type SessionData, SessionStatus } from '../../session/types.js';
-import { WalletMode } from '../../types.js';
 import type { WalletManager, WalletProvider } from '../../wallet/types.js';
 import { AuthService } from '../auth.service.js';
 
@@ -17,21 +16,6 @@ const logger = new NoopLogger();
 // Fixed Anvil test key → a real, EIP-55-checksummed address that viem's createSiweMessage accepts.
 const TEST_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const ADDRESS = privateKeyToAccount(TEST_KEY).address;
-
-const DEVICE_AUTH_RESPONSE = {
-    deviceCode: 'abc123',
-    userCode: 'XXXX-YYYY',
-    verificationUri: 'https://game.example/auth/device',
-    expiresIn: 300,
-    interval: 2,
-};
-
-const SESSION_CONFIG = {
-    accountAddress: '0xWALLET',
-    sessionHash: '0xHASH',
-    policies: {},
-    expiresAt: Math.floor(Date.now() / 1000) + 86400,
-};
 
 /** Builds a JWT whose payload carries `exp` (unix seconds) — only the payload is decoded. */
 function buildJwt(expSeconds: number): string {
@@ -70,58 +54,11 @@ describe('AuthService', () => {
         vi.useRealTimers();
     });
 
-    describe('authenticateDevice', () => {
-        it('should call /auth/device/start and return verification URL', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 202, data: {} });
-
-            const result = await service.authenticateDevice();
-
-            expect(result.userCode).toBe('XXXX-YYYY');
-            expect(result.verificationUrl).toBe('https://game.example/auth/device?code=XXXX-YYYY');
-            expect(api.request).toHaveBeenCalledWith('/api/v1/auth/device/start', {
-                method: 'POST',
-                body: expect.objectContaining({ signerAddress: expect.any(String) }),
-            });
-        });
-
-        it('should set pendingAuth during polling', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 202, data: {} });
-
-            await service.authenticateDevice();
-
-            expect(service.getPendingAuth()).not.toBeNull();
-            expect(service.getPendingAuth()?.userCode).toBe('XXXX-YYYY');
-        });
-
-        it('should call setSession when polling returns 200', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: { sessionConfig: SESSION_CONFIG } });
-
-            await service.authenticateDevice();
-            await vi.advanceTimersByTimeAsync(2000);
-
-            expect(session.setSession).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    walletMode: WalletMode.AGW,
-                    sessionConfig: SESSION_CONFIG,
-                    sessionPrivateKey: expect.stringMatching(/^0x[0-9a-fA-F]{64}$/),
-                    jwt: null,
-                }),
-            );
-        });
-
-        it('should clear pendingAuth after polling completes', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: { sessionConfig: SESSION_CONFIG } });
-
-            await service.authenticateDevice();
-            expect(service.getPendingAuth()).not.toBeNull();
-
-            await vi.advanceTimersByTimeAsync(2000);
-
-            expect(service.getPendingAuth()).toBeNull();
+    describe('surface', () => {
+        it('exposes SIWE login only', () => {
+            const surface = service as unknown as Record<string, unknown>;
+            expect(surface.authenticateDevice).toBeUndefined();
+            expect(surface.getPendingAuth).toBeUndefined();
         });
     });
 
@@ -219,15 +156,12 @@ describe('AuthService', () => {
                         body: expect.objectContaining({ signature: '0xsignature' }),
                     }),
                 );
-                expect(session.setSession).toHaveBeenCalledWith(
-                    expect.objectContaining({
-                        walletMode: WalletMode.EVM,
-                        address: ADDRESS,
-                        sessionPrivateKey: null,
-                        jwt: 'jwt-token',
-                        sessionConfig: null,
-                    }),
-                );
+                expect(session.setSession).toHaveBeenCalledWith({
+                    address: ADDRESS,
+                    jwt: 'jwt-token',
+                    createdAt: expect.any(String),
+                    updatedAt: expect.any(String),
+                });
             });
         });
     });

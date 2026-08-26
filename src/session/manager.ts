@@ -1,17 +1,14 @@
-import type { ILogger } from '../logger/types.js';
-import { WalletMode } from '../types.js';
 import { type ISessionStorage, type SessionData, type SessionManagerOptions, SessionStatus } from './types.js';
+import type { ILogger } from '../logger/types.js';
 
 export class SessionManager {
     private session: SessionData | null = null;
     private readonly storage: ISessionStorage;
-    private readonly walletMode: WalletMode;
     private readonly logger: ILogger;
     private initialized = false;
 
     constructor(options: SessionManagerOptions) {
         this.storage = options.storage;
-        this.walletMode = options.walletMode;
         this.logger = options.logger;
     }
 
@@ -86,10 +83,6 @@ export class SessionManager {
 
         this.session = null;
         this.storage.delete();
-    }
-
-    getWalletMode(): WalletMode {
-        return this.walletMode;
     }
 
     private assertInitialized(): void {

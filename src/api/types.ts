@@ -40,23 +40,6 @@ export interface SiweVerifyResponse {
     };
 }
 
-export interface DeviceAuthResponse {
-    deviceCode: string;
-    userCode: string;
-    verificationUri: string;
-    expiresIn: number;
-    interval: number;
-}
-
-export interface DeviceTokenCompleteResponse {
-    sessionConfig: {
-        accountAddress: string;
-        sessionHash: string;
-        policies: unknown;
-        expiresAt: number;
-    };
-}
-
 export interface ApiResponse<T> {
     status: number;
     data: T;

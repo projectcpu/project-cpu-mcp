@@ -54,18 +54,17 @@ import { createWalletProvider } from './wallet/index.js';
 async function main(): Promise<void> {
     const config = loadEnvConfig();
     const logger = createLogger();
-    logger.info('starting MCP server', { walletMode: config.WALLET_MODE });
+    logger.info('starting MCP server', { network: config.NETWORK });
 
     const storage = new SessionStorage(os.homedir(), logger.child('session:storage'));
     const session = new SessionManager({
         storage,
-        walletMode: config.WALLET_MODE,
         logger: logger.child('session'),
     });
     session.initialize();
     logger.info('session initialized', { status: session.getStatus() });
 
-    const wallet = createWalletProvider({ config, session, logger });
+    const wallet = createWalletProvider({ config, logger });
     logger.info('wallet provider created', { ready: wallet.isReady() });
 
     const api = new ApiClient({

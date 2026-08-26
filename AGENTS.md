@@ -2,7 +2,7 @@
 
 MCP server for a blockchain game on EVM (Abstract). Distributed via npm, runs locally via `npx`.
 
-Two wallet modes via `WALLET_MODE` (defaults to `evm`): `evm` (private key in env, SIWE auth — requires `PRIVATE_KEY`) or `agw` (Device Authorization flow). Session state persists to `~/.project-cpu/session.json`.
+One wallet runtime: an EVM private key in env (`PRIVATE_KEY`, required) signing in over SIWE. Session state persists to `~/.project-cpu/session.json`.
 
 The launch chain is Robinhood (chainId 4663). `NETWORK` is optional, defaults to `robinhood`, and rejects every other value at startup. Contract addresses are loaded from the game API `GET /api/v1/config?network=robinhood`. Set `RPC_URL` to override Robinhood's public RPC when sending transactions (e.g. `reveal`).
 
@@ -46,7 +46,7 @@ src/
 ├── server.ts         # McpServer setup, tool registration
 ├── tools/            # MCP controllers (input → service → output)
 ├── services/         # Business logic, orchestration
-├── wallet/           # WalletManager interface + EVM / AGW impls
+├── wallet/           # WalletManager interface + EVM impl
 ├── api/              # ApiClient (HTTP to the game API, JWT bearer + SIWE re-login)
 ├── session/          # SessionStorage + SessionManager (persist JWT / session keys)
 └── config/           # env + constants

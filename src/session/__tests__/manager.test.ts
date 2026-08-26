@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { InMemoryStorage } from '../../__mocks__/in-memory-storage.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
-import { WalletMode } from '../../types.js';
 import { SessionManager } from '../manager.js';
 import { type SessionData, SessionStatus } from '../types.js';
 
@@ -25,11 +24,8 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     const now = new Date().toISOString();
     const inOneHour = Math.floor(Date.now() / 1000) + 3600;
     return {
-        walletMode: WalletMode.EVM,
         address: '0x1234567890123456789012345678901234567890',
-        sessionPrivateKey: null,
         jwt: buildJwt(inOneHour),
-        sessionConfig: null,
         createdAt: now,
         updatedAt: now,
         ...overrides,
@@ -42,7 +38,7 @@ describe('SessionManager', () => {
 
     beforeEach(() => {
         storage = new InMemoryStorage();
-        manager = new SessionManager({ storage, walletMode: WalletMode.EVM, logger: testLogger });
+        manager = new SessionManager({ storage, logger: testLogger });
     });
 
     it('initialize loads existing session from storage', () => {
