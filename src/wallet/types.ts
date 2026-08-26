@@ -64,6 +64,8 @@ export interface WalletManager {
     estimateGas(tx: GasEstimateRequest): Promise<bigint>;
     getGasPrice(): Promise<bigint>;
     waitForReceipt(hash: Hash): Promise<TxReceipt>;
+    /** The `from` address of a mined transaction; a Seaport order event never carries its sender. */
+    getTransactionSender(hash: Hash): Promise<Address | null>;
     readContract(params: ReadContractParams): Promise<unknown>;
     /** Native gas balance of the wallet address, in wei. */
     getBalance(): Promise<bigint>;

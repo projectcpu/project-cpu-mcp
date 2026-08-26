@@ -245,12 +245,14 @@ export interface FakeMakerWalletOptions {
     sendFailsAt: number | null;
     receiptFailsAt: number | null;
     revertsAt: number | null;
+    transactionSender: string | null;
 }
 
 export class FakeMakerWallet implements WalletManager, WalletProvider {
     readonly log: Array<string> = [];
     readonly sent: Array<TransactionRequest> = [];
     readonly reads: Array<ReadContractParams> = [];
+    readonly senderAsks: Array<string> = [];
     private readonly options: FakeMakerWalletOptions;
     private sends = 0;
     private receipts = 0;
@@ -262,8 +264,14 @@ export class FakeMakerWallet implements WalletManager, WalletProvider {
             sendFailsAt: null,
             receiptFailsAt: null,
             revertsAt: null,
+            transactionSender: MAKER,
             ...over,
         };
+    }
+
+    async getTransactionSender(hash: Hash): Promise<Address | null> {
+        this.senderAsks.push(hash);
+        return this.options.transactionSender as Address | null;
     }
 
     get(): WalletManager {

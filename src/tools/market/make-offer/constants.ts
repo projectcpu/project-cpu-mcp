@@ -1,7 +1,8 @@
 export const MAKE_CELL_OFFER_DESCRIPTION = [
-    'Bid on ONE exact Cell you do not own, in a single call. This is the land market — Cells traded as NFTs for a',
-    'configured ERC-20 currency — and it is entirely separate from `cpu_create_lot`, which sells RESOURCES for',
-    '$CPU inside the game.',
+    'Bid on ONE exact Cell you do not own on the NFT marketplace, in a single call. This is the land market —',
+    'Cells traded as NFTs for a configured ERC-20 currency — and it is entirely separate from `cpu_create_lot`,',
+    'which sells RESOURCES for $CPU inside the game. What you publish here is a Cell offer: an off-chain signed',
+    'Market order, not a Lot and never a Fill.',
     'The call performs the whole action itself: it checks that you are not about to duplicate an offer, reads your',
     'current order counter from the marketplace protocol contract, prepares the offer, sends any currency approval',
     'your wallet still owes and waits for each receipt, signs the offer locally, and publishes it. There is',

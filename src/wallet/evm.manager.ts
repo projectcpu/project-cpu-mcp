@@ -93,6 +93,11 @@ export class EvmWalletManager implements WalletManager {
         };
     }
 
+    async getTransactionSender(hash: Hash): Promise<Address | null> {
+        const transaction = await this.publicClient.getTransaction({ hash });
+        return transaction.from;
+    }
+
     async readContract(params: ReadContractParams): Promise<unknown> {
         return this.publicClient.readContract({
             address: params.address,

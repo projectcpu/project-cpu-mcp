@@ -81,4 +81,31 @@ describe('the bounded store of unresolved actions', () => {
     it('bounds unresolved memory at one hundred actions', () => {
         expect(MARKET_UNRESOLVED_ACTION_LIMIT).toBe(100);
     });
+
+    it('names the tools whose unresolved work is holding the bound', () => {
+        const store = new MarketRecoveryStore();
+        fill(store, MARKET_UNRESOLVED_ACTION_LIMIT - 2);
+        store.write('cancelling-a', {
+            tool: MarketActionTool.CancelOrder,
+            stage: MarketActionStage.Cancel,
+            payload: null,
+        });
+        store.write('cancelling-b', {
+            tool: MarketActionTool.CancelOrder,
+            stage: MarketActionStage.Cancel,
+            payload: null,
+        });
+
+        const error = (() => {
+            try {
+                store.write('one-too-many', record(null));
+                return null;
+            } catch (thrown: unknown) {
+                return thrown as MarketError;
+            }
+        })();
+
+        expect(error?.message).toContain(`${MarketActionTool.CancelOrder} (2)`);
+        expect(error?.message).toContain(`${MarketActionTool.ListCell} (${MARKET_UNRESOLVED_ACTION_LIMIT - 2})`);
+    });
 });

@@ -26,6 +26,12 @@ const OTHER_ORDER_HASH = `0x${'b'.repeat(64)}`;
 
 const TX_HASH = `0x${'c'.repeat(64)}` as Hash;
 
+const COLLECTION = `0x${'5'.repeat(40)}`;
+
+const TOKEN_ID = '1234';
+
+const OTHER_TOKEN_ID = '4321';
+
 const FULFILLED_DATA_PARAMS = [
     { name: 'orderHash', type: 'bytes32' },
     { name: 'recipient', type: 'address' },
@@ -57,6 +63,7 @@ interface FulfilledOver {
     orderHash: string;
     recipient: string;
     offerer: string;
+    offered: Array<[number, string, bigint, bigint]>;
 }
 
 function fulfilledLog(over: Partial<FulfilledOver> = {}): Log {
@@ -65,6 +72,7 @@ function fulfilledLog(over: Partial<FulfilledOver> = {}): Log {
         orderHash: ORDER_HASH,
         recipient: WALLET,
         offerer: SELLER,
+        offered: [[2, COLLECTION, BigInt(TOKEN_ID), 1n]],
         ...over,
     };
 
@@ -78,7 +86,12 @@ function fulfilledLog(over: Partial<FulfilledOver> = {}): Log {
         data: encodeAbiParameters(FULFILLED_DATA_PARAMS, [
             shape.orderHash as `0x${string}`,
             shape.recipient as `0x${string}`,
-            [],
+            shape.offered.map(([itemType, token, identifier, amount]) => ({
+                itemType,
+                token: token as `0x${string}`,
+                identifier,
+                amount,
+            })),
             [],
         ]),
     } as unknown as Log;
@@ -132,8 +145,47 @@ function fulfilmentRequest(logs: Array<Log>) {
         orderHash: ORDER_HASH,
         wallet: WALLET,
         stage: MarketActionStage.Verify,
+        boundCell: null,
     };
 }
+
+describe('proving which Cell an order actually moved', () => {
+    function boundRequest(logs: Array<Log>, tokenId: string = TOKEN_ID) {
+        return { ...fulfilmentRequest(logs), boundCell: { collection: COLLECTION, tokenId } };
+    }
+
+    it('accepts the order whose own items name the bound Cell', async () => {
+        const proof = await proofWith().requireFulfilment(boundRequest([fulfilledLog()]));
+
+        expect(proof.orderHash).toBe(ORDER_HASH);
+    });
+
+    it('refuses the order that moved another Cell of the same collection, and says which', async () => {
+        const moved = fulfilledLog({ offered: [[2, COLLECTION, BigInt(OTHER_TOKEN_ID), 1n]] });
+
+        const error = await rejection(proofWith().requireFulfilment(boundRequest([moved])));
+
+        expect(error.code).toBe(MarketErrorCode.WrongOwner);
+        expect(error.retryable).toBe(false);
+        expect(error.message).toContain(OTHER_TOKEN_ID);
+        expect(error.message).toContain(TOKEN_ID);
+    });
+
+    it('refuses an order that moved no Cell of the collection at all', async () => {
+        const moved = fulfilledLog({ offered: [[1, ANOTHER_CONTRACT, 0n, 1000n]] });
+
+        const error = await rejection(proofWith().requireFulfilment(boundRequest([moved])));
+
+        expect(error.code).toBe(MarketErrorCode.WrongOwner);
+        expect(error.message).toContain('no Cell of that collection');
+    });
+
+    it('leaves an unbound proof free of any Cell requirement', async () => {
+        const proof = await proofWith().requireFulfilment(fulfilmentRequest([fulfilledLog({ offered: [] })]));
+
+        expect(proof.orderHash).toBe(ORDER_HASH);
+    });
+});
 
 describe('proving that this wallet fulfilled one exact order', () => {
     it('accepts a pinned-Seaport log carrying the exact order hash, sender and recipient', async () => {
@@ -210,7 +262,13 @@ describe('proving that this wallet fulfilled one exact order', () => {
 
 describe('proving that this wallet cancelled one exact order', () => {
     function cancellationRequest(logs: Array<Log>) {
-        return { receipt: receipt(logs), orderHash: ORDER_HASH, wallet: WALLET, stage: MarketActionStage.Cancel };
+        return {
+            receipt: receipt(logs),
+            orderHash: ORDER_HASH,
+            wallet: WALLET,
+            stage: MarketActionStage.Cancel,
+            boundCell: null,
+        };
     }
 
     it('accepts a pinned-Seaport cancellation of the exact order by this maker', async () => {

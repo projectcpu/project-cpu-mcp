@@ -152,6 +152,7 @@ export class MarketCancelService implements IMarketCancelService {
                 orderHash: request.orderHash,
                 wallet: this.walletAddress(),
                 stage: MarketActionStage.Verify,
+                boundCell: null,
             });
         } catch (error) {
             this.forgetDisprovenCancellation(key, error);

@@ -17,6 +17,9 @@ const TOKEN = '0x2222222222222222222222222222222222222222';
 const SPENDER = '0x1111111111111111111111111111111111111111';
 
 class FakeWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     public readonly sent: Array<TransactionRequest> = [];
     public readonly reads: Array<{ functionName: string; args: ReadonlyArray<unknown> }> = [];
 

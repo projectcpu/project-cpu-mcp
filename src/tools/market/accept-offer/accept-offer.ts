@@ -2,6 +2,7 @@ import { ACCEPT_CELL_OFFER_DESCRIPTION } from './constants.js';
 import { summarizeSoldCell } from './format.utils.js';
 import { acceptCellOfferInputSchema, type AcceptCellOfferContext } from './types.js';
 import type { AcceptCellOfferRequest } from '../../../services/market/acceptance.types.js';
+import { ToolEventType } from '../../types.js';
 import type { MarketToolDefinition } from '../types.js';
 
 export function createAcceptCellOfferTool(context: AcceptCellOfferContext): MarketToolDefinition {
@@ -19,7 +20,7 @@ export function createAcceptCellOfferTool(context: AcceptCellOfferContext): Mark
             return {
                 content: [
                     { type: 'text', text: summarizeSoldCell(result) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.CellOfferAccepted }) },
                 ],
             };
         },

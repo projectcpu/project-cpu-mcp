@@ -180,16 +180,33 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
         const hash = this.requireFulfilmentHash(payload);
         const receipt = await this.confirm(key, request, payload, hash);
 
-        await this.proof.requireFulfilment({
-            receipt,
-            orderHash: request.orderHash,
-            wallet: this.walletAddress(),
-            stage: MarketActionStage.Verify,
-        });
-        await this.requireSoldCell(this.requirePrepared(payload), hash);
+        try {
+            const collection = await this.requireCellCollection(MarketActionStage.Verify);
+            await this.proof.requireFulfilment({
+                receipt,
+                orderHash: request.orderHash,
+                wallet: this.walletAddress(),
+                stage: MarketActionStage.Verify,
+                boundCell: { collection, tokenId: this.requirePrepared(payload).tokenId },
+            });
+            await this.requireSoldCell(this.requirePrepared(payload), hash);
+        } catch (error) {
+            this.forgetIfSettled(key, error);
+            throw error;
+        }
 
         this.recovery.forget(key);
         return this.result(status, request, payload, hash);
+    }
+
+    // A terminal proof failure is the end of this intent: the transaction is mined and will never
+    // prove anything else, so holding its record would strand one of the bounded slots for the life
+    // of the process. A retryable one keeps its record, because repeating re-checks that same
+    // transaction instead of sending another.
+    private forgetIfSettled(key: string, error: unknown): void {
+        if (error instanceof MarketError && !error.retryable) {
+            this.recovery.forget(key);
+        }
     }
 
     private async confirm(
@@ -454,6 +471,14 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 'its fulfilment transaction carries no calldata, so it would sell nothing',
+                request,
+            );
+        }
+        if (!sameAddress(last.to, SEAPORT_ADDRESS)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `its fulfilment transaction would hand the Cell to ${last.to} rather than to the pinned protocol ` +
+                    `contract ${SEAPORT_ADDRESS}`,
                 request,
             );
         }

@@ -27,6 +27,11 @@ const WIRE: ReadonlyArray<[string, ToolEventType, string]> = [
     ['SyndicateManagerChanged', ToolEventType.SyndicateManagerChanged, 'syndicate_manager_changed'],
     ['SyndicateParamsChanged', ToolEventType.SyndicateParamsChanged, 'syndicate_params_changed'],
     ['RevealFulfilled', ToolEventType.RevealFulfilled, 'reveal_fulfilled'],
+    ['CellListed', ToolEventType.CellListed, 'cell_listed'],
+    ['CellOfferMade', ToolEventType.CellOfferMade, 'cell_offer_made'],
+    ['CellBought', ToolEventType.CellBought, 'cell_bought'],
+    ['CellOfferAccepted', ToolEventType.CellOfferAccepted, 'cell_offer_accepted'],
+    ['MarketOrderCancelled', ToolEventType.MarketOrderCancelled, 'market_order_cancelled'],
 ];
 
 describe('tool event type', () => {

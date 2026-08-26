@@ -198,6 +198,7 @@ export interface FulfilledLogOver {
     orderHash: string;
     recipient: string;
     offerer: string;
+    cell: string | null;
 }
 
 export function orderFulfilledLog(over: Partial<FulfilledLogOver> = {}): Log {
@@ -206,8 +207,13 @@ export function orderFulfilledLog(over: Partial<FulfilledLogOver> = {}): Log {
         orderHash: ORDER_HASH,
         recipient: BUYER,
         offerer: SELLER,
+        cell: TOKEN_ID,
         ...over,
     };
+    const moved =
+        shape.cell === null
+            ? []
+            : [{ itemType: 2, token: COLLECTION as Address, identifier: BigInt(shape.cell), amount: 1n }];
 
     return {
         address: shape.emitter,
@@ -216,7 +222,12 @@ export function orderFulfilledLog(over: Partial<FulfilledLogOver> = {}): Log {
             eventName: 'OrderFulfilled',
             args: { offerer: shape.offerer as Address, zone: ZONE },
         }),
-        data: encodeAbiParameters(FULFILLED_DATA_PARAMS, [shape.orderHash as Hex, shape.recipient as Address, [], []]),
+        data: encodeAbiParameters(FULFILLED_DATA_PARAMS, [
+            shape.orderHash as Hex,
+            shape.recipient as Address,
+            moved,
+            [],
+        ]),
     } as unknown as Log;
 }
 
@@ -285,6 +296,9 @@ export interface FakeBuyerWalletOptions {
 }
 
 export class FakeBuyerWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     readonly log: Array<string> = [];
     readonly sent: Array<TransactionRequest> = [];
     readonly reads: Array<ReadContractParams> = [];
