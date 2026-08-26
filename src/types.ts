@@ -10,6 +10,7 @@ import type { BuildService } from './services/build.service.js';
 import type { CraftService } from './services/craft.service.js';
 import type { IMarketListingService } from './services/market/listing.types.js';
 import type { IMarketProfileReader } from './services/market/profile.schemas.js';
+import type { IMarketPurchaseService } from './services/market/purchase.types.js';
 import type { IMarketService } from './services/market/types.js';
 import type { MiningService } from './services/mining.service.js';
 import type { MintService } from './services/mint.service.js';
@@ -45,6 +46,7 @@ export interface AppContext {
     market: IMarketService;
     marketProfile: IMarketProfileReader;
     marketListing: IMarketListingService;
+    marketPurchase: IMarketPurchaseService;
     syndicate: SyndicateService;
     swap: SwapService;
     mint: MintService;
