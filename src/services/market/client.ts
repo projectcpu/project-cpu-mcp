@@ -1,10 +1,11 @@
 import type { z } from 'zod';
 
-import { HTTP_INTERNAL_SERVER_ERROR, MARKET_RETRY_BUDGET_MS, MS_PER_SECOND } from './constants.js';
+import { HTTP_INTERNAL_SERVER_ERROR, MARKET_RETRY_BUDGET_MS } from './constants.js';
 import { MarketError } from './error.js';
 import {
     isRetryableMarketCode,
     marketBackoffDelayMs,
+    rateLimitDelayMs,
     retryAfterSecondsFrom,
     toMarketErrorCode,
 } from './error.utils.js';
@@ -131,8 +132,7 @@ export class MarketApiClient implements IMarketApiClient {
         const code = (body.success ? toMarketErrorCode(body.data.code) : null) ?? MarketErrorCode.UpstreamRateLimited;
         const message = body.success ? body.data.message : `${input.label} is rate limited upstream.`;
         const retryAfterSeconds = retryAfterSecondsFrom(response.headers);
-        const delayMs =
-            retryAfterSeconds === null ? marketBackoffDelayMs(attempt.index) : retryAfterSeconds * MS_PER_SECOND;
+        const delayMs = rateLimitDelayMs(retryAfterSeconds, attempt.index);
 
         if (delayMs > this.remainingBudgetMs(attempt)) {
             throw new MarketError({

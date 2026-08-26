@@ -2,6 +2,7 @@ import {
     MARKET_BACKOFF_BASE_MS,
     MARKET_BACKOFF_FACTOR,
     MARKET_BACKOFF_MAX_MS,
+    MS_PER_SECOND,
     RETRYABLE_MARKET_ERROR_CODES,
 } from './constants.js';
 import { MarketErrorCode, type MarketErrorOptions } from './types.js';
@@ -30,6 +31,11 @@ export function retryAfterSecondsFrom(headers: Headers | null): number | null {
 export function marketBackoffDelayMs(attempt: number): number {
     const delay = MARKET_BACKOFF_BASE_MS * MARKET_BACKOFF_FACTOR ** Math.max(0, attempt - 1);
     return Math.min(MARKET_BACKOFF_MAX_MS, delay);
+}
+
+export function rateLimitDelayMs(retryAfterSeconds: number | null, attempt: number): number {
+    const honoured = retryAfterSeconds === null ? 0 : retryAfterSeconds * MS_PER_SECOND;
+    return Math.max(marketBackoffDelayMs(attempt), honoured);
 }
 
 export function marketErrorMessage(options: MarketErrorOptions): string {

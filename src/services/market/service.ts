@@ -5,6 +5,7 @@ import {
     cellTokenIdSchema,
     MarketActionStage,
     MarketErrorCode,
+    MarketOfferKind,
     type CellMarketSnapshot,
     type IMarketApiClient,
     type IMarketService,
@@ -26,13 +27,51 @@ export class MarketService implements IMarketService {
 
         this.logger.info('reading the Cell marketplace snapshot', { tokenId: canonical });
 
-        return this.client.send({
+        const snapshot = await this.client.send({
             path: `${MARKET_CELL_PATH}/${canonical}`,
             method: 'GET',
             body: null,
             schema: cellMarketSnapshotSchema,
             stage: MarketActionStage.Read,
             label: `The marketplace snapshot for Cell ${canonical}`,
+        });
+
+        return this.requireSnapshotOfCell(canonical, snapshot);
+    }
+
+    private requireSnapshotOfCell(canonical: string, snapshot: CellMarketSnapshot): CellMarketSnapshot {
+        if (snapshot.tokenId !== canonical) {
+            throw this.wrongCell(canonical, `it describes Cell ${snapshot.tokenId}`);
+        }
+
+        const listing = snapshot.bestListing;
+        if (listing !== null && listing.tokenId !== canonical) {
+            throw this.wrongCell(canonical, `its best listing sells Cell ${listing.tokenId}`);
+        }
+
+        const offer = snapshot.bestOffer;
+        if (offer !== null && offer.tokenId !== null && offer.tokenId !== canonical) {
+            throw this.wrongCell(canonical, `its best offer bids on Cell ${offer.tokenId}`);
+        }
+        if (offer !== null && offer.kind === MarketOfferKind.Item && offer.tokenId === null) {
+            throw this.wrongCell(canonical, 'its best offer is an item offer bound to no Cell at all');
+        }
+
+        return snapshot;
+    }
+
+    private wrongCell(canonical: string, detail: string): MarketError {
+        this.logger.error('marketplace snapshot does not describe the requested Cell', { tokenId: canonical, detail });
+
+        return new MarketError({
+            code: MarketErrorCode.InvalidMarketResponse,
+            message:
+                `The marketplace snapshot for Cell ${canonical} cannot be trusted: ${detail}. ` +
+                'Trading on it would target the wrong Cell.',
+            retryable: false,
+            retryAfterSeconds: null,
+            stage: MarketActionStage.Read,
+            txHash: null,
         });
     }
 

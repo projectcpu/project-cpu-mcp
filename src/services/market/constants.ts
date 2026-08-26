@@ -14,8 +14,6 @@ export const MARKET_BACKOFF_FACTOR = 2;
 
 export const MARKET_BACKOFF_MAX_MS = 4_000;
 
-export const HTTP_TOO_MANY_REQUESTS = 429;
-
 export const HTTP_INTERNAL_SERVER_ERROR = 500;
 
 export const RETRYABLE_MARKET_ERROR_CODES: ReadonlySet<MarketErrorCode> = new Set([

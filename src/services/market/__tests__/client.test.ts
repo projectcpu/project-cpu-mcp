@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { FakeMarketTransport, reply } from './fixtures.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
 import { MarketApiClient } from '../client.js';
-import { MARKET_RETRY_BUDGET_MS } from '../constants.js';
+import { MARKET_BACKOFF_MAX_MS, MARKET_RETRY_BUDGET_MS } from '../constants.js';
 import { MarketError } from '../error.js';
 import { MarketActionStage, MarketErrorCode, type MarketRequestInput } from '../types.js';
 
@@ -209,6 +209,50 @@ describe('MarketApiClient', () => {
 
         expect(error.code).toBe(MarketErrorCode.PreparedIntentInProgress);
         expect(error.retryable).toBe(true);
-        expect(error.message).toMatch(/safe/i);
+        expect(error.message).toContain('Repeating this exact call is safe.');
+        expect(error.message).not.toContain('unsafe');
+    });
+
+    it('does not hammer a rate-limited endpoint that answers Retry-After: 0', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport(
+            [],
+            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '0' }),
+        );
+        const startedAt = Date.now();
+
+        const error = (await settle(clientOver(transport).send(request()))) as MarketError;
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect(error.code).toBe(MarketErrorCode.UpstreamRateLimited);
+        expect(error.retryable).toBe(true);
+        expect(Date.now() - startedAt).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS);
+        expect(transport.calls.length).toBeGreaterThan(1);
+        expect(transport.calls.length).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS / MARKET_BACKOFF_MAX_MS + 5);
+    });
+
+    it('does not hammer a rate-limited endpoint whose sub-second Retry-After truncates to zero', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport([], reply(429, null, { 'retry-after': '0.5' }));
+        const startedAt = Date.now();
+
+        const error = (await settle(clientOver(transport).send(request()))) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.UpstreamRateLimited);
+        expect(Date.now() - startedAt).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS);
+        expect(transport.calls.length).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS / MARKET_BACKOFF_MAX_MS + 5);
+    });
+
+    it('backs off on its own when the 429 carries no usable Retry-After at all', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport([], reply(429, null, { 'retry-after': 'soon' }));
+        const startedAt = Date.now();
+
+        const error = (await settle(clientOver(transport).send(request()))) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.UpstreamRateLimited);
+        expect(error.retryAfterSeconds).toBeNull();
+        expect(Date.now() - startedAt).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS);
+        expect(transport.calls.length).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS / MARKET_BACKOFF_MAX_MS + 5);
     });
 });

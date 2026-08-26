@@ -80,6 +80,57 @@ describe('MarketService.getCellMarket', () => {
         expect((error as MarketError).code).toBe(MarketErrorCode.InvalidMarketResponse);
     });
 
+    it('refuses a snapshot that describes another Cell instead of the one that was asked for', async () => {
+        const transport = new FakeMarketTransport([reply(200, { ...snapshotWire, tokenId: '999' })]);
+
+        const error = await marketServiceOver(transport)
+            .getCellMarket('1234')
+            .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect((error as MarketError).code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect((error as MarketError).retryable).toBe(false);
+        expect((error as MarketError).message).toMatch(/Cell 999/);
+    });
+
+    it('refuses a best listing that sells a different Cell', async () => {
+        const transport = new FakeMarketTransport([
+            reply(200, { ...snapshotWire, bestListing: { ...snapshotWire.bestListing, tokenId: '4242' } }),
+        ]);
+
+        const error = await marketServiceOver(transport)
+            .getCellMarket('1234')
+            .catch((e: unknown) => e);
+
+        expect((error as MarketError).code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect((error as MarketError).message).toMatch(/Cell 4242/);
+    });
+
+    it('refuses a best offer that bids on a different Cell', async () => {
+        const transport = new FakeMarketTransport([
+            reply(200, { ...snapshotWire, bestOffer: offerWire(MarketOfferKind.Collection, '4242') }),
+        ]);
+
+        const error = await marketServiceOver(transport)
+            .getCellMarket('1234')
+            .catch((e: unknown) => e);
+
+        expect((error as MarketError).code).toBe(MarketErrorCode.InvalidMarketResponse);
+    });
+
+    it('refuses an item offer that is bound to no Cell at all', async () => {
+        const transport = new FakeMarketTransport([
+            reply(200, { ...snapshotWire, bestOffer: offerWire(MarketOfferKind.Item, null) }),
+        ]);
+
+        const error = await marketServiceOver(transport)
+            .getCellMarket('1234')
+            .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect((error as MarketError).code).toBe(MarketErrorCode.InvalidMarketResponse);
+    });
+
     it('rejects a price that is not a base-unit integer string, so no amount reaches the agent as a number', async () => {
         const transport = new FakeMarketTransport([
             reply(200, { ...snapshotWire, bestListing: { ...snapshotWire.bestListing, price: 1.5 } }),

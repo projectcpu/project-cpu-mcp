@@ -72,7 +72,7 @@ describe('ApiClient', () => {
             const client = createClient();
             const result = await client.request<typeof payload>('/test');
 
-            expect(result).toMatchObject({ status: 200, data: payload });
+            expect(result).toEqual({ status: 200, data: payload, headers: expect.any(Headers) });
         });
 
         it('should return non-200 status without throwing', async () => {
