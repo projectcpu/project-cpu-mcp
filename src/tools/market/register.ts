@@ -10,6 +10,7 @@ import { createGetMyListingsTool } from './my-listings/my-listings.js';
 import { createGetMyOffersTool } from './my-offers/my-offers.js';
 import { createGetMyOffersReceivedTool } from './my-offers-received/my-offers-received.js';
 import type { MarketToolDefinition } from './types.js';
+import { runWithMarketWaitBudget } from '../../services/market/budget.scope.js';
 import type { AppContext } from '../../types.js';
 import type { ToolRegistrar } from '../types.js';
 
@@ -22,7 +23,7 @@ function bindMarketTool(server: ToolRegistrar, definition: MarketToolDefinition)
     server.registerTool(
         definition.name,
         { description: definition.description, inputSchema: definition.inputSchema },
-        async (args: unknown) => definition.handler(shape.parse(args ?? {})),
+        async (args: unknown) => runWithMarketWaitBudget(async () => definition.handler(shape.parse(args ?? {}))),
     );
 }
 

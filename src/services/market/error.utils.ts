@@ -7,7 +7,7 @@ import {
     MS_PER_SECOND,
     RETRYABLE_MARKET_ERROR_CODES,
 } from './constants.js';
-import { MarketErrorCode, type MarketErrorOptions } from './types.js';
+import { MarketErrorCode, MarketWaitRefusal, type MarketErrorOptions } from './types.js';
 
 export function toMarketErrorCode(value: unknown): MarketErrorCode | null {
     if (typeof value !== 'string') {
@@ -42,6 +42,19 @@ export function marketBackoffDelayMs(attempt: number): number {
 export function rateLimitDelayMs(retryAfterSeconds: number | null, attempt: number): number {
     const honoured = retryAfterSeconds === null ? 0 : retryAfterSeconds * MS_PER_SECOND;
     return Math.max(marketBackoffDelayMs(attempt), honoured);
+}
+
+export function waitRefusalNote(refusal: MarketWaitRefusal, delayMs: number): string {
+    const seconds = Math.ceil(delayMs / MS_PER_SECOND);
+
+    if (refusal === MarketWaitRefusal.DeadlineWouldPass) {
+        return (
+            `Waiting ${seconds}s would carry this call past the deadline of the order it prepared, so nothing ` +
+            'was waited out and nothing was sent.'
+        );
+    }
+
+    return 'The automatic wait budget for this tool call is spent — invoke the same tool again later.';
 }
 
 export function marketErrorMessage(options: MarketErrorOptions): string {

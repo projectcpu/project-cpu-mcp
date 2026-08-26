@@ -6,6 +6,7 @@ import {
     type IMarketSingleFlight,
     type MarketRecoveryRecord,
 } from './action.types.js';
+import { narrowInvocationDeadline } from './budget.utils.js';
 import type { IMarketSingleShotClient } from './client.types.js';
 import { MS_PER_SECOND } from './constants.js';
 import { MarketError } from './error.js';
@@ -621,7 +622,10 @@ export class MarketPurchaseService implements IMarketPurchaseService {
     }
 
     private requireWithinDeadline(prepared: PreparePurchaseResponse, stage: MarketActionStage): void {
-        if (this.nowSeconds() < effectivePurchaseDeadline(prepared)) {
+        const deadline = effectivePurchaseDeadline(prepared);
+        narrowInvocationDeadline(deadline);
+
+        if (this.nowSeconds() < deadline) {
             return;
         }
 

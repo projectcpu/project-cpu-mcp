@@ -6,6 +6,7 @@ import {
     type IMarketSingleFlight,
     type MarketRecoveryRecord,
 } from './action.types.js';
+import { narrowInvocationDeadline } from './budget.utils.js';
 import {
     CANCELLATION_NO_VALUE,
     CANCELLATION_SINGLE_ORDER,
@@ -347,6 +348,8 @@ export class MarketCancelService implements IMarketCancelService {
     }
 
     private requireWithinDeadline(prepared: PrepareCancellationResponse): void {
+        narrowInvocationDeadline(prepared.expiresAt);
+
         if (this.nowSeconds() < prepared.expiresAt) {
             return;
         }

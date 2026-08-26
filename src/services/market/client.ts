@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 
+import { MarketWaitBudget } from './budget.js';
+import { currentMarketWaitBudget } from './budget.scope.js';
 import type { IMarketSingleShotClient } from './client.types.js';
 import { HTTP_INTERNAL_SERVER_ERROR, MARKET_RETRY_BUDGET_MS } from './constants.js';
 import { MarketError } from './error.js';
@@ -10,18 +12,20 @@ import {
     rateLimitDelayMs,
     retryAfterSecondsFrom,
     toMarketErrorCode,
+    waitRefusalNote,
 } from './error.utils.js';
 import {
     MarketErrorCode,
     marketErrorBodySchema,
     type IMarketTransport,
+    type IMarketWaitBudget,
     type MarketApiClientOptions,
     type MarketAttempt,
+    type MarketBudgetedRequest,
     type MarketRequestInput,
 } from './types.js';
 import { HttpStatus, type ApiResponse } from '../../api/types.js';
 import type { ILogger } from '../../logger/types.js';
-import { sleep } from '../../utils/async.utils.js';
 import { errorMessage } from '../../utils/error.utils.js';
 
 export class MarketApiClient implements IMarketSingleShotClient {
@@ -34,10 +38,10 @@ export class MarketApiClient implements IMarketSingleShotClient {
     }
 
     async send<TSchema extends z.ZodTypeAny>(input: MarketRequestInput<TSchema>): Promise<z.infer<TSchema>> {
-        const startedAt = Date.now();
+        const budgeted: MarketBudgetedRequest<TSchema> = { ...input, budget: this.budgetFor() };
 
         for (let index = 1; ; index += 1) {
-            const attempt: MarketAttempt = { startedAt, index };
+            const attempt: MarketAttempt = { index };
             let response: ApiResponse<unknown>;
 
             try {
@@ -46,18 +50,18 @@ export class MarketApiClient implements IMarketSingleShotClient {
                     body: input.body,
                 });
             } catch (error) {
-                await this.waitOrGiveUp(input, attempt, MarketErrorCode.NetworkFailure, errorMessage(error));
+                await this.waitOrGiveUp(budgeted, attempt, MarketErrorCode.NetworkFailure, errorMessage(error));
                 continue;
             }
 
             if (response.status === HttpStatus.TooManyRequests) {
-                await this.waitOutRateLimit(input, attempt, response);
+                await this.waitOutRateLimit(budgeted, attempt, response);
                 continue;
             }
 
             if (response.status >= HTTP_INTERNAL_SERVER_ERROR) {
                 await this.waitOrGiveUp(
-                    input,
+                    budgeted,
                     attempt,
                     MarketErrorCode.ServiceUnavailable,
                     `${input.label} answered HTTP ${response.status}`,
@@ -196,8 +200,15 @@ export class MarketApiClient implements IMarketSingleShotClient {
         });
     }
 
+    private budgetFor(): IMarketWaitBudget {
+        return (
+            currentMarketWaitBudget() ??
+            new MarketWaitBudget({ totalMs: MARKET_RETRY_BUDGET_MS, deadlineAtSeconds: null })
+        );
+    }
+
     private async waitOutRateLimit<TSchema extends z.ZodTypeAny>(
-        input: MarketRequestInput<TSchema>,
+        input: MarketBudgetedRequest<TSchema>,
         attempt: MarketAttempt,
         response: ApiResponse<unknown>,
     ): Promise<void> {
@@ -207,11 +218,12 @@ export class MarketApiClient implements IMarketSingleShotClient {
         const retryAfterSeconds = retryAfterSecondsFrom(response.headers);
         const retryable = isRetryableMarketCode(code);
         const delayMs = rateLimitDelayMs(retryAfterSeconds, attempt.index);
+        const refusal = input.budget.refuse(delayMs);
 
-        if (!retryable || delayMs > this.remainingBudgetMs(attempt)) {
+        if (!retryable || refusal !== null) {
             throw new MarketError({
                 code,
-                message,
+                message: refusal === null ? message : `${message} ${waitRefusalNote(refusal, delayMs)}`,
                 retryable,
                 retryAfterSeconds,
                 stage: input.stage,
@@ -224,21 +236,22 @@ export class MarketApiClient implements IMarketSingleShotClient {
             attempt: attempt.index,
             delayMs,
         });
-        await sleep(delayMs);
+        await input.budget.wait(delayMs);
     }
 
     private async waitOrGiveUp<TSchema extends z.ZodTypeAny>(
-        input: MarketRequestInput<TSchema>,
+        input: MarketBudgetedRequest<TSchema>,
         attempt: MarketAttempt,
         code: MarketErrorCode,
         reason: string,
     ): Promise<void> {
         const delayMs = marketBackoffDelayMs(attempt.index);
+        const refusal = input.budget.refuse(delayMs);
 
-        if (delayMs > this.remainingBudgetMs(attempt)) {
+        if (refusal !== null) {
             throw new MarketError({
                 code,
-                message: `${reason}. The automatic wait budget is spent — invoke the same tool again later.`,
+                message: `${reason}. ${waitRefusalNote(refusal, delayMs)}`,
                 retryable: true,
                 retryAfterSeconds: null,
                 stage: input.stage,
@@ -252,10 +265,6 @@ export class MarketApiClient implements IMarketSingleShotClient {
             delayMs,
             reason,
         });
-        await sleep(delayMs);
-    }
-
-    private remainingBudgetMs(attempt: MarketAttempt): number {
-        return MARKET_RETRY_BUDGET_MS - (Date.now() - attempt.startedAt);
+        await input.budget.wait(delayMs);
     }
 }

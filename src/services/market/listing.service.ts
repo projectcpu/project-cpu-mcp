@@ -6,6 +6,7 @@ import {
     type IMarketSingleFlight,
     type MarketRecoveryRecord,
 } from './action.types.js';
+import { narrowInvocationDeadline, waitOnInvocationBudget } from './budget.utils.js';
 import type { IMarketSingleShotClient } from './client.types.js';
 import { MS_PER_SECOND, PROVEN_UNPUBLISHED_MARKET_ERROR_CODES } from './constants.js';
 import { MarketError } from './error.js';
@@ -73,7 +74,6 @@ import {
     type ISeaportSpenderReader,
 } from '../../contracts/seaport.types.js';
 import type { ILogger } from '../../logger/types.js';
-import { sleep } from '../../utils/async.utils.js';
 import { TxStatus, type WalletProvider } from '../../wallet/types.js';
 import type { IAppConfig } from '../types.js';
 
@@ -354,7 +354,7 @@ export class MarketListingService implements IMarketListingService {
         const remaining = MARKET_PROFILE_CACHE_MS - (Date.now() - this.lastProfileReadAt);
         if (remaining > 0) {
             this.logger.info('waiting for the marketplace read snapshot to advance before reconciling', { remaining });
-            await sleep(remaining);
+            await waitOnInvocationBudget(remaining);
         }
     }
 
@@ -823,7 +823,10 @@ export class MarketListingService implements IMarketListingService {
     }
 
     private requireWithinDeadline(prepared: PrepareListingResponse, stage: MarketActionStage): void {
-        if (this.nowSeconds() < effectiveListingDeadline(prepared)) {
+        const deadline = effectiveListingDeadline(prepared);
+        narrowInvocationDeadline(deadline);
+
+        if (this.nowSeconds() < deadline) {
             return;
         }
 

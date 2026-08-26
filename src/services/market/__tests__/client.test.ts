@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { FakeMarketTransport, reply } from './fixtures.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { currentMarketWaitBudget, runWithMarketWaitBudget } from '../budget.scope.js';
 import { MarketApiClient } from '../client.js';
 import { MARKET_BACKOFF_MAX_MS, MARKET_RETRY_BUDGET_MS } from '../constants.js';
 import { MarketError } from '../error.js';
@@ -168,6 +169,88 @@ describe('MarketApiClient', () => {
 
         expect(error.code).toBe(MarketErrorCode.UpstreamRateLimited);
         expect(Date.now() - startedAt).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS);
+    });
+
+    it('spends one budget across every request of an invocation instead of opening a fresh one per request', async () => {
+        vi.useFakeTimers();
+        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+        const client = clientOver(transport);
+        const startedAt = Date.now();
+
+        const errors = (await settle(
+            runWithMarketWaitBudget(async () => {
+                const first = await client.send(request()).catch((e: unknown) => e);
+                const second = await client.send(request()).catch((e: unknown) => e);
+                const third = await client.send(request()).catch((e: unknown) => e);
+                return [first, second, third];
+            }),
+        )) as Array<MarketError>;
+
+        expect(errors).toHaveLength(3);
+        expect(errors.every((error) => error instanceof MarketError)).toBe(true);
+        expect(Date.now() - startedAt).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS);
+    });
+
+    it('does not let a run of rate limits across several requests reset or extend the one budget', async () => {
+        vi.useFakeTimers();
+        const rateLimited = reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '25' });
+        const transport = new FakeMarketTransport([], rateLimited);
+        const client = clientOver(transport);
+        const startedAt = Date.now();
+
+        await settle(
+            runWithMarketWaitBudget(async () => {
+                for (let call = 0; call < 4; call += 1) {
+                    await client.send(request()).catch(() => null);
+                }
+                return null;
+            }),
+        );
+
+        expect(Date.now() - startedAt).toBeLessThanOrEqual(MARKET_RETRY_BUDGET_MS);
+        expect(transport.calls.length).toBeGreaterThan(4);
+    });
+
+    it('refuses a rate-limit wait that would outlast the effective deadline and reports the refusal', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_800_000_000_000);
+        const transport = new FakeMarketTransport([], reply(429, null, { 'retry-after': '55' }));
+        const client = clientOver(transport);
+        const startedAt = Date.now();
+
+        const error = (await settle(
+            runWithMarketWaitBudget(async () => {
+                currentMarketWaitBudget()?.narrowDeadlineSeconds(Math.floor(Date.now() / 1_000) + 5);
+                return client.send(request()).catch((e: unknown) => e);
+            }),
+        )) as MarketError;
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect(error.code).toBe(MarketErrorCode.UpstreamRateLimited);
+        expect(error.retryAfterSeconds).toBe(55);
+        expect(error.message).toMatch(/deadline/i);
+        expect(Date.now() - startedAt).toBe(0);
+        expect(transport.calls).toHaveLength(1);
+    });
+
+    it('refuses a backoff wait that would outlast the effective deadline instead of overrunning it', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_800_000_000_000);
+        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+        const client = clientOver(transport);
+        const startedAt = Date.now();
+
+        const error = (await settle(
+            runWithMarketWaitBudget(async () => {
+                currentMarketWaitBudget()?.narrowDeadlineSeconds(Math.floor(Date.now() / 1_000) + 1);
+                return client.send(request()).catch((e: unknown) => e);
+            }),
+        )) as MarketError;
+
+        expect(error).toBeInstanceOf(MarketError);
+        expect(error.code).toBe(MarketErrorCode.ServiceUnavailable);
+        expect(error.message).toMatch(/deadline/i);
+        expect(Date.now() - startedAt).toBeLessThan(1_000);
     });
 
     it('reports a 401 that survived the transport reauthentication as terminal', async () => {

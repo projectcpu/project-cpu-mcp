@@ -207,8 +207,26 @@ export interface MarketErrorOptions {
     txHash: string | null;
 }
 
+export enum MarketWaitRefusal {
+    BudgetSpent = 'budgetSpent',
+    DeadlineWouldPass = 'deadlineWouldPass',
+}
+
+export interface MarketWaitBudgetOptions {
+    totalMs: number;
+    deadlineAtSeconds: number | null;
+}
+
+export interface IMarketWaitBudget {
+    readonly remainingMs: number;
+    readonly deadlineAtSeconds: number | null;
+    narrowDeadlineSeconds(deadlineAtSeconds: number): void;
+    refuse(delayMs: number): MarketWaitRefusal | null;
+    wait(delayMs: number): Promise<void>;
+    waitAtMost(delayMs: number): Promise<number>;
+}
+
 export interface MarketAttempt {
-    startedAt: number;
     index: number;
 }
 
@@ -223,6 +241,10 @@ export interface MarketRequestInput<TSchema extends z.ZodTypeAny> {
     schema: TSchema;
     stage: MarketActionStage;
     label: string;
+}
+
+export interface MarketBudgetedRequest<TSchema extends z.ZodTypeAny> extends MarketRequestInput<TSchema> {
+    budget: IMarketWaitBudget;
 }
 
 export interface IMarketApiClient {
