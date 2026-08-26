@@ -1,10 +1,15 @@
 import type { MarketActionStage } from './types.js';
 import type { ILogger } from '../../logger/types.js';
-import type { TxReceipt } from '../../wallet/types.js';
+import type { TxReceipt, WalletProvider } from '../../wallet/types.js';
 
 export enum SeaportOrderEvent {
     Fulfilled = 'OrderFulfilled',
     Cancelled = 'OrderCancelled',
+}
+
+export interface BoundCellItem {
+    collection: string;
+    tokenId: string;
 }
 
 export interface OrderProofRequest {
@@ -12,6 +17,8 @@ export interface OrderProofRequest {
     orderHash: string;
     wallet: string;
     stage: MarketActionStage;
+    /** The one Cell this action was allowed to move; null where the proof binds no Cell. */
+    boundCell: BoundCellItem | null;
 }
 
 export interface OrderFulfilmentProof {
@@ -31,9 +38,8 @@ export interface IFulfilmentTransactionReader {
     senderOf(txHash: string): Promise<string | null>;
 }
 
-export interface RpcTransactionReaderOptions {
-    chainId: number;
-    rpcUrl: string | null;
+export interface WalletTransactionReaderOptions {
+    wallet: WalletProvider;
     logger: ILogger;
 }
 

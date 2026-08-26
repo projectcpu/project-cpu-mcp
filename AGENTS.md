@@ -1,6 +1,6 @@
 # Project CPU MCP Server
 
-MCP server for a blockchain game on EVM (Abstract). Distributed via npm, runs locally via `npx`.
+MCP server for a blockchain game on EVM (Robinhood, chain 4663). Distributed via npm, runs locally via `npx`.
 
 One wallet runtime: an EVM private key in env (`PRIVATE_KEY`, required) signing in over SIWE. Session state persists to `~/.project-cpu/session.json`.
 

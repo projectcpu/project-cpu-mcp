@@ -3,6 +3,7 @@ import { summarizeBoughtCell } from './format.utils.js';
 import { buyCellInputSchema } from './types.js';
 import type { BuyCellRequest } from '../../../services/market/purchase.types.js';
 import type { AppContext } from '../../../types.js';
+import { ToolEventType } from '../../types.js';
 import type { MarketToolDefinition } from '../types.js';
 
 export function createBuyCellTool(context: AppContext): MarketToolDefinition {
@@ -21,7 +22,7 @@ export function createBuyCellTool(context: AppContext): MarketToolDefinition {
             return {
                 content: [
                     { type: 'text', text: summarizeBoughtCell(result) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.CellBought }) },
                 ],
             };
         },

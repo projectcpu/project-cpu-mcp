@@ -2,6 +2,7 @@ import { MAKE_CELL_OFFER_DESCRIPTION } from './constants.js';
 import { summarizeCellOffer } from './format.utils.js';
 import { makeCellOfferInputSchema, type MakeCellOfferContext } from './types.js';
 import type { MakeCellOfferRequest } from '../../../services/market/offer.types.js';
+import { ToolEventType } from '../../types.js';
 import type { MarketToolDefinition } from '../types.js';
 
 export function createMakeCellOfferTool(context: MakeCellOfferContext): MarketToolDefinition {
@@ -20,7 +21,7 @@ export function createMakeCellOfferTool(context: MakeCellOfferContext): MarketTo
             return {
                 content: [
                     { type: 'text', text: summarizeCellOffer(result) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.CellOfferMade }) },
                 ],
             };
         },

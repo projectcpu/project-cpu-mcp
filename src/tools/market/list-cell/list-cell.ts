@@ -2,6 +2,7 @@ import { LIST_CELL_DESCRIPTION } from './constants.js';
 import { listCellInputSchema } from './types.js';
 import type { ListCellRequest } from '../../../services/market/listing.types.js';
 import type { AppContext } from '../../../types.js';
+import { ToolEventType } from '../../types.js';
 import { summarizeListedCell } from '../format.utils.js';
 import type { MarketToolDefinition } from '../types.js';
 
@@ -22,7 +23,7 @@ export function createListCellTool(context: AppContext): MarketToolDefinition {
             return {
                 content: [
                     { type: 'text', text: summarizeListedCell(result) },
-                    { type: 'text', text: JSON.stringify(result) },
+                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.CellListed }) },
                 ],
             };
         },

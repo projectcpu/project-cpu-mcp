@@ -124,6 +124,14 @@ Every command above pins `@latest`, so restarting the server is how you update �
 
 Session state (the signed-in address and its JWT) is persisted to `~/.project-cpu/`.
 
+The wallet is EVM-only: `PRIVATE_KEY` is the single wallet credential, and the server refuses to start without
+it. That key signs SIWE and every marketplace order signature locally inside this process — there is no second
+wallet mode to choose, no browser step, and no device authorization. Robinhood (chain 4663) is the only
+accepted network.
+
+The server needs **no OpenSea API key**, and there is no environment variable for one. Every Cell marketplace
+read and write goes through the authenticated game API, which mediates all OpenSea REST access on your behalf.
+
 ## What the agent can do
 
 Once connected, the server exposes tools grouped by area:
@@ -177,6 +185,17 @@ Once connected, the server exposes tools grouped by area:
 - **Tokens & land** — `cpu_quote_swap`, `cpu_swap` (trade ETH ↔ $CPU on the token pool), `cpu_withdraw`
   (cash a cell's wCPU out to on-chain $CPU, 1:1), `cpu_quote_mint` and `cpu_mint_cell` (preview and mint new
   land cells on the primary market, priced in native ETH by the public drop itself).
+- **Cell marketplace** — the land market, where a Cell is an NFT traded on a public NFT marketplace for a
+  configured currency. It is entirely separate from the in-game resource Lots above: a Cell listing and a Cell
+  offer are Market orders, not Lots, and they settle by Market fulfilment, not by a Fill. Four reads:
+  `cpu_get_cell_market` (the best listing and the best offer for one Cell, each independently `null` when
+  there is none), `cpu_get_my_listings`, `cpu_get_my_offers` (bids you made) and `cpu_get_my_offers_received`
+  (bids other wallets made on your Cells) — all cursor-paged. Five complete actions, each one whole player
+  intent: `cpu_list_cell` (sell one Cell, optionally reserved for one buyer), `cpu_make_cell_offer` (bid on
+  one exact Cell), `cpu_buy_cell` (buy one exact listing under a ceiling), `cpu_accept_cell_offer` (sell one
+  exact Cell into one exact offer) and `cpu_cancel_order` (cancel one exact Market order of yours, listing or
+  offer). See [the Cell marketplace guide](./docs/cell-marketplace.md) for gross prices and fees, exact-order
+  safety, base-unit amounts, Unix-second expirations, rate limits and recovery.
 
 Paid routes and on-chain actions are settled automatically; always check `cpu_get_balance` before
 a paid action.

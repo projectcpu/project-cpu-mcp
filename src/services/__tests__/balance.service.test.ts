@@ -14,6 +14,9 @@ import type {
 import { BalanceService } from '../balance.service.js';
 
 class BalanceWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     public readonly reads: Array<ReadContractParams> = [];
 
     constructor(

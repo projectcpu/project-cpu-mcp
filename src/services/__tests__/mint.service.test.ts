@@ -51,6 +51,9 @@ const UNCONFIGURED_DROP: PublicDropView = {
 };
 
 class MintWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     public readonly sent: Array<TransactionRequest> = [];
     public readonly reads: Array<ReadContractParams> = [];
     private receiptIndex = 0;

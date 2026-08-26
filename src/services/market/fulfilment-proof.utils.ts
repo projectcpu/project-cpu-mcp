@@ -5,10 +5,17 @@ import { sameAddress } from './listing.utils.js';
 import { SEAPORT_EVENTS_ABI } from '../../contracts/seaport-events.abi.js';
 import { SEAPORT_ADDRESS } from '../../contracts/seaport.constants.js';
 
+export interface SeaportSpentItem {
+    token: string;
+    identifier: string;
+}
+
 export interface SeaportFulfilmentEvent {
     orderHash: string;
     offerer: string;
     recipient: string;
+    /** Every item the order moved — what the offerer gave and what it received, in one list. */
+    items: Array<SeaportSpentItem>;
 }
 
 export interface SeaportCancellationEvent {
@@ -41,6 +48,23 @@ function seaportEventArgs(logs: ReadonlyArray<Log>, event: SeaportOrderEvent): A
     return decoded;
 }
 
+function spentItems(value: unknown): Array<SeaportSpentItem> {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.map((entry) => {
+        const item = entry as Record<string, unknown>;
+        const token = item.token;
+        const identifier = item.identifier;
+
+        return {
+            token: typeof token === 'string' ? token : '',
+            identifier: typeof identifier === 'bigint' ? identifier.toString() : String(identifier ?? ''),
+        };
+    });
+}
+
 function stringField(args: Record<string, unknown>, field: string): string {
     const value = args[field];
     return typeof value === 'string' ? value : '';
@@ -56,6 +80,7 @@ export function fulfilmentOfOrder(logs: ReadonlyArray<Log>, orderHash: string): 
             orderHash: stringField(args, 'orderHash'),
             offerer: stringField(args, 'offerer'),
             recipient: stringField(args, 'recipient'),
+            items: [...spentItems(args.offer), ...spentItems(args.consideration)],
         };
     }
 

@@ -7,7 +7,6 @@ import { ApiClient } from './api/client.js';
 import { RevealRequestsClient } from './api/reveal-requests.client.js';
 import { DEFAULT_API_URL } from './config/constants.js';
 import { loadEnvConfig } from './config/env.js';
-import { chainIdForNetwork } from './config/network.utils.js';
 import { createLogger } from './logger/index.js';
 import { DEFAULT_POLL_INTERVAL_MS, DEFAULT_RECONNECT_GRACE_MS } from './map/constants.js';
 import { MapReader } from './map/reader.js';
@@ -26,15 +25,7 @@ import { BalanceService } from './services/balance.service.js';
 import { BuildService } from './services/build.service.js';
 import { CellClient } from './services/cell.client.js';
 import { CraftService } from './services/craft.service.js';
-import { MarketApiClient } from './services/market/client.js';
-import { MarketFulfilmentProof } from './services/market/fulfilment-proof.js';
-import { RpcTransactionReader } from './services/market/fulfilment-proof.reader.js';
-import { MarketListingService } from './services/market/listing.service.js';
-import { MarketProfileClient } from './services/market/profile.client.js';
-import { MarketPurchaseService } from './services/market/purchase.service.js';
-import { MarketRecoveryStore } from './services/market/recovery.store.js';
-import { MarketService } from './services/market/service.js';
-import { MarketSingleFlight } from './services/market/single-flight.js';
+import { createMarketServices } from './services/market/factory.js';
 import { MiningService } from './services/mining.service.js';
 import { MintService } from './services/mint.service.js';
 import { RevealFulfilmentService } from './services/reveal-fulfilment.service.js';
@@ -124,40 +115,13 @@ async function main(): Promise<void> {
         tradeClient,
         logger: logger.child('trade:rules'),
     });
-    const marketClient = new MarketApiClient({ api, logger: logger.child('market:api') });
-    const market = new MarketService({ client: marketClient, logger: logger.child('market') });
-    const marketProfile = new MarketProfileClient({
-        client: marketClient,
-        logger: logger.child('market:profile'),
-    });
-    const marketListing = new MarketListingService({
-        client: marketClient,
-        profile: marketProfile,
+    const marketplace = createMarketServices({
+        api,
         appConfig,
         wallet,
         network: config.NETWORK,
-        singleFlight: new MarketSingleFlight(),
-        recovery: new MarketRecoveryStore(),
-        logger: logger.child('market:listing'),
-    });
-    const marketTransactions = new RpcTransactionReader({
-        chainId: chainIdForNetwork(config.NETWORK),
-        rpcUrl: config.RPC_URL,
-        logger: logger.child('market:chain'),
-    });
-    const marketProof = new MarketFulfilmentProof({
-        transactions: marketTransactions,
-        logger: logger.child('market:proof'),
-    });
-    const marketPurchase = new MarketPurchaseService({
-        client: marketClient,
-        proof: marketProof,
-        appConfig,
-        wallet,
-        network: config.NETWORK,
-        singleFlight: new MarketSingleFlight(),
-        recovery: new MarketRecoveryStore(),
-        logger: logger.child('market:purchase'),
+        coordinator: null,
+        logger,
     });
     const syndicateRegistry = new SyndicateRegistryClient({ contracts, logger: logger.child('syndicate:client') });
     const syndicate = new SyndicateService({
@@ -300,10 +264,7 @@ async function main(): Promise<void> {
         route,
         trade,
         tradeRules,
-        market,
-        marketProfile,
-        marketListing,
-        marketPurchase,
+        ...marketplace,
         syndicate,
         swap,
         mint,

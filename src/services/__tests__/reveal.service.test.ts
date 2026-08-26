@@ -556,6 +556,9 @@ class ScriptedRevealRequests implements IRevealRequestsReader {
 }
 
 class ScriptedWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     public readonly sent: Array<TransactionRequest> = [];
     public readonly estimated: Array<GasEstimateRequest> = [];
     constructor(

@@ -8,7 +8,7 @@ import {
     type OrderFulfilmentProof,
     type OrderProofRequest,
 } from './fulfilment-proof.types.js';
-import { cancellationOfOrder, fulfilmentOfOrder } from './fulfilment-proof.utils.js';
+import { cancellationOfOrder, fulfilmentOfOrder, type SeaportFulfilmentEvent } from './fulfilment-proof.utils.js';
 import { sameAddress } from './listing.utils.js';
 import { MarketErrorCode } from './types.js';
 import { SEAPORT_ADDRESS } from '../../contracts/seaport.constants.js';
@@ -36,8 +36,36 @@ export class MarketFulfilmentProof implements IMarketFulfilmentProof {
         if (!sameAddress(event.recipient, request.wallet)) {
             throw this.wrongParty(request, `it handed the offered items to ${event.recipient}, not to this wallet`);
         }
+        this.requireBoundCell(request, event);
 
         return { orderHash: request.orderHash, offerer: event.offerer, recipient: event.recipient, sender };
+    }
+
+    // The order hash proves which order settled; only the items in its own event prove which Cell
+    // moved. Without this, a preparation whose calldata names another Cell of the same wallet would
+    // be paid for first and questioned afterwards.
+    private requireBoundCell(request: OrderProofRequest, event: SeaportFulfilmentEvent): void {
+        const bound = request.boundCell;
+        if (bound === null) {
+            return;
+        }
+
+        const matched = event.items.some(
+            (item) => sameAddress(item.token, bound.collection) && item.identifier === bound.tokenId,
+        );
+        if (matched) {
+            return;
+        }
+
+        const moved = event.items
+            .filter((item) => sameAddress(item.token, bound.collection))
+            .map((item) => item.identifier);
+        const named = moved.length === 0 ? 'no Cell of that collection at all' : `Cell(s) ${moved.join(', ')}`;
+
+        throw this.wrongParty(
+            request,
+            `it moved ${named} rather than the Cell ${bound.tokenId} this call was bound to`,
+        );
     }
 
     async requireCancellation(request: OrderProofRequest): Promise<OrderCancellationProof> {

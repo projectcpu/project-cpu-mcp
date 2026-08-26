@@ -1,4 +1,13 @@
-import { encodeFunctionData, keccak256, toHex, zeroAddress, type Abi, type Hex } from 'viem';
+import {
+    concat,
+    encodeAbiParameters,
+    encodeFunctionData,
+    keccak256,
+    toHex,
+    zeroAddress,
+    type Abi,
+    type Hex,
+} from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import { SEAPORT_ORDER_COMPONENTS_TYPES } from '../../../contracts/seaport.constants.js';
@@ -55,9 +64,118 @@ function encodeType(): string {
     return [struct('OrderComponents'), struct('ConsiderationItem'), struct('OfferItem')].join('');
 }
 
+const OFFER_ITEM_TYPEHASH = keccak256(
+    toHex('OfferItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount)'),
+);
+
+const CONSIDERATION_ITEM_TYPEHASH = keccak256(
+    toHex(
+        'ConsiderationItem(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,' +
+            'uint256 endAmount,address recipient)',
+    ),
+);
+
+/**
+ * The order hash rebuilt by hand from the published struct definitions — no shared helper and no shared
+ * type table. It is the only independent witness that the hash covers every field the protocol hashes;
+ * every other expectation in this file is computed with the function under test.
+ */
+function orderHashByHand(order: Record<string, unknown>): Hex {
+    const offered = (order.offer as Array<Record<string, unknown>>).map((item) =>
+        keccak256(
+            encodeAbiParameters(
+                [
+                    { type: 'bytes32' },
+                    { type: 'uint256' },
+                    { type: 'address' },
+                    { type: 'uint256' },
+                    { type: 'uint256' },
+                    { type: 'uint256' },
+                ],
+                [
+                    OFFER_ITEM_TYPEHASH,
+                    BigInt(item.itemType as number),
+                    item.token as Hex,
+                    item.identifierOrCriteria as bigint,
+                    item.startAmount as bigint,
+                    item.endAmount as bigint,
+                ],
+            ),
+        ),
+    );
+    const paid = (order.consideration as Array<Record<string, unknown>>).map((item) =>
+        keccak256(
+            encodeAbiParameters(
+                [
+                    { type: 'bytes32' },
+                    { type: 'uint256' },
+                    { type: 'address' },
+                    { type: 'uint256' },
+                    { type: 'uint256' },
+                    { type: 'uint256' },
+                    { type: 'address' },
+                ],
+                [
+                    CONSIDERATION_ITEM_TYPEHASH,
+                    BigInt(item.itemType as number),
+                    item.token as Hex,
+                    item.identifierOrCriteria as bigint,
+                    item.startAmount as bigint,
+                    item.endAmount as bigint,
+                    item.recipient as Hex,
+                ],
+            ),
+        ),
+    );
+
+    return keccak256(
+        encodeAbiParameters(
+            [
+                { type: 'bytes32' },
+                { type: 'address' },
+                { type: 'address' },
+                { type: 'bytes32' },
+                { type: 'bytes32' },
+                { type: 'uint256' },
+                { type: 'uint256' },
+                { type: 'uint256' },
+                { type: 'bytes32' },
+                { type: 'uint256' },
+                { type: 'bytes32' },
+                { type: 'uint256' },
+            ],
+            [
+                SEAPORT_ORDER_TYPEHASH,
+                order.offerer as Hex,
+                order.zone as Hex,
+                keccak256(concat(offered)),
+                keccak256(concat(paid)),
+                BigInt(order.orderType as number),
+                order.startTime as bigint,
+                order.endTime as bigint,
+                order.zoneHash as Hex,
+                order.salt as bigint,
+                order.conduitKey as Hex,
+                order.counter as bigint,
+            ],
+        ),
+    );
+}
+
 describe('reading a prepared cancellation from its own bytes', () => {
     it('hashes the order struct exactly as the protocol contract does', () => {
         expect(keccak256(toHex(encodeType()))).toBe(SEAPORT_ORDER_TYPEHASH);
+    });
+
+    it('produces the hash the published struct definitions produce, field for field', () => {
+        expect(seaportOrderHash(components())).toBe(orderHashByHand(components()));
+    });
+
+    it('moves when a hashed field moves, the order counter included', () => {
+        const bumped = { ...components(), counter: 1n };
+
+        expect(seaportOrderHash(bumped)).toBe(orderHashByHand(bumped));
+        expect(seaportOrderHash(bumped)).not.toBe(seaportOrderHash(components()));
     });
 
     it('names the maker and the order hash of the single order it cancels', () => {

@@ -273,6 +273,9 @@ export interface FakeWalletOptions {
 }
 
 export class FakeBuyerWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     readonly log: Array<string> = [];
     readonly signed: Array<SignTypedDataRequest> = [];
     readonly reads: Array<ReadContractParams> = [];

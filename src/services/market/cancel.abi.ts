@@ -1,3 +1,6 @@
+// The `cancel(OrderComponents[])` entry point of the deployed Seaport protocol contract. Field order,
+// names and types must match the deployed contract exactly: together they decide the function selector
+// and how prepared cancellation calldata decodes back into the order it would cancel.
 const OFFER_ITEM_COMPONENTS = [
     { name: 'itemType', type: 'uint8', internalType: 'enum ItemType' },
     { name: 'token', type: 'address', internalType: 'address' },

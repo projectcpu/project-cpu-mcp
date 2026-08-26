@@ -199,6 +199,7 @@ export interface FulfilledLogOver {
     orderHash: string;
     recipient: string;
     offerer: string;
+    cell: string | null;
 }
 
 export function orderFulfilledLog(over: Partial<FulfilledLogOver> = {}): Log {
@@ -207,8 +208,21 @@ export function orderFulfilledLog(over: Partial<FulfilledLogOver> = {}): Log {
         orderHash: ORDER_HASH,
         recipient: SELLER,
         offerer: BUYER,
+        cell: TOKEN_ID,
         ...over,
     };
+    const moved =
+        shape.cell === null
+            ? []
+            : [
+                  {
+                      itemType: 2,
+                      token: COLLECTION as Address,
+                      identifier: BigInt(shape.cell),
+                      amount: 1n,
+                      recipient: shape.offerer as Address,
+                  },
+              ];
 
     return {
         address: shape.emitter,
@@ -217,7 +231,12 @@ export function orderFulfilledLog(over: Partial<FulfilledLogOver> = {}): Log {
             eventName: 'OrderFulfilled',
             args: { offerer: shape.offerer as Address, zone: ZONE },
         }),
-        data: encodeAbiParameters(FULFILLED_DATA_PARAMS, [shape.orderHash as Hex, shape.recipient as Address, [], []]),
+        data: encodeAbiParameters(FULFILLED_DATA_PARAMS, [
+            shape.orderHash as Hex,
+            shape.recipient as Address,
+            [],
+            moved,
+        ]),
     } as unknown as Log;
 }
 
@@ -278,7 +297,8 @@ export interface FakeSellerWalletOptions {
     owner: string;
     newOwner: string;
     transfers: Array<string>;
-    logs: Array<Log>;
+    /** Null lets the wallet emit the fulfilment log for the Cell that receipt actually transfers. */
+    logs: Array<Log> | null;
     sendFailsAt: number | null;
     receiptFailsAt: number | null;
     revertsAt: number | null;
@@ -288,6 +308,9 @@ export interface FakeSellerWalletOptions {
 }
 
 export class FakeSellerWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     readonly log: Array<string> = [];
     readonly sent: Array<TransactionRequest> = [];
     readonly reads: Array<ReadContractParams> = [];
@@ -305,7 +328,7 @@ export class FakeSellerWallet implements WalletManager, WalletProvider {
             owner: SELLER,
             newOwner: BUYER,
             transfers: [TOKEN_ID],
-            logs: [orderFulfilledLog()],
+            logs: null,
             sendFailsAt: null,
             receiptFailsAt: null,
             revertsAt: null,
@@ -362,8 +385,9 @@ export class FakeSellerWallet implements WalletManager, WalletProvider {
         }
 
         const reverted = this.options.revertsAt === this.receipts;
+        let moved: string | undefined;
         if (!reverted && this.fulfilmentHashes.delete(hash)) {
-            const moved = this.pending.shift();
+            moved = this.pending.shift();
             if (moved !== undefined) {
                 this.owners.set(moved, this.options.newOwner);
             }
@@ -373,7 +397,7 @@ export class FakeSellerWallet implements WalletManager, WalletProvider {
             status: reverted ? TxStatus.Reverted : TxStatus.Success,
             transactionHash: hash,
             blockNumber: 1n,
-            logs: this.options.logs,
+            logs: this.options.logs ?? [orderFulfilledLog({ cell: moved ?? TOKEN_ID })],
         };
     }
 

@@ -20,6 +20,17 @@ import { registerGetAttentionTool } from './tools/map/attention/attention.js';
 import { registerGetCellTool } from './tools/map/get-cell/get-cell.js';
 import { registerGetChangesTool } from './tools/map/get-changes/get-changes.js';
 import { registerGetMapTool } from './tools/map/get-map/get-map.js';
+import {
+    registerAcceptCellOfferTool,
+    registerBuyCellTool,
+    registerCancelOrderTool,
+    registerGetCellMarketTool,
+    registerGetMyListingsTool,
+    registerGetMyOffersReceivedTool,
+    registerGetMyOffersTool,
+    registerListCellTool,
+    registerMakeCellOfferTool,
+} from './tools/market/register.js';
 import { registerClaimMiningTool } from './tools/mining/claim/claim-mining.js';
 import { registerGetMiningStatusTool } from './tools/mining/get-status/get-mining-status.js';
 import { registerStartMiningTool } from './tools/mining/start/start-mining.js';
@@ -128,6 +139,15 @@ function registerTools(registrar: ToolRegistrar, context: AppContext, persona: P
     registerQuoteLotReturnTool(registrar, context);
     registerReturnLotTool(registrar, context);
     registerSetSaleFeeTool(registrar, context);
+    registerGetCellMarketTool(registrar, context);
+    registerGetMyListingsTool(registrar, context);
+    registerGetMyOffersTool(registrar, context);
+    registerGetMyOffersReceivedTool(registrar, context);
+    registerListCellTool(registrar, context);
+    registerMakeCellOfferTool(registrar, context);
+    registerBuyCellTool(registrar, context);
+    registerAcceptCellOfferTool(registrar, context);
+    registerCancelOrderTool(registrar, context);
     registerListSyndicatesTool(registrar, context);
     registerGetSyndicateTool(registrar, context);
     registerGetSyndicateMembershipTool(registrar, context);
