@@ -140,16 +140,18 @@ async function main(): Promise<void> {
         recovery: new MarketRecoveryStore(),
         logger: logger.child('market:listing'),
     });
+    const marketTransactions = new RpcTransactionReader({
+        chainId: chainIdForNetwork(config.NETWORK),
+        rpcUrl: config.RPC_URL,
+        logger: logger.child('market:chain'),
+    });
+    const marketProof = new MarketFulfilmentProof({
+        transactions: marketTransactions,
+        logger: logger.child('market:proof'),
+    });
     const marketPurchase = new MarketPurchaseService({
         client: marketClient,
-        proof: new MarketFulfilmentProof({
-            transactions: new RpcTransactionReader({
-                chainId: chainIdForNetwork(config.NETWORK),
-                rpcUrl: config.RPC_URL,
-                logger: logger.child('market:chain'),
-            }),
-            logger: logger.child('market:proof'),
-        }),
+        proof: marketProof,
         appConfig,
         wallet,
         network: config.NETWORK,
