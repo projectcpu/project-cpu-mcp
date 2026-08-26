@@ -46,3 +46,17 @@ export const SEAPORT_ORDER_COMPONENTS_TYPES = {
 
 // Minimal read surface of the deployed protocol contract: the maker's current order counter.
 export const SEAPORT_COUNTER_ABI = parseAbi(['function getCounter(address offerer) view returns (uint256 counter)']);
+
+// The protocol names its own conduit registry, so a token approval can be traced back to the one
+// pinned address above instead of pinning a second one this client would have to trust separately.
+export const SEAPORT_INFORMATION_ABI = parseAbi([
+    'function information() view returns (string version, bytes32 domainSeparator, address conduitController)',
+]);
+
+export const SEAPORT_CONDUIT_REGISTRY_ABI = parseAbi([
+    'function getConduit(bytes32 conduitKey) view returns (address conduit, bool exists)',
+    'function getKey(address conduit) view returns (bytes32 conduitKey)',
+]);
+
+// An order carrying this key is settled by the protocol contract itself rather than by a conduit.
+export const SEAPORT_NO_CONDUIT_KEY = `0x${'0'.repeat(64)}`;

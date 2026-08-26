@@ -1,8 +1,13 @@
+import { decodeFunctionData } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    approvalData,
     approvalWire,
+    BARE_APPROVAL_SELECTOR,
     COLLECTION,
+    CONDUIT,
+    CONDUIT_KEY,
     CREATOR_FEE,
     EXPIRES_AT,
     FakeAppConfig,
@@ -34,6 +39,8 @@ import {
     submittedWire,
     TOKEN_ID,
 } from './fixtures.js';
+import { ERC721_OPERATOR_ABI } from '../../../../contracts/erc721.abi.js';
+import { SEAPORT_ADDRESS } from '../../../../contracts/seaport.constants.js';
 import { MarketActionTool } from '../../../../services/market/action.types.js';
 import { MarketError } from '../../../../services/market/error.js';
 import {
@@ -151,11 +158,10 @@ describe('the approvals a listing still owes', () => {
     });
 
     it('broadcasts them in the returned order and observes each receipt before signing', async () => {
-        const other = `0x${'9'.repeat(40)}`;
         const harness = listCellHarness(
             routes({
                 [MarketRoute.Prepare]: [
-                    reply(200, preparedWire({ transactions: [approvalWire(COLLECTION), approvalWire(other)] })),
+                    reply(200, preparedWire({ transactions: [approvalWire(COLLECTION), approvalWire(COLLECTION)] })),
                 ],
             }),
         );
@@ -165,11 +171,78 @@ describe('the approvals a listing still owes', () => {
         expect(harness.wallet.log).toEqual([
             `send:${COLLECTION}`,
             `receipt:0x${'1'.repeat(64)}`,
-            `send:${other}`,
+            `send:${COLLECTION}`,
             `receipt:0x${'2'.repeat(64)}`,
             'sign',
         ]);
         expect(result.approvalTxHashes).toEqual([`0x${'1'.repeat(64)}`, `0x${'2'.repeat(64)}`]);
+    });
+
+    it.each([
+        ['is pointed at anything but the Cell collection', `0x${'9'.repeat(40)}`, {}],
+        ['carries an approval selector with no arguments behind it', COLLECTION, { data: BARE_APPROVAL_SELECTOR }],
+        ['is not an approval at all', COLLECTION, { data: '0xdeadbeef' }],
+        [
+            'hands every Cell to an operator the signed order is not settled by',
+            COLLECTION,
+            { data: approvalData(RESERVED_BUYER) },
+        ],
+        ['withdraws an approval rather than granting one', COLLECTION, { data: approvalData(SEAPORT_ADDRESS, false) }],
+    ])('refuses a prepared collection approval that %s', async (_label, to, over) => {
+        const harness = listCellHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire(to, over)] }))] }),
+        );
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.broadcast).toHaveLength(0);
+        expect(harness.wallet.signed).toHaveLength(0);
+    });
+
+    it('approves the conduit the signed order names when it settles through one', async () => {
+        const harness = listCellHarness(
+            routes({
+                [MarketRoute.Prepare]: [
+                    reply(
+                        200,
+                        preparedWire({
+                            transactions: [approvalWire(COLLECTION, { data: approvalData(CONDUIT) })],
+                            order: seaportOrderWire({ conduitKey: CONDUIT_KEY }),
+                        }),
+                    ),
+                ],
+            }),
+        );
+
+        await harness.handler(listCellArgs());
+
+        expect(
+            decodeFunctionData({ abi: ERC721_OPERATOR_ABI, data: harness.wallet.broadcast[0]?.data ?? '0x' }),
+        ).toEqual({ functionName: 'setApprovalForAll', args: [CONDUIT, true] });
+    });
+
+    it('refuses an operator the protocol registry disowns for the order it would sign', async () => {
+        const harness = listCellHarness(
+            routes({
+                [MarketRoute.Prepare]: [
+                    reply(
+                        200,
+                        preparedWire({
+                            transactions: [approvalWire(COLLECTION, { data: approvalData(CONDUIT) })],
+                            order: seaportOrderWire({ conduitKey: CONDUIT_KEY }),
+                        }),
+                    ),
+                ],
+            }),
+            new FakeSellerWallet({ conduit: null }),
+        );
+
+        const error = await failure(harness.handler(listCellArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.broadcast).toHaveLength(0);
+        expect(harness.wallet.signed).toHaveLength(0);
     });
 
     it('stops at a reverted approval and never signs or publishes the order', async () => {

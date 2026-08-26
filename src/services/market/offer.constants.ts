@@ -13,7 +13,3 @@ export const OFFER_NO_IDENTIFIER = '0';
 export const OFFER_NO_VALUE = '0';
 
 export const OFFER_START_TIME_SKEW_SECONDS = 300;
-
-export const OFFER_APPROVAL_FUNCTION = 'approve';
-
-export const OFFER_APPROVAL_ARGUMENT_COUNT = 2;

@@ -1,8 +1,18 @@
-import { encodeAbiParameters, encodeEventTopics, zeroAddress, type Address, type Hash, type Hex, type Log } from 'viem';
+import {
+    encodeAbiParameters,
+    encodeEventTopics,
+    encodeFunctionData,
+    zeroAddress,
+    type Address,
+    type Hash,
+    type Hex,
+    type Log,
+} from 'viem';
 
 import type { RequestOptions } from '../../../../api/client.js';
 import type { ApiResponse } from '../../../../api/types.js';
 import { LAUNCH_CHAIN_ID } from '../../../../config/constants.js';
+import { ERC20_ABI } from '../../../../contracts/erc20.abi.js';
 import { SEAPORT_EVENTS_ABI } from '../../../../contracts/seaport-events.abi.js';
 import { SEAPORT_ADDRESS } from '../../../../contracts/seaport.constants.js';
 import { NoopLogger } from '../../../../logger/noop.logger.js';
@@ -40,6 +50,12 @@ export const COLLECTION = `0x${'5'.repeat(40)}`;
 
 export const OTHER_CONTRACT = `0x${'6'.repeat(40)}`;
 
+export const CONDUIT = `0x${'7'.repeat(40)}`;
+
+export const CONDUIT_KEY = `0x${'7'.repeat(64)}`;
+
+export const CONDUIT_REGISTRY = `0x${'8'.repeat(40)}`;
+
 export const ZONE = zeroAddress;
 
 export const NATIVE_CURRENCY = { address: zeroAddress, symbol: 'ETH', decimals: 18 };
@@ -70,7 +86,15 @@ export const PREPARE_PATH = '/api/v1/market/purchases/prepare';
 
 export const FULFILMENT_CALLDATA = '0xfb0f3ee1';
 
-export const APPROVAL_CALLDATA = '0x095ea7b3';
+export const BARE_APPROVAL_SELECTOR = '0x095ea7b3';
+
+export function approvalData(amount: string = PRICE, spender: string = CONDUIT): Hex {
+    return encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [spender as Address, BigInt(amount)],
+    });
+}
 
 export function txHash(index: number): string {
     return `0x${index.toString().repeat(64)}`.slice(0, 66);
@@ -116,7 +140,7 @@ export function approvalWire(over: Record<string, unknown> = {}): Record<string,
     return {
         kind: MarketTransactionKind.CurrencyApproval,
         to: CURRENCY_ADDRESS,
-        data: APPROVAL_CALLDATA,
+        data: approvalData(),
         value: '0',
         chainId: LAUNCH_CHAIN_ID,
         ...over,
@@ -256,6 +280,8 @@ export interface FakeBuyerWalletOptions {
     receiptFailsAt: number | null;
     revertsAt: number | null;
     readFails: boolean;
+    conduitKnown: boolean;
+    protocolReadFails: boolean;
 }
 
 export class FakeBuyerWallet implements WalletManager, WalletProvider {
@@ -275,6 +301,8 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
             receiptFailsAt: null,
             revertsAt: null,
             readFails: false,
+            conduitKnown: true,
+            protocolReadFails: false,
             ...over,
         };
     }
@@ -330,6 +358,21 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
     async readContract(params: ReadContractParams): Promise<unknown> {
         this.reads.push(params);
         this.log.push(`read:${params.functionName}`);
+
+        if (params.functionName === 'information') {
+            if (this.options.protocolReadFails) {
+                throw new Error('the protocol contract could not be read');
+            }
+            return ['1.6', `0x${'0'.repeat(64)}`, CONDUIT_REGISTRY];
+        }
+        if (params.functionName === 'getKey') {
+            const known = this.options.conduitKnown && params.args[0] === CONDUIT;
+            if (!known) {
+                throw new Error('NoConduit');
+            }
+            return CONDUIT_KEY;
+        }
+
         if (this.options.readFails) {
             throw new Error('the collection contract could not be read');
         }

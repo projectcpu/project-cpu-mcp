@@ -1,9 +1,10 @@
-import type { Address, Hash, Hex } from 'viem';
+import { encodeFunctionData, type Address, type Hash, type Hex } from 'viem';
 import { vi } from 'vitest';
 
 import type { RequestOptions } from '../../../../api/client.js';
 import type { ApiResponse } from '../../../../api/types.js';
 import { LAUNCH_CHAIN_ID } from '../../../../config/constants.js';
+import { ERC721_OPERATOR_ABI } from '../../../../contracts/erc721.abi.js';
 import { SEAPORT_ADDRESS } from '../../../../contracts/seaport.constants.js';
 import { NoopLogger } from '../../../../logger/noop.logger.js';
 import { MarketApiClient } from '../../../../services/market/client.js';
@@ -37,6 +38,14 @@ export const FEE_RECIPIENT = `0x${'4'.repeat(40)}`;
 export const COLLECTION = `0x${'5'.repeat(40)}`;
 
 export const ZONE = `0x${'6'.repeat(40)}`;
+
+export const CONDUIT = `0x${'7'.repeat(40)}`;
+
+export const CONDUIT_KEY = `0x${'7'.repeat(64)}`;
+
+export const CONDUIT_REGISTRY = `0x${'8'.repeat(40)}`;
+
+export const BARE_APPROVAL_SELECTOR = '0xa22cb465';
 
 export const NATIVE_ADDRESS = `0x${'0'.repeat(40)}`;
 
@@ -131,13 +140,22 @@ export function seaportOrderWire(over: Record<string, unknown> = {}): Record<str
     };
 }
 
-export function approvalWire(to: string): Record<string, unknown> {
+export function approvalData(operator: string = SEAPORT_ADDRESS, approved: boolean = true): Hex {
+    return encodeFunctionData({
+        abi: ERC721_OPERATOR_ABI,
+        functionName: 'setApprovalForAll',
+        args: [operator as Address, approved],
+    });
+}
+
+export function approvalWire(to: string, over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
         kind: MarketTransactionKind.CollectionApproval,
         to,
-        data: '0xa22cb465',
+        data: approvalData(),
         value: '0',
         chainId: LAUNCH_CHAIN_ID,
+        ...over,
     };
 }
 
@@ -262,16 +280,26 @@ export interface FakeWalletOptions {
     chainId: number;
     receiptStatus: TxStatus;
     clockJumpMs: number;
+    conduit: string | null;
+    protocolReadFails: boolean;
 }
 
 export class FakeSellerWallet implements WalletManager, WalletProvider {
     readonly log: Array<string> = [];
     readonly signed: Array<SignTypedDataRequest> = [];
+    readonly broadcast: Array<TransactionRequest> = [];
     private readonly options: FakeWalletOptions;
     private sent = 0;
 
     constructor(over: Partial<FakeWalletOptions> = {}) {
-        this.options = { chainId: LAUNCH_CHAIN_ID, receiptStatus: TxStatus.Success, clockJumpMs: 0, ...over };
+        this.options = {
+            chainId: LAUNCH_CHAIN_ID,
+            receiptStatus: TxStatus.Success,
+            clockJumpMs: 0,
+            conduit: CONDUIT,
+            protocolReadFails: false,
+            ...over,
+        };
     }
 
     get(): WalletManager {
@@ -292,6 +320,7 @@ export class FakeSellerWallet implements WalletManager, WalletProvider {
 
     async sendTransaction(tx: TransactionRequest): Promise<Hash> {
         this.sent += 1;
+        this.broadcast.push(tx);
         this.log.push(`send:${tx.to}`);
         return `0x${this.sent.toString().repeat(64)}`.slice(0, 66) as Hash;
     }
@@ -326,8 +355,21 @@ export class FakeSellerWallet implements WalletManager, WalletProvider {
         return 0n;
     }
 
-    async readContract(_params: ReadContractParams): Promise<unknown> {
-        throw new Error('no contract read is part of publishing a listing');
+    async readContract(params: ReadContractParams): Promise<unknown> {
+        this.log.push(`read:${params.functionName}`);
+
+        if (params.functionName === 'information') {
+            if (this.options.protocolReadFails) {
+                throw new Error('the protocol contract could not be read');
+            }
+            return ['1.6', `0x${'0'.repeat(64)}`, CONDUIT_REGISTRY];
+        }
+        if (params.functionName === 'getConduit') {
+            const conduit = this.options.conduit;
+            return conduit === null ? [`0x${'0'.repeat(40)}`, false] : [conduit, true];
+        }
+
+        throw new Error(`no ${params.functionName} read is part of publishing a listing`);
     }
 }
 

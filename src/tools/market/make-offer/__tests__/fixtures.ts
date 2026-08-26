@@ -37,6 +37,10 @@ export const COLLECTION = `0x${'5'.repeat(40)}`;
 
 export const CONDUIT = `0x${'7'.repeat(40)}`;
 
+export const CONDUIT_KEY = `0x${'7'.repeat(64)}`;
+
+export const CONDUIT_REGISTRY = `0x${'6'.repeat(40)}`;
+
 export const NATIVE_ADDRESS = `0x${'0'.repeat(40)}`;
 
 export const CURRENCY = { address: CURRENCY_ADDRESS, symbol: 'WETH', decimals: 18 };
@@ -71,8 +75,12 @@ export const SUBMIT_PATH = '/api/v1/market/offers/submit';
 
 export const MY_OFFERS_PATH = '/api/v1/market/me/offers';
 
-export function approvalData(amount: string = AMOUNT): Hex {
-    return encodeFunctionData({ abi: ERC20_ABI, functionName: 'approve', args: [CONDUIT as Address, BigInt(amount)] });
+export function approvalData(amount: string = AMOUNT, spender: string = CONDUIT): Hex {
+    return encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [spender as Address, BigInt(amount)],
+    });
 }
 
 export interface FakeReply {
@@ -121,7 +129,7 @@ export function seaportOrderWire(over: Record<string, unknown> = {}): Record<str
         endTime: EXPIRES_AT.toString(),
         zoneHash: `0x${'0'.repeat(64)}`,
         salt: '123456789',
-        conduitKey: `0x${'0'.repeat(64)}`,
+        conduitKey: CONDUIT_KEY,
         counter: COUNTER,
         totalOriginalConsiderationItems: 2,
         ...over,
@@ -260,12 +268,15 @@ export interface FakeWalletOptions {
     receiptStatus: TxStatus;
     clockJumpMs: number;
     counter: bigint | null;
+    conduit: string | null;
+    protocolReadFails: boolean;
 }
 
 export class FakeBuyerWallet implements WalletManager, WalletProvider {
     readonly log: Array<string> = [];
     readonly signed: Array<SignTypedDataRequest> = [];
     readonly reads: Array<ReadContractParams> = [];
+    readonly broadcast: Array<TransactionRequest> = [];
     private readonly options: FakeWalletOptions;
     private sent = 0;
 
@@ -275,6 +286,8 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
             receiptStatus: TxStatus.Success,
             clockJumpMs: 0,
             counter: BigInt(COUNTER),
+            conduit: CONDUIT,
+            protocolReadFails: false,
             ...over,
         };
     }
@@ -297,6 +310,7 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
 
     async sendTransaction(tx: TransactionRequest): Promise<Hash> {
         this.sent += 1;
+        this.broadcast.push(tx);
         this.log.push(`send:${tx.to}`);
         return `0x${this.sent.toString().repeat(64)}`.slice(0, 66) as Hash;
     }
@@ -334,6 +348,18 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
     async readContract(params: ReadContractParams): Promise<unknown> {
         this.log.push(`read:${params.functionName}`);
         this.reads.push(params);
+
+        if (params.functionName === 'information') {
+            if (this.options.protocolReadFails) {
+                throw new Error('the node refused the call');
+            }
+            return ['1.6', `0x${'0'.repeat(64)}`, CONDUIT_REGISTRY];
+        }
+        if (params.functionName === 'getConduit') {
+            const conduit = this.options.conduit;
+            return conduit === null ? [`0x${'0'.repeat(40)}`, false] : [conduit, true];
+        }
+
         if (this.options.counter === null) {
             throw new Error('the node refused the call');
         }

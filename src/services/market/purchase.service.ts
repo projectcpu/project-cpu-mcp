@@ -48,8 +48,12 @@ import {
     positiveBaseUnitAmountSchema,
     type MarketTransaction,
 } from './types.js';
+import type { CurrencyApprovalCall } from '../../contracts/approval.types.js';
+import { currencyApprovalCall } from '../../contracts/approval.utils.js';
 import { CELL_ABI } from '../../contracts/cell.abi.js';
+import { SeaportSpenderReader } from '../../contracts/seaport-spender.reader.js';
 import { SEAPORT_ADDRESS } from '../../contracts/seaport.constants.js';
+import { SeaportSpenderOutcome, type ISeaportSpenderReader } from '../../contracts/seaport.types.js';
 import type { ILogger } from '../../logger/types.js';
 import { errorMessage } from '../../utils/error.utils.js';
 import { TxStatus, type TxReceipt, type WalletProvider } from '../../wallet/types.js';
@@ -64,8 +68,10 @@ export class MarketPurchaseService implements IMarketPurchaseService {
     private readonly singleFlight: IMarketSingleFlight;
     private readonly recovery: IMarketRecoveryStore;
     private readonly logger: ILogger;
+    private readonly spenders: ISeaportSpenderReader;
 
     constructor(options: MarketPurchaseServiceOptions) {
+        this.spenders = new SeaportSpenderReader({ wallet: options.wallet });
         this.client = options.client;
         this.proof = options.proof;
         this.appConfig = options.appConfig;
@@ -281,11 +287,14 @@ export class MarketPurchaseService implements IMarketPurchaseService {
             label: `Preparing the purchase of order ${request.expectedOrderHash}`,
         });
 
-        this.requireTrustworthyPreparation(request, prepared);
+        await this.requireTrustworthyPreparation(request, prepared);
         return prepared;
     }
 
-    private requireTrustworthyPreparation(request: BuyCellRequest, prepared: PreparePurchaseResponse): void {
+    private async requireTrustworthyPreparation(
+        request: BuyCellRequest,
+        prepared: PreparePurchaseResponse,
+    ): Promise<void> {
         const wallet = this.walletAddress();
         const chainId = this.wallet.get().getChainId();
 
@@ -318,7 +327,7 @@ export class MarketPurchaseService implements IMarketPurchaseService {
             );
         }
 
-        this.requireFulfilmentShape(request, prepared);
+        await this.requireFulfilmentShape(request, prepared);
     }
 
     private requirePinnedOrder(request: BuyCellRequest, prepared: PreparePurchaseResponse): void {
@@ -369,7 +378,7 @@ export class MarketPurchaseService implements IMarketPurchaseService {
         }
     }
 
-    private requireFulfilmentShape(request: BuyCellRequest, prepared: PreparePurchaseResponse): void {
+    private async requireFulfilmentShape(request: BuyCellRequest, prepared: PreparePurchaseResponse): Promise<void> {
         const chainId = this.wallet.get().getChainId();
         const transactions = prepared.transactions;
         const last = transactions.at(-1) ?? null;
@@ -418,10 +427,13 @@ export class MarketPurchaseService implements IMarketPurchaseService {
             );
         }
 
-        this.requireCurrencyTransactions(request, prepared);
+        await this.requireCurrencyTransactions(request, prepared);
     }
 
-    private requireCurrencyTransactions(request: BuyCellRequest, prepared: PreparePurchaseResponse): void {
+    private async requireCurrencyTransactions(
+        request: BuyCellRequest,
+        prepared: PreparePurchaseResponse,
+    ): Promise<void> {
         const currency = prepared.listing.currency.address;
         const approvals = purchaseApprovals(prepared);
 
@@ -453,6 +465,67 @@ export class MarketPurchaseService implements IMarketPurchaseService {
                     `${prepared.listing.currency.symbol}`,
                 request,
             );
+        }
+
+        const calls = approvals.map((approval) => this.requireExactApprovalAmount(request, approval, prepared));
+        await this.requireRegisteredSpender(request, calls);
+    }
+
+    private requireExactApprovalAmount(
+        request: BuyCellRequest,
+        transaction: MarketTransaction,
+        prepared: PreparePurchaseResponse,
+    ): CurrencyApprovalCall {
+        const approval = currencyApprovalCall(transaction.data);
+        const price = prepared.listing.price;
+
+        if (approval === null) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                'it asks to send calldata the listing currency would not read as an approval of a single exact ' +
+                    'amount',
+                request,
+            );
+        }
+        if (approval.amount !== BigInt(price)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `it asks to approve ${approval.amount.toString()} of ${prepared.listing.currency.symbol} rather ` +
+                    `than exactly the ${price} this listing costs`,
+                request,
+            );
+        }
+
+        return approval;
+    }
+
+    private async requireRegisteredSpender(
+        request: BuyCellRequest,
+        approvals: ReadonlyArray<CurrencyApprovalCall>,
+    ): Promise<void> {
+        for (const approval of approvals) {
+            const answer = await this.spenders.registeredSpender(approval.spender);
+            const detail = answer.detail ?? `${approval.spender} cannot be traced to the protocol`;
+
+            if (answer.outcome === SeaportSpenderOutcome.Unreachable) {
+                throw new MarketError({
+                    code: MarketErrorCode.NetworkFailure,
+                    message:
+                        `Order ${request.expectedOrderHash} was not fulfilled because ${detail}. Nothing was ` +
+                        'approved and nothing was paid.',
+                    retryable: true,
+                    retryAfterSeconds: null,
+                    stage: MarketActionStage.Prepare,
+                    txHash: null,
+                });
+            }
+            if (answer.outcome !== SeaportSpenderOutcome.Resolved) {
+                throw this.untrustworthy(
+                    MarketErrorCode.InvalidMarketResponse,
+                    `it asks the wallet to let ${approval.spender} spend the listing currency, and ${detail}`,
+                    request,
+                );
+            }
         }
     }
 

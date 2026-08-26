@@ -1,4 +1,4 @@
-import { decodeFunctionData, zeroAddress, type Abi, type Address, type Hex } from 'viem';
+import { zeroAddress, type Abi, type Address, type Hex } from 'viem';
 
 import {
     MarketActionTool,
@@ -15,8 +15,6 @@ import { sameAddress, seaportSignableOrder } from './listing.utils.js';
 import {
     MARKET_OFFER_PREPARE_PATH,
     MARKET_OFFER_SUBMIT_PATH,
-    OFFER_APPROVAL_ARGUMENT_COUNT,
-    OFFER_APPROVAL_FUNCTION,
     OFFER_NO_IDENTIFIER,
     OFFER_NO_VALUE,
     OFFER_SINGLE_UNIT,
@@ -55,7 +53,9 @@ import {
     type MarketOffer,
     type MarketTransaction,
 } from './types.js';
-import { ERC20_ABI } from '../../contracts/erc20.abi.js';
+import type { CurrencyApprovalCall } from '../../contracts/approval.types.js';
+import { currencyApprovalCall } from '../../contracts/approval.utils.js';
+import { SeaportSpenderReader } from '../../contracts/seaport-spender.reader.js';
 import {
     SEAPORT_ADDRESS,
     SEAPORT_COUNTER_ABI,
@@ -64,7 +64,12 @@ import {
     SEAPORT_ORDER_COMPONENTS_TYPES,
     SEAPORT_ORDER_PRIMARY_TYPE,
 } from '../../contracts/seaport.constants.js';
-import { SeaportItemType, SeaportOrderType } from '../../contracts/seaport.types.js';
+import {
+    SeaportItemType,
+    SeaportOrderType,
+    SeaportSpenderOutcome,
+    type ISeaportSpenderReader,
+} from '../../contracts/seaport.types.js';
 import type { ILogger } from '../../logger/types.js';
 import { sleep } from '../../utils/async.utils.js';
 import { errorMessage } from '../../utils/error.utils.js';
@@ -85,9 +90,11 @@ export class MarketOfferService implements IMarketOfferService {
     private readonly singleFlight: IMarketSingleFlight;
     private readonly recovery: IMarketRecoveryStore;
     private readonly logger: ILogger;
+    private readonly spenders: ISeaportSpenderReader;
     private lastProfileReadAt: number | null = null;
 
     constructor(options: MarketOfferServiceOptions) {
+        this.spenders = new SeaportSpenderReader({ wallet: options.wallet });
         this.client = options.client;
         this.profile = options.profile;
         this.appConfig = options.appConfig;
@@ -409,7 +416,7 @@ export class MarketOfferService implements IMarketOfferService {
             label: `Preparing the offer for Cell ${request.tokenId}`,
         });
 
-        this.requireTrustworthyPreparation(request, prepared, counter, collection);
+        await this.requireTrustworthyPreparation(request, prepared, counter, collection);
         return prepared;
     }
 
@@ -472,12 +479,12 @@ export class MarketOfferService implements IMarketOfferService {
         return collection;
     }
 
-    private requireTrustworthyPreparation(
+    private async requireTrustworthyPreparation(
         request: MakeCellOfferRequest,
         prepared: PrepareOfferResponse,
         counter: string,
         collection: string,
-    ): void {
+    ): Promise<void> {
         const wallet = this.walletAddress();
         const chainId = this.wallet.get().getChainId();
 
@@ -505,7 +512,7 @@ export class MarketOfferService implements IMarketOfferService {
 
         this.requireRequestedTerms(request, prepared, counter);
         this.requireSpendableCurrency(request, prepared);
-        this.requireCurrencyApprovalsOnly(request, prepared);
+        await this.requireCurrencyApprovalsOnly(request, prepared);
         this.requireOfferedAmount(request, prepared);
         this.requireRequestedCell(request, prepared, collection);
         this.requireOrderShape(request, prepared);
@@ -578,9 +585,13 @@ export class MarketOfferService implements IMarketOfferService {
         }
     }
 
-    private requireCurrencyApprovalsOnly(request: MakeCellOfferRequest, prepared: PrepareOfferResponse): void {
+    private async requireCurrencyApprovalsOnly(
+        request: MakeCellOfferRequest,
+        prepared: PrepareOfferResponse,
+    ): Promise<void> {
         const chainId = this.wallet.get().getChainId();
         const currency = prepared.offer.currency.address;
+        const approvals: Array<CurrencyApprovalCall> = [];
 
         for (const transaction of prepared.transactions) {
             if (transaction.kind !== MarketTransactionKind.CurrencyApproval || transaction.chainId !== chainId) {
@@ -606,39 +617,79 @@ export class MarketOfferService implements IMarketOfferService {
                 );
             }
 
-            this.requireExactApprovalAmount(request, transaction);
+            approvals.push(this.requireExactApprovalAmount(request, transaction));
         }
+
+        await this.requireOrderSpender(request, prepared, approvals);
     }
 
-    private requireExactApprovalAmount(request: MakeCellOfferRequest, transaction: MarketTransaction): void {
-        let decoded: { functionName: string; args: ReadonlyArray<unknown> | undefined };
+    private requireExactApprovalAmount(
+        request: MakeCellOfferRequest,
+        transaction: MarketTransaction,
+    ): CurrencyApprovalCall {
+        const approval = currencyApprovalCall(transaction.data);
 
-        try {
-            decoded = decodeFunctionData({ abi: ERC20_ABI, data: transaction.data as Hex });
-        } catch (error) {
+        if (approval === null) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
-                `its currency approval is not a call this client can read: ${errorMessage(error)}`,
+                'it asks the wallet to send calldata the offer currency would not read as an approval of a single ' +
+                    'exact amount',
+                request,
+            );
+        }
+        if (approval.amount !== BigInt(request.amount)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `it asks the wallet to approve ${approval.amount.toString()} of the offer currency rather than ` +
+                    `exactly the ${request.amount} this offer bids`,
                 request,
             );
         }
 
-        const args = decoded.args ?? [];
-        if (decoded.functionName !== OFFER_APPROVAL_FUNCTION || args.length !== OFFER_APPROVAL_ARGUMENT_COUNT) {
+        return approval;
+    }
+
+    private async requireOrderSpender(
+        request: MakeCellOfferRequest,
+        prepared: PrepareOfferResponse,
+        approvals: ReadonlyArray<CurrencyApprovalCall>,
+    ): Promise<void> {
+        if (approvals.length === 0) {
+            return;
+        }
+
+        const conduitKey = prepared.order.conduitKey;
+        const answer = await this.spenders.spenderForConduitKey(conduitKey);
+        const detail = answer.detail ?? `conduit key ${conduitKey} resolves to nothing`;
+
+        if (answer.outcome === SeaportSpenderOutcome.Unreachable) {
+            throw new MarketError({
+                code: MarketErrorCode.NetworkFailure,
+                message:
+                    `The offer for Cell ${request.tokenId} was not signed because ${detail}. Nothing was approved ` +
+                    'and nothing was published.',
+                retryable: true,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Prepare,
+                txHash: null,
+            });
+        }
+        if (answer.address === null) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
-                `it asks the wallet to call "${decoded.functionName}" on the offer currency rather than approve a ` +
-                    'single exact amount',
+                `the order it asks the wallet to sign settles through a spender this client cannot justify: ` +
+                    `${detail}`,
                 request,
             );
         }
 
-        const approved = args[1];
-        if (typeof approved !== 'bigint' || approved !== BigInt(request.amount)) {
+        const spender = answer.address;
+        const foreign = approvals.find((approval) => !sameAddress(approval.spender, spender));
+        if (foreign !== undefined) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
-                `it asks the wallet to approve ${String(approved)} of the offer currency rather than exactly the ` +
-                    `${request.amount} this offer bids`,
+                `it asks the wallet to let ${foreign.spender} spend the offer currency, while the order it signs ` +
+                    `is settled by ${spender}`,
                 request,
             );
         }

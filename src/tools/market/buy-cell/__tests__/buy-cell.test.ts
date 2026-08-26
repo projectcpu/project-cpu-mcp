@@ -1,12 +1,15 @@
-import { zeroAddress } from 'viem';
+import { decodeFunctionData, zeroAddress } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    approvalData,
     approvalWire,
+    BARE_APPROVAL_SELECTOR,
     buyCellArgs,
     buyCellHarness,
     BUYER,
     COLLECTION,
+    CONDUIT,
     OTHER_CONTRACT,
     CURRENCY_ADDRESS,
     ERC20_CURRENCY,
@@ -34,6 +37,7 @@ import {
     transportOf,
     txHash,
 } from './fixtures.js';
+import { ERC20_ABI } from '../../../../contracts/erc20.abi.js';
 import { SEAPORT_ADDRESS } from '../../../../contracts/seaport.constants.js';
 import { MarketError } from '../../../../services/market/error.js';
 import { MarketRecoveryStore } from '../../../../services/market/recovery.store.js';
@@ -88,6 +92,8 @@ describe('buying one exact Cell listing', () => {
             const result = parsed(await harness.handler(buyCellArgs()));
 
             expect(harness.wallet.log).toEqual([
+                'read:information',
+                'read:getKey',
                 `send:${CURRENCY_ADDRESS}:0`,
                 `receipt:${txHash(1)}`,
                 `send:${SEAPORT_ADDRESS}:0`,
@@ -311,6 +317,60 @@ describe('buying one exact Cell listing', () => {
             expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
             expect(error.message).toContain(STRANGER);
             expect(harness.wallet.sendCount).toBe(0);
+        });
+
+        it.each([
+            ['carries an approval selector with no arguments behind it', { data: BARE_APPROVAL_SELECTOR }],
+            ['is not an approval at all', { data: '0xdeadbeef' }],
+            ['approves more than the listing costs', { data: approvalData(MAX_AMOUNT) }],
+            ['approves an unlimited allowance', { data: approvalData((2n ** 256n - 1n).toString()) }],
+            ['approves less than the listing costs', { data: approvalData('1') }],
+            ['approves a spender the protocol does not know', { data: approvalData(PRICE, STRANGER) }],
+        ])('refuses a prepared currency approval that %s', async (_label, over) => {
+            const wire = erc20PreparedWire({
+                transactions: [approvalWire(over), fulfilmentWire({ value: '0' })],
+            });
+            const harness = buyCellHarness(transportOf(reply(200, wire)));
+
+            const error = await failure(harness.handler(buyCellArgs()));
+
+            expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+            expect(harness.wallet.sendCount).toBe(0);
+        });
+
+        it('refuses an approval whose spender the protocol registry disowns', async () => {
+            const harness = buyCellHarness(transportOf(reply(200, erc20PreparedWire())), {
+                wallet: new FakeBuyerWallet({ conduitKnown: false }),
+            });
+
+            const error = await failure(harness.handler(buyCellArgs()));
+
+            expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+            expect(error.message).toContain(CONDUIT);
+            expect(harness.wallet.sendCount).toBe(0);
+        });
+
+        it('pays nothing and stays retryable when the protocol cannot be read', async () => {
+            const harness = buyCellHarness(transportOf(reply(200, erc20PreparedWire())), {
+                wallet: new FakeBuyerWallet({ protocolReadFails: true }),
+            });
+
+            const error = await failure(harness.handler(buyCellArgs()));
+
+            expect(error.code).toBe(MarketErrorCode.NetworkFailure);
+            expect(error.retryable).toBe(true);
+            expect(harness.wallet.sendCount).toBe(0);
+        });
+
+        it('broadcasts the approval bytes it validated, for the exact listing price', async () => {
+            const harness = buyCellHarness(transportOf(reply(200, erc20PreparedWire())));
+
+            await harness.handler(buyCellArgs());
+
+            expect(decodeFunctionData({ abi: ERC20_ABI, data: harness.wallet.sent[0]?.data ?? '0x' })).toEqual({
+                functionName: 'approve',
+                args: [CONDUIT, BigInt(PRICE)],
+            });
         });
 
         it('refuses a currency approval for an order paid in the native coin', async () => {

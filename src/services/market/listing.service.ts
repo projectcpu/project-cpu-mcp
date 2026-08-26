@@ -56,6 +56,9 @@ import {
     type MarketListing,
     type MarketTransaction,
 } from './types.js';
+import type { CollectionApprovalCall } from '../../contracts/approval.types.js';
+import { collectionApprovalCall } from '../../contracts/approval.utils.js';
+import { SeaportSpenderReader } from '../../contracts/seaport-spender.reader.js';
 import {
     SEAPORT_ADDRESS,
     SEAPORT_DOMAIN_NAME,
@@ -63,7 +66,12 @@ import {
     SEAPORT_ORDER_COMPONENTS_TYPES,
     SEAPORT_ORDER_PRIMARY_TYPE,
 } from '../../contracts/seaport.constants.js';
-import { SeaportItemType, SeaportOrderType } from '../../contracts/seaport.types.js';
+import {
+    SeaportItemType,
+    SeaportOrderType,
+    SeaportSpenderOutcome,
+    type ISeaportSpenderReader,
+} from '../../contracts/seaport.types.js';
 import type { ILogger } from '../../logger/types.js';
 import { sleep } from '../../utils/async.utils.js';
 import { TxStatus, type WalletProvider } from '../../wallet/types.js';
@@ -78,9 +86,11 @@ export class MarketListingService implements IMarketListingService {
     private readonly singleFlight: IMarketSingleFlight;
     private readonly recovery: IMarketRecoveryStore;
     private readonly logger: ILogger;
+    private readonly spenders: ISeaportSpenderReader;
     private lastProfileReadAt: number | null = null;
 
     constructor(options: MarketListingServiceOptions) {
+        this.spenders = new SeaportSpenderReader({ wallet: options.wallet });
         this.client = options.client;
         this.profile = options.profile;
         this.appConfig = options.appConfig;
@@ -368,7 +378,7 @@ export class MarketListingService implements IMarketListingService {
             label: `Preparing the listing for Cell ${request.tokenId}`,
         });
 
-        this.requireTrustworthyPreparation(request, prepared, collection);
+        await this.requireTrustworthyPreparation(request, prepared, collection);
         return prepared;
     }
 
@@ -392,11 +402,11 @@ export class MarketListingService implements IMarketListingService {
         return collection;
     }
 
-    private requireTrustworthyPreparation(
+    private async requireTrustworthyPreparation(
         request: ListCellRequest,
         prepared: PrepareListingResponse,
         collection: string,
-    ): void {
+    ): Promise<void> {
         const wallet = this.walletAddress();
         const chainId = this.wallet.get().getChainId();
 
@@ -424,7 +434,7 @@ export class MarketListingService implements IMarketListingService {
 
         this.requireRequestedTerms(request, prepared);
         this.requireFeeArithmetic(request, prepared);
-        this.requireApprovalsOnly(request, prepared);
+        await this.requireApprovalsOnly(request, prepared, collection);
         this.requireOfferedCell(request, prepared, collection);
         this.requireOrderShape(request, prepared);
         this.requireConsideration(request, prepared);
@@ -486,7 +496,11 @@ export class MarketListingService implements IMarketListingService {
         }
     }
 
-    private requireApprovalsOnly(request: ListCellRequest, prepared: PrepareListingResponse): void {
+    private async requireApprovalsOnly(
+        request: ListCellRequest,
+        prepared: PrepareListingResponse,
+        collection: string,
+    ): Promise<void> {
         const chainId = this.wallet.get().getChainId();
         const foreign = prepared.transactions.find(
             (transaction) =>
@@ -498,6 +512,91 @@ export class MarketListingService implements IMarketListingService {
                 MarketErrorCode.InvalidMarketResponse,
                 `publishing a listing may only need collection approvals, but it asks to send a "${foreign.kind}" ` +
                     `transaction on chain ${foreign.chainId}`,
+                request,
+            );
+        }
+
+        const operators = prepared.transactions.map((transaction) =>
+            this.requireCollectionOperator(request, transaction, collection),
+        );
+        await this.requireOrderOperator(request, prepared, operators);
+    }
+
+    private requireCollectionOperator(
+        request: ListCellRequest,
+        transaction: MarketTransaction,
+        collection: string,
+    ): CollectionApprovalCall {
+        if (!sameAddress(transaction.to, collection)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `it asks the wallet to approve contract ${transaction.to} instead of the Cell collection ` +
+                    `${collection}`,
+                request,
+            );
+        }
+
+        const approval = collectionApprovalCall(transaction.data);
+        if (approval === null) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                'it asks the wallet to send calldata the Cell collection would not read as approving one operator',
+                request,
+            );
+        }
+        if (!approval.approved) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `it asks the wallet to withdraw ${approval.operator}'s approval rather than grant the one a ` +
+                    'listing needs',
+                request,
+            );
+        }
+
+        return approval;
+    }
+
+    private async requireOrderOperator(
+        request: ListCellRequest,
+        prepared: PrepareListingResponse,
+        approvals: ReadonlyArray<CollectionApprovalCall>,
+    ): Promise<void> {
+        if (approvals.length === 0) {
+            return;
+        }
+
+        const conduitKey = prepared.order.conduitKey;
+        const answer = await this.spenders.spenderForConduitKey(conduitKey);
+        const detail = answer.detail ?? `conduit key ${conduitKey} resolves to nothing`;
+
+        if (answer.outcome === SeaportSpenderOutcome.Unreachable) {
+            throw new MarketError({
+                code: MarketErrorCode.NetworkFailure,
+                message:
+                    `The listing for Cell ${request.tokenId} was not signed because ${detail}. Nothing was ` +
+                    'approved and nothing was published.',
+                retryable: true,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Prepare,
+                txHash: null,
+            });
+        }
+        if (answer.address === null) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `the order it asks the wallet to sign settles through an operator this client cannot justify: ` +
+                    `${detail}`,
+                request,
+            );
+        }
+
+        const operator = answer.address;
+        const stranger = approvals.find((approval) => !sameAddress(approval.operator, operator));
+        if (stranger !== undefined) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `it asks the wallet to let ${stranger.operator} move every Cell it owns, while the order it signs ` +
+                    `is settled by ${operator}`,
                 request,
             );
         }

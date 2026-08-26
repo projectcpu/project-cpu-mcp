@@ -1,3 +1,4 @@
+import { decodeFunctionData } from 'viem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,6 +7,7 @@ import {
     approvalWire,
     BUYER,
     CONDUIT,
+    CONDUIT_KEY,
     COUNTER,
     CURRENCY_ADDRESS,
     EXPIRES_AT,
@@ -35,6 +37,7 @@ import {
     submittedWire,
     TOKEN_ID,
 } from './fixtures.js';
+import { ERC20_ABI } from '../../../../contracts/erc20.abi.js';
 import { SEAPORT_ADDRESS, SEAPORT_COUNTER_ABI } from '../../../../contracts/seaport.constants.js';
 import { MarketActionTool } from '../../../../services/market/action.types.js';
 import { MARKET_RETRY_BUDGET_MS } from '../../../../services/market/constants.js';
@@ -203,6 +206,8 @@ describe('the exact-amount currency approval an offer owes', () => {
 
         expect(harness.wallet.log).toEqual([
             'read:getCounter',
+            'read:information',
+            'read:getConduit',
             `send:${CURRENCY_ADDRESS}`,
             `receipt:0x${'1'.repeat(64)}`,
             'sign',
@@ -230,6 +235,8 @@ describe('the exact-amount currency approval an offer owes', () => {
         ['approves less than the offer is worth', { data: approvalData('1') }],
         ['approves a currency the offer is not priced in', { to: `0x${'9'.repeat(40)}` }],
         ['is not an approval at all', { data: '0xdeadbeef' }],
+        ['carries an approval selector with no arguments behind it', { data: '0x095ea7b3' }],
+        ['approves a spender the settling conduit is not', { data: approvalData(AMOUNT, `0x${'a'.repeat(40)}`) }],
         ['sends the chain currency along with an approval', { value: '1' }],
         ['runs on another chain', { chainId: 1 }],
         ['is not a currency approval', { kind: 'collectionApproval' }],
@@ -245,15 +252,47 @@ describe('the exact-amount currency approval an offer owes', () => {
         expect(harness.wallet.signed).toHaveLength(0);
     });
 
-    it('approves the exact offer amount for the spender the prepared call names', async () => {
+    it('broadcasts an approval of the exact offer amount for the conduit that settles the signed order', async () => {
         const harness = makeOfferHarness(
             routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
         );
 
         await harness.handler(makeOfferArgs());
 
-        expect(approvalData()).toContain(CONDUIT.slice(2).toLowerCase());
-        expect(harness.wallet.log).toContain(`send:${CURRENCY_ADDRESS}`);
+        const broadcast = harness.wallet.broadcast;
+        expect(broadcast).toHaveLength(1);
+        expect(broadcast[0]?.to?.toLowerCase()).toBe(CURRENCY_ADDRESS.toLowerCase());
+        expect(decodeFunctionData({ abi: ERC20_ABI, data: broadcast[0]?.data ?? '0x' })).toEqual({
+            functionName: 'approve',
+            args: [CONDUIT, BigInt(AMOUNT)],
+        });
+        expect(harness.wallet.reads.at(-1)?.args).toEqual([CONDUIT_KEY]);
+    });
+
+    it('refuses to approve when the protocol disowns the conduit key the order names', async () => {
+        const harness = makeOfferHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            new FakeBuyerWallet({ conduit: null }),
+        );
+
+        const error = await failure(harness.handler(makeOfferArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(harness.wallet.broadcast).toHaveLength(0);
+        expect(harness.wallet.signed).toHaveLength(0);
+    });
+
+    it('keeps the offer unsigned and retryable when the protocol cannot be read', async () => {
+        const harness = makeOfferHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            new FakeBuyerWallet({ protocolReadFails: true }),
+        );
+
+        const error = await failure(harness.handler(makeOfferArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.NetworkFailure);
+        expect(error.retryable).toBe(true);
+        expect(harness.wallet.broadcast).toHaveLength(0);
     });
 });
 
