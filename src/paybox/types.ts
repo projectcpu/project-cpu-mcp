@@ -48,6 +48,28 @@ export interface PayboxAuthFlow {
     cancel(): void;
 }
 
+export interface PayboxHttpResponse {
+    ok: boolean;
+    status: number;
+    json(): Promise<unknown>;
+}
+
+export interface PayboxHttpClient {
+    fetch(url: string, init: RequestInit): Promise<PayboxHttpResponse>;
+}
+
+export interface PayboxClock {
+    setTimeout(callback: () => void, delayMs: number): NodeJS.Timeout;
+    clearTimeout(timeout: NodeJS.Timeout): void;
+}
+
+export interface LoopbackAuthFlowOptions {
+    issuerUrl: string;
+    httpClient: PayboxHttpClient;
+    clock: PayboxClock;
+    timeoutMs: number | null;
+}
+
 export interface PayboxAuthenticateInput {
     force: boolean;
 }
