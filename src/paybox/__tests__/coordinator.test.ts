@@ -150,6 +150,172 @@ describe('PayboxCoordinator', () => {
         expect(start).not.toHaveBeenCalled();
     });
 
+    it('invalidates a retained Wallet after token rotation replaces its generation', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'old-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const rotatedTokens = {
+            ...storedTokens,
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+            expiresAt: Date.now() + 600_000,
+        };
+        const createWallet = vi.fn(
+            (
+                _tokens: Parameters<IPayboxSdkAdapter['createWallet']>[0],
+                _signingKey: string,
+                _credentialId: string,
+                address: string,
+                authority: PayboxWalletAuthority,
+            ) =>
+                ({
+                    getAddress: () => address,
+                    signMessage: async () => (await authority.current()).tokens.accessToken,
+                }) as unknown as WalletManager,
+        );
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: storedTokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'stored-credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear: vi.fn(),
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(async () => rotatedTokens),
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet,
+                signMessage: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+        });
+        const retainedWallet = coordinator.get();
+
+        await coordinator.authenticate({ force: false, payboxCredentialId: null });
+
+        expect(coordinator.get()).not.toBe(retainedWallet);
+        await expect(retainedWallet.signMessage('stale intent')).rejects.toThrow('invalidated');
+    });
+
+    it('does not reuse a consumed refresh token after rotated-token persistence fails', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'single-use-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const rotatedTokens = {
+            ...storedTokens,
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+            expiresAt: Date.now() + 600_000,
+        };
+        const refreshTokens = vi.fn(async () => rotatedTokens);
+        const save = vi.fn(() => {
+            throw new Error('disk full');
+        });
+        const authenticate = vi.fn(async () => 'game-jwt');
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: storedTokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'stored-credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save,
+                clear: vi.fn(),
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens,
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+            },
+            authenticator: { authenticate },
+        });
+
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow('disk full');
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow('disk full');
+
+        expect(refreshTokens).toHaveBeenCalledOnce();
+        expect(refreshTokens).toHaveBeenCalledWith(storedTokens);
+        expect(save).toHaveBeenCalledOnce();
+        expect(authenticate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a refresh result invalidated while the SDK helper is unresolved', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'old-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const rotatedTokens = {
+            ...storedTokens,
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+            expiresAt: Date.now() + 600_000,
+        };
+        const refresh = controlledPromise<typeof rotatedTokens>();
+        const refreshTokens = vi.fn(() => refresh.promise);
+        const save = vi.fn();
+        const createWallet = vi.fn(() => wallet);
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: storedTokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'stored-credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save,
+                clear: vi.fn(),
+            },
+            flow: {
+                start: vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=fresh' })),
+                finish: vi.fn(),
+                cancel: vi.fn(),
+            },
+            sdk: {
+                refreshTokens,
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet,
+                signMessage: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn() },
+        });
+
+        const staleAuthentication = coordinator.authenticate({ force: false, payboxCredentialId: null });
+        await vi.waitFor(() => expect(refreshTokens).toHaveBeenCalledOnce());
+        await expect(coordinator.authenticate({ force: true, payboxCredentialId: null })).resolves.toEqual(
+            expect.objectContaining({ status: PayboxAuthStatus.AuthRequired }),
+        );
+        refresh.resolve(rotatedTokens);
+
+        await expect(staleAuthentication).rejects.toThrow('invalidated');
+        expect(save).not.toHaveBeenCalled();
+        expect(createWallet).toHaveBeenCalledOnce();
+        expect(coordinator.isReady()).toBe(false);
+    });
+
     it('restores partial bootstrap, refreshes it, and discovers grants without OAuth', async () => {
         const storedTokens = {
             clientId: 'client',

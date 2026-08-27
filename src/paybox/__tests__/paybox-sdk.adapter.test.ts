@@ -63,6 +63,25 @@ describe('PayboxSdkAdapter', () => {
         });
     });
 
+    it.each([{ accessToken: '' }, { refreshToken: 42 }, { expiresAt: Number.NaN }])(
+        'rejects malformed refreshed token material: %j',
+        async (override) => {
+            const refresher: PayboxTokenRefresher = {
+                refresh: vi.fn(async () => ({
+                    clientId: 'client',
+                    accessToken: 'rotated-access',
+                    refreshToken: 'rotated-refresh',
+                    expiresAt: 123_456,
+                    resource: 'https://api.paybox.test/mcp',
+                    ...override,
+                })) as PayboxTokenRefresher['refresh'],
+            };
+            const adapter = new PayboxSdkAdapter(factory([]).factory, refresher);
+
+            await expect(adapter.refreshTokens(tokens)).rejects.toThrow();
+        },
+    );
+
     it('normalizes the declared direct array and observed credentials envelope', async () => {
         const row = {
             credential: {

@@ -43,6 +43,7 @@ export class PayboxCoordinator implements WalletProvider {
     private selection: PayboxSelectionState | null = null;
     private credentialId: string | null = null;
     private refreshing: PayboxRefreshFlight | null = null;
+    private refreshPersistenceError: Error | null = null;
     private generation = 0;
 
     constructor(options: PayboxCoordinatorOptions) {
@@ -88,6 +89,7 @@ export class PayboxCoordinator implements WalletProvider {
             this.selection = null;
             this.credentialId = null;
             this.refreshing = null;
+            this.refreshPersistenceError = null;
             this.options.storage.clear();
         }
         if (this.completionError !== null) {
@@ -337,6 +339,7 @@ export class PayboxCoordinator implements WalletProvider {
     }
 
     private async refreshIfExpiring(): Promise<number> {
+        if (this.refreshPersistenceError !== null) throw this.refreshPersistenceError;
         const material = this.material;
         if (material === null) return this.generation;
         if (
@@ -375,7 +378,13 @@ export class PayboxCoordinator implements WalletProvider {
             credentialId: this.credentialId,
             address: this.address,
         };
-        this.options.storage.save(record);
+        try {
+            this.options.storage.save(record);
+        } catch (error) {
+            this.refreshPersistenceError =
+                error instanceof Error ? error : new Error('Rotated Paybox OAuth tokens could not be persisted.');
+            throw this.refreshPersistenceError;
+        }
         this.assertCurrent(generation);
         this.material = refreshed;
         this.generation += 1;
@@ -398,6 +407,7 @@ export class PayboxCoordinator implements WalletProvider {
     ): PayboxWalletAuthority {
         return {
             current: async () => {
+                this.assertCurrent(generation);
                 if (this.credentialId === credentialId && this.address === address) {
                     await this.refreshIfExpiring();
                     if (this.credentialId !== credentialId || this.address !== address || this.material === null) {
@@ -405,7 +415,6 @@ export class PayboxCoordinator implements WalletProvider {
                     }
                     return this.material;
                 }
-                this.assertCurrent(generation);
                 return candidate;
             },
         };
