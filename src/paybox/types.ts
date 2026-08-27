@@ -72,8 +72,6 @@ export interface EligiblePayboxGrant {
     address: string;
 }
 
-export class PayboxLoopbackUnavailableError extends Error {}
-
 export interface PayboxAuthFlow {
     start(): Promise<PayboxAuthStart>;
     finish(): Promise<PayboxAuthMaterial>;
@@ -127,7 +125,7 @@ export interface PayboxCoordinatorOptions {
 }
 
 export interface PayboxSiweAuthenticator {
-    authenticate(): Promise<string>;
+    authenticate(wallet: WalletManager, isCurrent: () => boolean): Promise<string>;
 }
 
 export interface PayboxSdkClient {

@@ -1,8 +1,8 @@
 import { getAddress, type Address, type Hash, type Hex } from 'viem';
 
 import { verifiedPayboxMessageSignature } from './paybox-wallet.utils.js';
-import { PAYBOX_ROBINHOOD_CHAIN_ID } from './sdk.constants.js';
 import type { IPayboxSdkAdapter, PayboxTokens } from './types.js';
+import { LAUNCH_CHAIN_ID } from '../config/constants.js';
 import type {
     GasEstimateRequest,
     ReadContractParams,
@@ -29,7 +29,7 @@ export class PayboxWalletManager implements WalletManager {
     }
 
     public getChainId(): number {
-        return PAYBOX_ROBINHOOD_CHAIN_ID;
+        return LAUNCH_CHAIN_ID;
     }
 
     public async signMessage(message: string): Promise<Hex> {

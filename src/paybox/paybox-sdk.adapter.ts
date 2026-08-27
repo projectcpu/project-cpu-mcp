@@ -1,16 +1,11 @@
-import { PayboxClient } from '@paybox-sh/sdk';
-
+import { defaultPayboxSdkClientFactory } from './paybox-sdk.factory.js';
 import { PayboxWalletManager } from './paybox-wallet.manager.js';
 import { oneAutonomousEvmGrant, signatureFromResponse } from './sdk.utils.js';
 import type { IPayboxSdkAdapter, PayboxSdkClient, PayboxSdkClientFactory, PayboxTokens } from './types.js';
 import type { WalletManager } from '../wallet/types.js';
 
-const defaultFactory: PayboxSdkClientFactory = {
-    create: (options) => new PayboxClient(options) as PayboxSdkClient,
-};
-
 export class PayboxSdkAdapter implements IPayboxSdkAdapter {
-    public constructor(private readonly factory: PayboxSdkClientFactory = defaultFactory) {}
+    public constructor(private readonly factory: PayboxSdkClientFactory = defaultPayboxSdkClientFactory) {}
 
     public async selectOneAutonomousEvmGrant(
         tokens: PayboxTokens,

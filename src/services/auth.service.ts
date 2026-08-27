@@ -17,7 +17,7 @@ import type { SessionManager } from '../session/manager.js';
 import { SessionStatus } from '../session/types.js';
 import { WalletMode } from '../types.js';
 import { sleep } from '../utils/async.utils.js';
-import type { WalletProvider } from '../wallet/types.js';
+import type { WalletManager, WalletProvider } from '../wallet/types.js';
 
 export class AuthService implements IAuthenticator {
     private readonly session: SessionManager;
@@ -45,22 +45,26 @@ export class AuthService implements IAuthenticator {
             this.logger.info('stored JWT missing or expired — re-running SIWE login');
         }
 
-        return this.login();
+        return this.login(this.wallet.get(), () => true);
     }
 
     async reauthenticate(): Promise<string> {
         this.logger.info('forcing SIWE re-login');
-        return this.login();
+        return this.login(this.wallet.get(), () => true);
     }
 
     // ---- SIWE (EVM mode) ----
 
     async authenticateSiwe(): Promise<string> {
-        return this.login();
+        return this.login(this.wallet.get(), () => true);
     }
 
-    private async login(): Promise<string> {
-        const wallet = this.wallet.get();
+    async authenticateWithWallet(wallet: WalletManager, isCurrent: () => boolean): Promise<string> {
+        return this.login(wallet, isCurrent);
+    }
+
+    private async login(wallet: WalletManager, isCurrent: () => boolean): Promise<string> {
+        if (!isCurrent()) throw new Error('Authentication was invalidated.');
         const address = wallet.getAddress();
         const chainId = wallet.getChainId();
 
@@ -70,6 +74,7 @@ export class AuthService implements IAuthenticator {
             method: 'POST',
             body: { address },
         });
+        if (!isCurrent()) throw new Error('Authentication was invalidated.');
 
         const message = buildSiweMessage({
             address,
@@ -81,6 +86,7 @@ export class AuthService implements IAuthenticator {
         });
 
         const signature = await wallet.signMessage(message);
+        if (!isCurrent()) throw new Error('Authentication was invalidated.');
 
         const { status, data: verified } = await this.api.request<SiweVerifyResponse>('/api/v1/auth/siwe/verify', {
             method: 'POST',
@@ -90,6 +96,7 @@ export class AuthService implements IAuthenticator {
         if (status !== HttpStatus.Ok || !verified.accessToken) {
             throw new Error(`SIWE verification failed (status ${status})`);
         }
+        if (!isCurrent()) throw new Error('Authentication was invalidated.');
 
         this.persistToken(address, verified.accessToken);
 

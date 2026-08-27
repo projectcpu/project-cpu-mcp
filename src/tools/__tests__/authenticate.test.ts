@@ -2,15 +2,23 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { privateKeyToAccount } from 'viem/accounts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ApiClient } from '../../api/client.js';
+import { NoopLogger } from '../../logger/noop.logger.js';
 import { PayboxCoordinator } from '../../paybox/coordinator.js';
+import { PayboxSdkAdapter } from '../../paybox/paybox-sdk.adapter.js';
 import {
     PayboxAuthStatus,
     type IPayboxAuthStorage,
     type IPayboxSdkAdapter,
     type PayboxAuthFlow,
+    type PayboxSdkClientFactory,
 } from '../../paybox/types.js';
+import { AuthService } from '../../services/auth.service.js';
+import { SessionManager } from '../../session/manager.js';
+import { type ISessionStorage, type SessionData, SessionStatus } from '../../session/types.js';
 import { WalletMode, type AppContext } from '../../types.js';
 import { registerAuthenticateTool } from '../authenticate.js';
 import type { ToolRegistrar } from '../types.js';
@@ -157,7 +165,181 @@ describe('cpu_authenticate', () => {
         });
         expect(flow.start).toHaveBeenCalledOnce();
     });
+
+    it('drives Paybox signature verification through game SIWE and persisted session state', async () => {
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT);
+        client = harness.toolClient;
+
+        await expect(harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} })).resolves.toEqual(
+            expect.objectContaining({
+                content: [expect.objectContaining({ text: expect.stringContaining('paybox_auth_required') })],
+            }),
+        );
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await vi.waitFor(() => expect(harness.session.getStatus()).toBe(SessionStatus.Active));
+
+        const authenticated = await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+
+        expect(authenticated).toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({ status: 'authenticated', address: PAYBOX_ACCOUNT.address }),
+                },
+            ],
+        });
+        expect(harness.session.getSession()).toEqual(
+            expect.objectContaining({
+                walletMode: WalletMode.PAYBOX,
+                address: PAYBOX_ACCOUNT.address,
+                jwt: 'game-jwt',
+            }),
+        );
+        expect(harness.sign).toHaveBeenCalledTimes(2);
+        expect(harness.verify).toHaveBeenCalledTimes(2);
+    });
+
+    it('surfaces a wrong Paybox signer at the public tool boundary before game verification', async () => {
+        const harness = await createPayboxPublicHarness(OTHER_ACCOUNT);
+        client = harness.toolClient;
+
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await vi.waitFor(() => expect(harness.sign).toHaveBeenCalledOnce());
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        const failed = (await harness.toolClient.callTool({
+            name: 'cpu_authenticate',
+            arguments: {},
+        })) as CallToolResult;
+        expect(failed.isError).toBe(true);
+        expect(failed.content).toEqual([expect.objectContaining({ text: expect.stringContaining('does not match') })]);
+        expect(harness.verify).not.toHaveBeenCalled();
+        expect(harness.session.getStatus()).toBe(SessionStatus.Missing);
+    });
 });
+
+const PAYBOX_ACCOUNT = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
+const OTHER_ACCOUNT = privateKeyToAccount('0x8b3a350cf5c34c9194ca3a545d9b5d4a1f0abf1c9f3c2bb18ce19e6f01a82652');
+
+async function createPayboxPublicHarness(signer: typeof PAYBOX_ACCOUNT): Promise<{
+    toolClient: Client;
+    session: SessionManager;
+    sign: ReturnType<typeof vi.fn>;
+    verify: ReturnType<typeof vi.fn>;
+}> {
+    let sessionData: SessionData | null = null;
+    const sessionStorage: ISessionStorage = {
+        load: () => sessionData,
+        save: (data) => {
+            sessionData = data;
+        },
+        delete: () => {
+            sessionData = null;
+        },
+        exists: () => sessionData !== null,
+    };
+    const session = new SessionManager({
+        storage: sessionStorage,
+        walletMode: WalletMode.PAYBOX,
+        logger: new NoopLogger(),
+    });
+    session.initialize();
+    const sign = vi.fn(async (args: unknown) => {
+        const request = args as { credentialId: string; intent: { message: string } };
+        return {
+            status: 'success',
+            output: {
+                output_type: 'signature',
+                credential_id: request.credentialId,
+                value: await signer.signMessage({ message: request.intent.message }),
+            },
+        };
+    });
+    const sdkFactory: PayboxSdkClientFactory = {
+        create: () => ({
+            listCredentials: async () => [
+                {
+                    credential: {
+                        id: 'credential-a',
+                        credential_type: 'wallet',
+                        disabled_at: null,
+                        metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
+                    },
+                    grant: { approval_mode: 'autonomous' },
+                },
+            ],
+            requestWalletSign: sign,
+        }),
+    };
+    const verify = vi.fn(async () => ({
+        status: 200,
+        data: { accessToken: 'game-jwt', user: { id: 'player', address: PAYBOX_ACCOUNT.address } },
+    }));
+    const request = vi.fn(async (path: string) => {
+        if (path.endsWith('/nonce')) {
+            return {
+                status: 200,
+                data: {
+                    nonce: 'abc123def456',
+                    issuedAt: new Date().toISOString(),
+                    expirationTime: new Date(Date.now() + 600_000).toISOString(),
+                },
+            };
+        }
+        return verify();
+    });
+    const api = {
+        getBaseUrl: () => 'https://api.projectcpu.test',
+        request,
+    } as unknown as ApiClient;
+    const storage: IPayboxAuthStorage = {
+        load: () => null,
+        save: vi.fn(),
+        clear: vi.fn(),
+    };
+    const flow: PayboxAuthFlow = {
+        start: vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=opaque' })),
+        finish: vi.fn(async () => ({
+            tokens: {
+                clientId: 'client',
+                accessToken: 'access',
+                refreshToken: null,
+                expiresAt: null,
+                resource: null,
+                baseUrl: 'https://api.paybox.test',
+            },
+            signingKey: 'pbxk1.abcdefghijklmnop',
+        })),
+        cancel: vi.fn(),
+    };
+    let auth: AuthService | null = null;
+    const wallet = new PayboxCoordinator({
+        storage,
+        flow,
+        sdk: new PayboxSdkAdapter(sdkFactory),
+        authenticator: {
+            authenticate: (payboxWallet, isCurrent) => {
+                if (auth === null) throw new Error('auth service unavailable');
+                return auth.authenticateWithWallet(payboxWallet, isCurrent);
+            },
+        },
+    });
+    auth = new AuthService({ session, api, wallet, logger: new NoopLogger() });
+    const context = {
+        config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
+        wallet,
+        auth,
+        session,
+    } as unknown as AppContext;
+    const server = new McpServer({ name: 'paybox-authenticate-test', version: '0.0.0' });
+    registerAuthenticateTool(server, context);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const toolClient = new Client({ name: 'paybox-authenticate-client', version: '0.0.0' });
+    await toolClient.connect(clientTransport);
+    return { toolClient, session, sign, verify };
+}
 
 function captureAuthenticateHandler(context: AppContext): (args: { force: boolean | null }) => Promise<CallToolResult> {
     let handler: ((args: { force: boolean | null }) => Promise<CallToolResult>) | null = null;

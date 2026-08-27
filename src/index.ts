@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import pkg from '../package.json' with { type: 'json' };
 import { ApiClient } from './api/client.js';
 import { RevealRequestsClient } from './api/reveal-requests.client.js';
-import { DEFAULT_API_URL } from './config/constants.js';
+import { DEFAULT_API_URL, PAYBOX_ISSUER_URL } from './config/constants.js';
 import { loadEnvConfig } from './config/env.js';
 import { createLogger } from './logger/index.js';
 import { DEFAULT_POLL_INTERVAL_MS, DEFAULT_RECONNECT_GRACE_MS } from './map/constants.js';
@@ -75,16 +75,16 @@ async function main(): Promise<void> {
             ? new PayboxCoordinator({
                   storage: new PayboxAuthStorage(os.homedir(), logger.child('paybox:storage')),
                   flow: new LoopbackAuthFlow({
-                      issuerUrl: 'https://api.paybox.sh',
+                      issuerUrl: PAYBOX_ISSUER_URL,
                       httpClient: { fetch: (url, init) => fetch(url, init) },
                       clock: { setTimeout, clearTimeout },
                       timeoutMs: null,
                   }),
                   sdk: new PayboxSdkAdapter(),
                   authenticator: {
-                      authenticate: async () => {
+                      authenticate: async (payboxWallet, isCurrent) => {
                           if (auth === null) throw new Error('Paybox authentication is unavailable during startup.');
-                          return auth.reauthenticate();
+                          return auth.authenticateWithWallet(payboxWallet, isCurrent);
                       },
                   },
               })

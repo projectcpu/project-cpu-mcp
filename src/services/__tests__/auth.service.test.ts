@@ -229,6 +229,32 @@ describe('AuthService', () => {
                     }),
                 );
             });
+
+            it('does not persist a SIWE result invalidated while verification is pending', async () => {
+                let current = true;
+                const verification = controlledPromise<ReturnType<typeof verifyResponse>>();
+                vi.mocked(session.getStatus).mockReturnValue(SessionStatus.Missing);
+                vi.mocked(api.getBaseUrl).mockReturnValue('https://api.test.com');
+                vi.mocked(api.request).mockResolvedValueOnce(nonceResponse());
+                vi.mocked(api.request).mockImplementationOnce(() => verification.promise);
+
+                const authentication = service.authenticateWithWallet(walletManager, () => current);
+                await vi.waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+                current = false;
+                verification.resolve(verifyResponse());
+
+                await expect(authentication).rejects.toThrow('invalidated');
+                expect(session.setSession).not.toHaveBeenCalled();
+                expect(session.setJwt).not.toHaveBeenCalled();
+            });
         });
     });
 });
+
+function controlledPromise<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolvePromise = (_value: T): void => undefined;
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+    return { promise, resolve: resolvePromise };
+}

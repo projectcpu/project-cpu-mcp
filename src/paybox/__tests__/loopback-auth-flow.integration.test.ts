@@ -158,6 +158,55 @@ describe('LoopbackAuthFlow', () => {
         await expect(flow.finish()).rejects.toThrow('cancelled');
         await expect(flow.start()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
     });
+
+    it('invalidates a start cancelled while discovery is unresolved', async () => {
+        const discovery = controlledPromise<ReturnType<typeof response>>();
+        let discoveryPending = true;
+        let registrationCalls = 0;
+        const client: PayboxHttpClient = {
+            async fetch(url) {
+                if (url.endsWith('/.well-known/oauth-authorization-server') && discoveryPending) {
+                    discoveryPending = false;
+                    return discovery.promise;
+                }
+                if (url.endsWith('/.well-known/oauth-authorization-server')) {
+                    return response({
+                        authorization_endpoint: 'https://issuer.example/authorize',
+                        registration_endpoint: 'https://issuer.example/register',
+                        token_endpoint: 'https://issuer.example/token',
+                    });
+                }
+                if (url.endsWith('/register')) {
+                    registrationCalls += 1;
+                    return response({ client_id: 'client' });
+                }
+                return response({ access_token: 'access' });
+            },
+        };
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: client,
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+
+        const cancelledStart = flow.start();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        flow.cancel();
+        discovery.resolve(
+            response({
+                authorization_endpoint: 'https://issuer.example/authorize',
+                registration_endpoint: 'https://issuer.example/register',
+                token_endpoint: 'https://issuer.example/token',
+            }),
+        );
+
+        await expect(cancelledStart).rejects.toThrow('cancelled');
+        expect(registrationCalls).toBe(0);
+        await expect(flow.start()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
+        expect(registrationCalls).toBe(1);
+    });
 });
 
 const clock = { setTimeout, clearTimeout };
@@ -185,4 +234,12 @@ function fakeClient(): PayboxHttpClient {
             return response({ access_token: 'access' });
         },
     };
+}
+
+function controlledPromise<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolvePromise = (_value: T): void => undefined;
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+    return { promise, resolve: resolvePromise };
 }

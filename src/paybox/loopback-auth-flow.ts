@@ -11,9 +11,9 @@ import {
     OAUTH_SCOPE,
 } from './auth-flow.constants.js';
 import { isPbxk1, oauthError, pkceChallenge, randomUrlPart } from './auth-flow.utils.js';
+import { PayboxLoopbackUnavailableError } from './errors.js';
 import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-auth-flow.utils.js';
 import {
-    PayboxLoopbackUnavailableError,
     type LoopbackAuthFlowOptions,
     type OAuthMetadata,
     type OAuthTokenResponse,
@@ -36,6 +36,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private code: string | null = null;
     private key: string | null = null;
     private started = false;
+    private generation = 0;
     private readonly waiters = new Set<() => void>();
     private readonly waiterRejectors = new Set<(error: Error) => void>();
 
@@ -46,15 +47,21 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             throw oauthError('flow already started');
         }
         this.started = true;
+        const generation = this.generation;
         try {
-            this.metadata = await this.discover();
+            const metadata = await this.discover();
+            this.assertGeneration(generation);
+            this.metadata = metadata;
             this.state = randomUrlPart();
             this.verifier = randomUrlPart();
             this.callbackPath = `${LOOPBACK_CALLBACK_PREFIX}${randomUrlPart()}`;
             this.keyPath = `${LOOPBACK_KEY_PREFIX}${randomUrlPart()}`;
             await this.listen();
+            this.assertGeneration(generation);
             const redirectUri = this.redirectUri();
-            this.clientId = await this.register(redirectUri);
+            const clientId = await this.register(redirectUri);
+            this.assertGeneration(generation);
+            this.clientId = clientId;
             this.completion = new Promise<PayboxAuthMaterial>((resolve, reject) => {
                 this.rejectCompletion = reject;
                 void this.waitForResult(resolve, reject);
@@ -70,7 +77,8 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             authorizationUrl.searchParams.set('code_challenge_method', 'S256');
             return { authorizationUrl: authorizationUrl.toString() };
         } catch (error) {
-            this.reset();
+            if (this.generation === generation) this.reset();
+            else throw oauthError('cancelled');
             throw error;
         }
     }
@@ -261,12 +269,17 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     }
 
     private stop(error: Error): void {
+        this.generation += 1;
         this.rejectCompletion?.(error);
         for (const reject of this.waiterRejectors) reject(error);
         this.waiters.clear();
         this.waiterRejectors.clear();
         this.reset();
         this.rejectCompletion = null;
+    }
+
+    private assertGeneration(generation: number): void {
+        if (this.generation !== generation) throw oauthError('cancelled');
     }
 
     private reset(): void {
