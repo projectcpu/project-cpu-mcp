@@ -1,12 +1,10 @@
-import { z } from 'zod';
-
 import { PayboxCoordinator } from '../paybox/coordinator.js';
 import { PayboxWalletSelectionError } from '../paybox/errors.js';
 import { PayboxErrorCode } from '../paybox/types.js';
 import type { AppContext } from '../types.js';
 import { WalletMode } from '../types.js';
 import { PERSONA_BRIEF_MARKER } from './persona/constants.js';
-import type { ToolRegistrar } from './types.js';
+import { authenticateInputSchema, type ToolRegistrar } from './types.js';
 
 const DESCRIPTION = [
     'Create a blockchain session.',
@@ -20,25 +18,11 @@ const DESCRIPTION = [
     '(e.g. after the game server was reset and the stored token references a stale user).',
 ].join(' ');
 
-const inputSchema = {
-    force: z
-        .boolean()
-        .nullable()
-        .default(null)
-        .describe('Ignore the stored session and re-run authentication from scratch.'),
-    payboxCredentialId: z
-        .string()
-        .min(1)
-        .nullable()
-        .default(null)
-        .describe('Opaque Paybox credential ID returned by an outstanding wallet selection.'),
-};
-
 export function registerAuthenticateTool(server: ToolRegistrar, context: AppContext): void {
     const authService = context.auth;
     const description = context.config.OPERATOR_PERSONA ? `${DESCRIPTION} ${PERSONA_BRIEF_MARKER}` : DESCRIPTION;
 
-    server.registerTool('cpu_authenticate', { description, inputSchema }, async (args) => {
+    server.registerTool('cpu_authenticate', { description, inputSchema: authenticateInputSchema }, async (args) => {
         const force = args.force ?? false;
         const payboxCredentialId = args.payboxCredentialId ?? null;
 

@@ -212,15 +212,16 @@ describe('PayboxCoordinator', () => {
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
         const first = coordinator.authenticate({ force: false, payboxCredentialId: 'credential-a' });
         await vi.waitFor(() => expect(authenticate).toHaveBeenCalledOnce());
+        const observer = coordinator.authenticate({ force: false, payboxCredentialId: null });
         const second = coordinator.authenticate({ force: false, payboxCredentialId: 'credential-b' });
         const secondResult = expect(second).rejects.toThrow('PAYBOX_WALLET_SELECTION_NOT_PENDING');
         await new Promise<void>((resolve) => setImmediate(resolve));
         authentication.resolve('game-jwt-a');
 
-        await expect(first).resolves.toEqual({
-            status: PayboxAuthStatus.Authenticated,
-            address: grants[0]?.address,
-        });
+        await expect(Promise.all([first, observer])).resolves.toEqual([
+            { status: PayboxAuthStatus.Authenticated, address: grants[0]?.address },
+            { status: PayboxAuthStatus.Authenticated, address: grants[0]?.address },
+        ]);
         await secondResult;
         expect(listGrants).toHaveBeenCalledTimes(2);
         expect(createWallet).toHaveBeenCalledOnce();
@@ -545,6 +546,82 @@ describe('PayboxCoordinator', () => {
             { status: PayboxAuthStatus.Authenticated, address: '0x0000000000000000000000000000000000000001' },
             { status: PayboxAuthStatus.Authenticated, address: '0x0000000000000000000000000000000000000001' },
         ]);
+    });
+
+    it('single-flights discovery and activation from stored auth-only material', async () => {
+        const tokens = {
+            clientId: 'client',
+            accessToken: 'access',
+            refreshToken: null,
+            expiresAt: null,
+            resource: null,
+            baseUrl: 'https://paybox.test',
+        };
+        const discovery = controlledPromise<{
+            grants: Array<{
+                credentialId: string;
+                address: string;
+                label: string | null;
+                provider: string | null;
+            }>;
+            managementUrl: string | null;
+        }>();
+        const authentication = controlledPromise<string>();
+        const listGrants = vi.fn(() => discovery.promise);
+        const createWallet = vi.fn(() => wallet);
+        const save = vi.fn();
+        const authenticate = vi.fn(() => authentication.promise);
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: vi.fn(() => ({
+                    version: 1 as const,
+                    tokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: null,
+                    address: null,
+                })),
+                save,
+                clear: vi.fn(),
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                listEligibleAutonomousEvmGrants: listGrants,
+                createWallet,
+                signMessage: vi.fn(),
+            },
+            authenticator: { authenticate },
+        });
+
+        const first = coordinator.authenticate({ force: false, payboxCredentialId: null });
+        const second = coordinator.authenticate({ force: false, payboxCredentialId: null });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(listGrants).toHaveBeenCalledOnce();
+
+        discovery.resolve({
+            grants: [
+                {
+                    credentialId: 'credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                    label: null,
+                    provider: null,
+                },
+            ],
+            managementUrl: null,
+        });
+        await vi.waitFor(() => expect(authenticate).toHaveBeenCalledOnce());
+        expect(createWallet).toHaveBeenCalledOnce();
+        expect(save).not.toHaveBeenCalled();
+
+        authentication.resolve('game-jwt');
+        await expect(Promise.all([first, second])).resolves.toEqual([
+            { status: PayboxAuthStatus.Authenticated, address: '0x0000000000000000000000000000000000000001' },
+            { status: PayboxAuthStatus.Authenticated, address: '0x0000000000000000000000000000000000000001' },
+        ]);
+        expect(listGrants).toHaveBeenCalledOnce();
+        expect(createWallet).toHaveBeenCalledOnce();
+        expect(authenticate).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledOnce();
+        expect(coordinator.get()).toBe(wallet);
     });
 
     it('keeps polling nonblocking while pending completion runs fresh SIWE', async () => {

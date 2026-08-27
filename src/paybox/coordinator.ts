@@ -15,6 +15,7 @@ import {
     type PayboxAuthRecord,
     type PayboxAuthenticateInput,
     type PayboxAuthenticateResult,
+    type PayboxContinuationFlight,
     type PayboxCoordinatorOptions,
     PayboxSelectionPhase,
     type PayboxSelectionState,
@@ -31,6 +32,7 @@ export class PayboxCoordinator implements WalletProvider {
     private completing: Promise<void> | null = null;
     private completionError: Error | null = null;
     private authenticating: PayboxAuthenticationFlight | null = null;
+    private continuing: PayboxContinuationFlight | null = null;
     private material: PayboxAuthMaterial | null = null;
     private selection: PayboxSelectionState | null = null;
     private credentialId: string | null = null;
@@ -61,6 +63,7 @@ export class PayboxCoordinator implements WalletProvider {
             this.completing = null;
             this.completionError = null;
             this.authenticating = null;
+            this.continuing = null;
             this.material = null;
             this.selection = null;
             this.credentialId = null;
@@ -108,7 +111,7 @@ export class PayboxCoordinator implements WalletProvider {
             return { status: PayboxAuthStatus.Authenticated, address: this.address };
         }
         if (this.material !== null) {
-            return this.continueWithMaterial(this.material, requestedCredentialId, this.generation);
+            return this.continueAuthentication(this.material, requestedCredentialId, this.generation);
         }
         const stored = this.options.storage.load();
         if (
@@ -137,7 +140,7 @@ export class PayboxCoordinator implements WalletProvider {
         }
         if (stored !== null && stored.tokens !== null && stored.signingKey !== null) {
             this.material = { tokens: stored.tokens, signingKey: stored.signingKey };
-            return this.continueWithMaterial(this.material, requestedCredentialId, this.generation);
+            return this.continueAuthentication(this.material, requestedCredentialId, this.generation);
         }
         if (requestedCredentialId !== null) {
             throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
@@ -181,7 +184,43 @@ export class PayboxCoordinator implements WalletProvider {
         if (this.pendingUrl === null) throw new Error('No Paybox authentication is pending.');
         const material = await this.options.flow.finish();
         this.assertCurrent(generation);
-        await this.continueWithMaterial(material, null, generation);
+        await this.continueAuthentication(material, null, generation);
+    }
+
+    private continueAuthentication(
+        material: PayboxAuthMaterial,
+        requestedCredentialId: string | null,
+        generation: number,
+    ): Promise<PayboxAuthenticateResult> {
+        if (this.continuing !== null) {
+            if (this.continuing.generation !== generation || this.continuing.material !== material) {
+                throw new Error('Paybox authentication is already in progress for another auth state.');
+            }
+            if (
+                this.continuing.requestedCredentialId === requestedCredentialId ||
+                (requestedCredentialId === null && this.continuing.requestedCredentialId !== null)
+            ) {
+                return this.continuing.promise;
+            }
+            throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
+        }
+        const continuation = this.continueWithMaterial(material, requestedCredentialId, generation);
+        const flight: PayboxContinuationFlight = {
+            material,
+            requestedCredentialId,
+            generation,
+            promise: continuation,
+        };
+        this.continuing = flight;
+        void continuation.then(
+            () => {
+                if (this.continuing === flight) this.continuing = null;
+            },
+            () => {
+                if (this.continuing === flight) this.continuing = null;
+            },
+        );
+        return continuation;
     }
 
     private async continueWithMaterial(

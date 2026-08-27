@@ -161,6 +161,13 @@ export interface PayboxAuthenticationFlight {
     promise: Promise<string>;
 }
 
+export interface PayboxContinuationFlight {
+    material: PayboxAuthMaterial;
+    requestedCredentialId: string | null;
+    generation: number;
+    promise: Promise<PayboxAuthenticateResult>;
+}
+
 export interface PayboxFullAccessWalletRequiredErrorData {
     code: PayboxErrorCode.FullAccessWalletRequired;
     instructions: string;

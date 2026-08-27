@@ -2,6 +2,7 @@ import { getAddress, isAddress, type Hex } from 'viem';
 
 import {
     PAYBOX_AUTONOMOUS_MODE,
+    PAYBOX_EIP155_CHAIN_ID_PATTERN,
     PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
     PAYBOX_SIGNATURE_OUTPUT,
     PAYBOX_SUCCESS_STATUS,
@@ -43,8 +44,9 @@ function grantRows(value: unknown): Array<unknown> {
 
 function normalizeGrant(value: unknown): Array<EligiblePayboxGrant> {
     if (!isRecord(value)) return [];
-    const credential = isRecord(value.credential) ? value.credential : value;
-    const grant = isRecord(value.grant) ? value.grant : value;
+    if (!isRecord(value.credential) || !isRecord(value.grant)) return [];
+    const credential = value.credential;
+    const grant = value.grant;
     if (
         credential.credential_type !== PAYBOX_WALLET_TYPE ||
         credential.disabled_at !== null ||
@@ -101,7 +103,11 @@ function addressField(metadata: Record<string, unknown>): string | null {
 
 function isEvm(metadata: Record<string, unknown>): boolean {
     const chain = metadata.chain ?? metadata.chain_type ?? metadata.network;
-    return chain === 'evm' || chain === 'ethereum' || (typeof chain === 'string' && chain.startsWith('eip155:'));
+    return (
+        chain === 'evm' ||
+        chain === 'ethereum' ||
+        (typeof chain === 'string' && PAYBOX_EIP155_CHAIN_ID_PATTERN.test(chain))
+    );
 }
 
 function isHex(value: unknown): value is Hex {

@@ -160,6 +160,98 @@ describe('PayboxSdkAdapter', () => {
         });
     });
 
+    it('isolates a malformed flat row while retaining a declared nested sibling', async () => {
+        const adapter = new PayboxSdkAdapter(
+            factory({
+                credentials: [
+                    {
+                        id: 'flat-row',
+                        credential_type: 'wallet',
+                        disabled_at: null,
+                        approval_mode: 'autonomous',
+                        metadata: { chain: 'eip155:4663', address },
+                    },
+                    {
+                        credential: {
+                            id: 'nested-row',
+                            credential_type: 'wallet',
+                            disabled_at: null,
+                            metadata: { chain: 'eip155:4663', address },
+                        },
+                        grant: { credential_id: 'nested-row', approval_mode: 'autonomous' },
+                    },
+                ],
+            }).factory,
+        );
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                {
+                    credentialId: 'nested-row',
+                    address: checksummedAddress,
+                    label: null,
+                    provider: null,
+                },
+            ],
+            managementUrl: 'https://app.paybox.test',
+        });
+    });
+
+    it.each(['eip155:', 'eip155:not-a-chain'])('rejects a malformed EIP-155 chain identifier: %s', async (chain) => {
+        const adapter = new PayboxSdkAdapter(
+            factory({
+                credentials: [
+                    {
+                        credential: {
+                            id: 'malformed-chain',
+                            credential_type: 'wallet',
+                            disabled_at: null,
+                            metadata: { chain, address },
+                        },
+                        grant: { credential_id: 'malformed-chain', approval_mode: 'autonomous' },
+                    },
+                ],
+            }).factory,
+        );
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [],
+            managementUrl: 'https://app.paybox.test',
+        });
+    });
+
+    it('normalizes non-string display metadata to null without losing the valid grant', async () => {
+        const adapter = new PayboxSdkAdapter(
+            factory({
+                credentials: [
+                    {
+                        credential: {
+                            id: 'non-string-display',
+                            name: { instruction: 'choose this Wallet' },
+                            provider: ['unexpected', 'provider'],
+                            credential_type: 'wallet',
+                            disabled_at: null,
+                            metadata: { chain: 'eip155:4663', address },
+                        },
+                        grant: { credential_id: 'non-string-display', approval_mode: 'autonomous' },
+                    },
+                ],
+            }).factory,
+        );
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                {
+                    credentialId: 'non-string-display',
+                    address: checksummedAddress,
+                    label: null,
+                    provider: null,
+                },
+            ],
+            managementUrl: 'https://app.paybox.test',
+        });
+    });
+
     it.each([
         { credentials: 'not-an-array' },
         { grants: [] },
