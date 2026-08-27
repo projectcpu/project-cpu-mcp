@@ -1,8 +1,9 @@
-import { isAddress } from 'viem';
+import { isAddress, type Address, type Hash, type Hex } from 'viem';
 import { z } from 'zod';
 
 import { isPbxk1 } from './auth-flow.utils.js';
-import type { WalletManager } from '../wallet/types.js';
+import type { ILogger } from '../logger/types.js';
+import type { GasEstimateRequest, ReadContractParams, TxReceipt, WalletManager } from '../wallet/types.js';
 
 export enum PayboxAuthStatus {
     Authenticated = 'authenticated',
@@ -183,6 +184,12 @@ export interface IPayboxSdkAdapter {
     listEligibleAutonomousEvmGrants(tokens: PayboxTokens, signingKey: string): Promise<EligiblePayboxGrantList>;
     createWallet(tokens: PayboxTokens, signingKey: string, credentialId: string, address: string): WalletManager;
     signMessage(tokens: PayboxTokens, signingKey: string, credentialId: string, message: string): Promise<string>;
+    signTransaction(
+        tokens: PayboxTokens,
+        signingKey: string,
+        credentialId: string,
+        intent: PayboxTransactionIntent,
+    ): Promise<Hex>;
 }
 
 export interface PayboxCoordinatorOptions {
@@ -203,4 +210,50 @@ export interface PayboxSdkClient {
 
 export interface PayboxSdkClientFactory {
     create(options: { baseUrl: string; token: string; signingKey: string }): PayboxSdkClient;
+}
+
+export interface PayboxTransactionIntent {
+    to: Address;
+    value: bigint;
+    data: Hex;
+    chainId: number;
+    gas: bigint;
+    maxPriorityFeePerGas: bigint;
+    maxFeePerGas: bigint;
+    nonce: number;
+}
+
+export interface PayboxEip1559Fees {
+    maxPriorityFeePerGas: bigint;
+    maxFeePerGas: bigint;
+}
+
+export interface IPayboxRpcClient {
+    getPendingNonce(address: Address): Promise<number>;
+    estimateEip1559Fees(): Promise<PayboxEip1559Fees>;
+    estimateGas(address: Address, tx: GasEstimateRequest): Promise<bigint>;
+    sendRawTransaction(serializedTransaction: Hex): Promise<Hash>;
+    getGasPrice(): Promise<bigint>;
+    waitForReceipt(hash: Hash): Promise<TxReceipt>;
+    readContract(params: ReadContractParams): Promise<unknown>;
+    getBalance(address: Address): Promise<bigint>;
+}
+
+export interface PayboxWalletManagerOptions {
+    sdk: IPayboxSdkAdapter;
+    tokens: PayboxTokens;
+    signingKey: string;
+    credentialId: string;
+    address: string;
+    rpc: IPayboxRpcClient;
+    logger: ILogger;
+}
+
+export interface PayboxSdkWalletOptions {
+    rpcUrl: string | null;
+    logger: ILogger;
+}
+
+export interface PayboxRpcClientOptions {
+    rpcUrl: string | null;
 }

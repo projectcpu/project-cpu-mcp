@@ -56,6 +56,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: listGrants,
                 createWallet,
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
         });
@@ -131,6 +132,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: listGrants,
                 createWallet,
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate },
         });
@@ -205,7 +207,12 @@ describe('PayboxCoordinator', () => {
                 clear: vi.fn(),
             },
             flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
-            sdk: { listEligibleAutonomousEvmGrants: listGrants, createWallet, signMessage: vi.fn() },
+            sdk: {
+                listEligibleAutonomousEvmGrants: listGrants,
+                createWallet,
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
             authenticator: { authenticate },
         });
 
@@ -288,6 +295,7 @@ describe('PayboxCoordinator', () => {
             })),
             createWallet: vi.fn(() => wallet),
             signMessage: vi.fn(),
+            signTransaction: vi.fn(),
         };
         const authenticate = vi.fn(async () => 'game-jwt');
         const coordinator = new PayboxCoordinator({ storage, flow, sdk, authenticator: { authenticate } });
@@ -326,6 +334,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: vi.fn(),
                 createWallet: vi.fn(),
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate: vi.fn() },
         });
@@ -388,6 +397,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: listGrants,
                 createWallet,
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate: vi.fn() },
         });
@@ -440,6 +450,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: vi.fn(),
                 createWallet: vi.fn(() => wallet),
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate },
         });
@@ -484,6 +495,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: listGrants,
                 createWallet: vi.fn(),
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate: vi.fn() },
         });
@@ -532,6 +544,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: vi.fn(),
                 createWallet: vi.fn(() => wallet),
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate },
         });
@@ -588,6 +601,7 @@ describe('PayboxCoordinator', () => {
                 listEligibleAutonomousEvmGrants: listGrants,
                 createWallet,
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate },
         });
@@ -661,6 +675,7 @@ describe('PayboxCoordinator', () => {
                 })),
                 createWallet: vi.fn(() => wallet),
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: { authenticate },
         });
@@ -714,6 +729,7 @@ describe('PayboxCoordinator', () => {
                 })),
                 createWallet: vi.fn(() => wallet),
                 signMessage: vi.fn(),
+                signTransaction: vi.fn(),
             },
             authenticator: {
                 authenticate: vi.fn(() => authentication.promise),

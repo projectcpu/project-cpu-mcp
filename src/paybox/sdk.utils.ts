@@ -2,6 +2,7 @@ import { getAddress, isAddress, type Hex } from 'viem';
 
 import {
     PAYBOX_AUTONOMOUS_MODE,
+    PAYBOX_DENIED_STATUS,
     PAYBOX_EIP155_CHAIN_ID_PATTERN,
     PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
     PAYBOX_SIGNATURE_OUTPUT,
@@ -28,6 +29,24 @@ export function signatureFromResponse(value: unknown, credentialId: string): Hex
         !isHex(output.value)
     ) {
         throw new Error('Paybox returned an invalid message signature.');
+    }
+    return output.value;
+}
+
+export function serializedTransactionFromResponse(value: unknown, credentialId: string): Hex {
+    if (isRecord(value) && value.status === PAYBOX_DENIED_STATUS) {
+        throw new Error('PAYBOX_OPERATION_DENIED');
+    }
+    if (!isRecord(value) || value.status !== PAYBOX_SUCCESS_STATUS || !isRecord(value.output)) {
+        throw new Error('Paybox transaction signing did not complete successfully.');
+    }
+    const output = value.output;
+    if (
+        output.output_type !== PAYBOX_SIGNATURE_OUTPUT ||
+        output.credential_id !== credentialId ||
+        !isSerializedTransaction(output.value)
+    ) {
+        throw new Error('Paybox returned an invalid serialized transaction.');
     }
     return output.value;
 }
@@ -112,6 +131,10 @@ function isEvm(metadata: Record<string, unknown>): boolean {
 
 function isHex(value: unknown): value is Hex {
     return typeof value === 'string' && /^0x[0-9a-fA-F]{130}$/.test(value);
+}
+
+function isSerializedTransaction(value: unknown): value is Hex {
+    return typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})+$/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

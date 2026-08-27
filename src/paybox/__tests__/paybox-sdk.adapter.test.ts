@@ -1,8 +1,8 @@
-import { getAddress } from 'viem';
+import { getAddress, parseEther } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PayboxSdkAdapter } from '../paybox-sdk.adapter.js';
-import type { PayboxSdkClientFactory, PayboxTokens } from '../types.js';
+import type { PayboxSdkClientFactory, PayboxTokens, PayboxTransactionIntent } from '../types.js';
 
 const tokens: PayboxTokens = {
     clientId: 'client',
@@ -377,5 +377,77 @@ describe('PayboxSdkAdapter', () => {
         await expect(adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')).rejects.toThrow(
             'invalid message signature',
         );
+    });
+
+    it('sends the exact decimal-string EIP-1559 intent with the persisted credential ID', async () => {
+        const mock = factory([]);
+        const adapter = new PayboxSdkAdapter(mock.factory);
+        const intent: PayboxTransactionIntent = {
+            to: checksummedAddress,
+            value: parseEther('0.5'),
+            data: '0x1234',
+            chainId: 4663,
+            gas: 45_000n,
+            maxPriorityFeePerGas: 2_000_000_000n,
+            maxFeePerGas: 30_000_000_000n,
+            nonce: 7,
+        };
+        mock.sign.mockResolvedValueOnce({
+            status: 'success',
+            output: { output_type: 'signature', credential_id: 'credential-a', value: '0x02ab' },
+        });
+
+        await expect(adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', intent)).resolves.toBe('0x02ab');
+        expect(mock.sign).toHaveBeenCalledWith(
+            {
+                credentialId: 'credential-a',
+                intent: {
+                    op: 'transaction',
+                    transaction: {
+                        to: checksummedAddress,
+                        value: '500000000000000000',
+                        data: '0x1234',
+                        chainId: 4663,
+                        gas: '45000',
+                        maxPriorityFeePerGas: '2000000000',
+                        maxFeePerGas: '30000000000',
+                        nonce: 7,
+                    },
+                },
+            },
+            { autoSign: true },
+        );
+    });
+
+    it.each([
+        [{ status: 'denied', output: null }, 'PAYBOX_OPERATION_DENIED'],
+        [{ status: 'pending_signature', output: null }, 'did not complete'],
+        [
+            { status: 'success', output: { output_type: 'signature', credential_id: 'other', value: '0x02ab' } },
+            'invalid serialized transaction',
+        ],
+        [
+            {
+                status: 'success',
+                output: { output_type: 'signature', credential_id: 'credential-a', value: 'not-hex' },
+            },
+            'invalid serialized transaction',
+        ],
+    ])('rejects unsupported transaction signing response %# before manager broadcast', async (response, message) => {
+        const mock = factory([]);
+        mock.sign.mockResolvedValueOnce(response);
+        const adapter = new PayboxSdkAdapter(mock.factory);
+        const intent: PayboxTransactionIntent = {
+            to: checksummedAddress,
+            value: 0n,
+            data: '0x',
+            chainId: 4663,
+            gas: 21_000n,
+            maxPriorityFeePerGas: 1n,
+            maxFeePerGas: 2n,
+            nonce: 0,
+        };
+
+        await expect(adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', intent)).rejects.toThrow(message);
     });
 });
