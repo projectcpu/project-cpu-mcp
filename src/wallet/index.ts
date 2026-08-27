@@ -17,6 +17,8 @@ export function createWalletProvider(input: CreateWalletProviderInput): WalletPr
     if (config.WALLET_MODE === WalletMode.EVM) {
         return new EvmWalletProvider(config, logger.child('wallet:evm'));
     }
-
-    return new AgwWalletProvider(config, session, logger.child('wallet:agw'));
+    if (config.WALLET_MODE === WalletMode.AGW) {
+        return new AgwWalletProvider(config, session, logger.child('wallet:agw'));
+    }
+    throw new Error('Paybox wallet provider must be created with its explicit authentication dependencies.');
 }
