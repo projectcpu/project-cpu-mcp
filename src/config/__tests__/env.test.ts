@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
+import { WalletMode } from '../../types.js';
 import { loadEnvConfig } from '../env.js';
 import { Network } from '../types.js';
 
 const PRIVATE_KEY = `0x${'11'.repeat(32)}`;
 
 describe('loadEnvConfig NETWORK', () => {
+    it('accepts Paybox without a private key while retaining Robinhood-only networking', () => {
+        expect(loadEnvConfig({ WALLET_MODE: WalletMode.PAYBOX }).WALLET_MODE).toBe(WalletMode.PAYBOX);
+        expect(() => loadEnvConfig({ WALLET_MODE: WalletMode.PAYBOX, NETWORK: Network.BASE })).toThrow(/NETWORK/);
+    });
     it('defaults to the Robinhood launch network', () => {
         expect(loadEnvConfig({ PRIVATE_KEY }).NETWORK).toBe(Network.ROBINHOOD);
     });

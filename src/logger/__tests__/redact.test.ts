@@ -24,6 +24,15 @@ describe('redactString', () => {
         const b = '0xbb0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
         expect(redactString(`${a} then ${b}`)).toBe(`${REDACTED} then ${REDACTED}`);
     });
+
+    it('redacts Paybox values and authorization URL queries without redacting an address', () => {
+        const address = '0x1111111111111111111111111111111111111111';
+        expect(
+            redactString(
+                `open https://accounts.example/authorize?code=callback&state=value using pbxk1.secret ${address}`,
+            ),
+        ).toBe(`open https://accounts.example/authorize using ${REDACTED} ${address}`);
+    });
 });
 
 describe('redactValue', () => {
@@ -75,5 +84,16 @@ describe('redactValue', () => {
     it('redacts whole subtree when key matches, ignoring its inner shape', () => {
         const input = { secret: { nested: { deep: 'x' } } };
         expect(redactValue(input)).toEqual({ secret: REDACTED });
+    });
+
+    it('redacts OAuth and signing-key metadata', () => {
+        expect(
+            redactValue({ accessToken: 'access', refresh_token: 'refresh', pbxk1: 'key', code: 'callback' }),
+        ).toEqual({
+            accessToken: REDACTED,
+            refresh_token: REDACTED,
+            pbxk1: REDACTED,
+            code: REDACTED,
+        });
     });
 });

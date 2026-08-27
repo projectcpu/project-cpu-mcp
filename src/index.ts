@@ -13,6 +13,10 @@ import { MapReader } from './map/reader.js';
 import { createMapSocket } from './map/socket.js';
 import { MapStore } from './map/store.js';
 import { MapSync } from './map/sync.js';
+import { PayboxCoordinator } from './paybox/coordinator.js';
+import { LoopbackAuthFlow } from './paybox/loopback-auth-flow.js';
+import { PayboxSdkAdapter } from './paybox/paybox-sdk.adapter.js';
+import { PayboxAuthStorage } from './paybox/storage.js';
 import { FulfilmentClaims } from './randomness/claims.js';
 import { RandomnessStrategyFactory } from './randomness/factory.js';
 import { startRevealFulfilment } from './randomness/fulfiller.factory.js';
@@ -41,7 +45,7 @@ import { TransportService } from './services/transport.service.js';
 import { WithdrawService } from './services/withdraw.service.js';
 import { SessionManager } from './session/manager.js';
 import { SessionStorage } from './session/storage.js';
-import type { AppContext } from './types.js';
+import { WalletMode, type AppContext } from './types.js';
 import { errorMessage } from './utils/error.utils.js';
 import { BackendVersion, createBackendVersionProbe } from './version/backend-version.js';
 import { BACKEND_VERSION_TTL_MS, PACKAGE_VERSION_TTL_MS } from './version/constants.js';
@@ -65,7 +69,26 @@ async function main(): Promise<void> {
     session.initialize();
     logger.info('session initialized', { status: session.getStatus() });
 
-    const wallet = createWalletProvider({ config, session, logger });
+    let auth: AuthService | null = null;
+    const wallet =
+        config.WALLET_MODE === WalletMode.PAYBOX
+            ? new PayboxCoordinator({
+                  storage: new PayboxAuthStorage(os.homedir(), logger.child('paybox:storage')),
+                  flow: new LoopbackAuthFlow({
+                      issuerUrl: 'https://api.paybox.sh',
+                      httpClient: { fetch: (url, init) => fetch(url, init) },
+                      clock: { setTimeout, clearTimeout },
+                      timeoutMs: null,
+                  }),
+                  sdk: new PayboxSdkAdapter(),
+                  authenticator: {
+                      authenticate: async () => {
+                          if (auth === null) throw new Error('Paybox authentication is unavailable during startup.');
+                          return auth.reauthenticate();
+                      },
+                  },
+              })
+            : createWalletProvider({ config, session, logger });
     logger.info('wallet provider created', { ready: wallet.isReady() });
 
     const api = new ApiClient({
@@ -74,7 +97,7 @@ async function main(): Promise<void> {
         logger: logger.child('api'),
     });
 
-    const auth = new AuthService({ session, api, wallet, logger: logger.child('auth') });
+    auth = new AuthService({ session, api, wallet, logger: logger.child('auth') });
     api.setAuthenticator(auth);
 
     const appConfig = new AppConfigService({ api, network: config.NETWORK, logger: logger.child('config') });

@@ -4,6 +4,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { PayboxCoordinator } from '../../paybox/coordinator.js';
+import {
+    PayboxAuthStatus,
+    type IPayboxAuthStorage,
+    type IPayboxSdkAdapter,
+    type PayboxAuthFlow,
+} from '../../paybox/types.js';
 import { WalletMode, type AppContext } from '../../types.js';
 import { registerAuthenticateTool } from '../authenticate.js';
 import type { ToolRegistrar } from '../types.js';
@@ -72,6 +79,68 @@ describe('cpu_authenticate', () => {
         ]);
         expect(getAccessToken).toHaveBeenCalledOnce();
         expect(authenticateDevice).not.toHaveBeenCalled();
+    });
+
+    it('returns only the public Paybox pending and authenticated states without secret inputs', async () => {
+        const storage: IPayboxAuthStorage = { load: vi.fn(() => null), save: vi.fn(), clear: vi.fn() };
+        const flow: PayboxAuthFlow = {
+            start: vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=opaque' })),
+            finish: vi.fn(async () => ({
+                tokens: {
+                    clientId: 'client',
+                    accessToken: 'access',
+                    refreshToken: null,
+                    expiresAt: null,
+                    resource: null,
+                    baseUrl: 'https://api.test',
+                },
+                signingKey: 'pbxk1.secret',
+            })),
+            cancel: vi.fn(),
+        };
+        const wallet = new PayboxCoordinator({
+            storage,
+            flow,
+            sdk: {
+                selectOneAutonomousEvmGrant: vi.fn(async () => ({
+                    credentialId: 'credential',
+                    address: '0x1111111111111111111111111111111111111111',
+                })),
+                createWallet: vi.fn(() => ({ getAddress: () => '0x1111111111111111111111111111111111111111' })),
+                signMessage: vi.fn(),
+            } as unknown as IPayboxSdkAdapter,
+            authenticator: { authenticate: vi.fn(async () => 'jwt') },
+        });
+        const handler = captureAuthenticateHandler({
+            config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
+            wallet,
+        } as unknown as AppContext);
+
+        await expect(handler({ force: null })).resolves.toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: PayboxAuthStatus.AuthRequired,
+                        instructions:
+                            'Open the authorization URL in a local browser to continue Paybox authentication.',
+                        authorizationUrl: 'https://accounts.test/authorize?state=opaque',
+                    }),
+                },
+            ],
+        });
+        await expect(handler({ force: null })).resolves.toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: PayboxAuthStatus.Authenticated,
+                        address: '0x1111111111111111111111111111111111111111',
+                    }),
+                },
+            ],
+        });
+        expect(flow.start).toHaveBeenCalledOnce();
     });
 });
 

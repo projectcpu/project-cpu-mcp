@@ -12,6 +12,7 @@ export class PayboxCoordinator implements WalletProvider {
     private readonly options: PayboxCoordinatorOptions;
     private wallet: WalletManager | null = null;
     private pendingUrl: string | null = null;
+    private starting: Promise<string> | null = null;
 
     constructor(options: PayboxCoordinatorOptions) {
         this.options = options;
@@ -32,6 +33,7 @@ export class PayboxCoordinator implements WalletProvider {
             this.options.storage.clear();
             this.wallet = null;
             this.pendingUrl = null;
+            this.starting = null;
         }
         const stored = this.options.storage.load();
         if (
@@ -47,10 +49,24 @@ export class PayboxCoordinator implements WalletProvider {
                 stored.credentialId,
                 stored.address,
             );
+            await this.options.authenticator.authenticate();
             return { status: PayboxAuthStatus.Authenticated, address: stored.address };
         }
-        if (this.pendingUrl === null) {
-            this.pendingUrl = (await this.options.flow.start()).authorizationUrl;
+        if (this.pendingUrl !== null) {
+            return this.completePending();
+        }
+        if (this.starting === null) {
+            this.starting = this.options.flow
+                .start()
+                .then((result) => result.authorizationUrl)
+                .catch((error: unknown) => {
+                    throw new Error('PAYBOX_AUTH_ENVIRONMENT_UNSUPPORTED', { cause: error });
+                });
+        }
+        try {
+            this.pendingUrl = await this.starting;
+        } finally {
+            this.starting = null;
         }
         return {
             status: PayboxAuthStatus.AuthRequired,
@@ -59,7 +75,7 @@ export class PayboxCoordinator implements WalletProvider {
         };
     }
 
-    async completePending(): Promise<PayboxAuthenticateResult> {
+    private async completePending(): Promise<PayboxAuthenticateResult> {
         if (this.pendingUrl === null) throw new Error('No Paybox authentication is pending.');
         const material = await this.options.flow.finish();
         const grant = await this.options.sdk.selectOneAutonomousEvmGrant(material.tokens, material.signingKey);
@@ -77,6 +93,7 @@ export class PayboxCoordinator implements WalletProvider {
             grant.address,
         );
         this.pendingUrl = null;
+        await this.options.authenticator.authenticate();
         return { status: PayboxAuthStatus.Authenticated, address: grant.address };
     }
 }

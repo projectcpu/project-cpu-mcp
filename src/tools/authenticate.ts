@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { PayboxCoordinator } from '../paybox/coordinator.js';
 import type { AppContext } from '../types.js';
 import { WalletMode } from '../types.js';
 import { PERSONA_BRIEF_MARKER } from './persona/constants.js';
@@ -11,6 +12,7 @@ const DESCRIPTION = [
     '(e.g. "not authenticated", "session expired").',
     'In EVM mode this signs in via SIWE locally and stores the token.',
     'In AGW mode it returns a URL the user must open in their browser to approve.',
+    'In Paybox mode it returns a structured authorization state until local browser setup is complete.',
     'Once authenticated, subsequent wallet-dependent tools will work automatically.',
     'Pass force=true to discard the cached session and authenticate from scratch',
     '(e.g. after the game server was reset and the stored token references a stale user).',
@@ -30,6 +32,14 @@ export function registerAuthenticateTool(server: ToolRegistrar, context: AppCont
 
     server.registerTool('cpu_authenticate', { description, inputSchema }, async (args) => {
         const force = args.force ?? false;
+
+        if (context.config.WALLET_MODE === WalletMode.PAYBOX) {
+            if (!(context.wallet instanceof PayboxCoordinator)) {
+                throw new Error('Paybox wallet mode is not configured.');
+            }
+            const result = await context.wallet.authenticate({ force });
+            return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+        }
 
         // EVM mode: SIWE signs locally with the env private key — no browser step.
         // getAccessToken returns the cached token if still valid; force re-runs SIWE login regardless.

@@ -91,6 +91,11 @@ export interface PayboxCoordinatorOptions {
     storage: IPayboxAuthStorage;
     flow: PayboxAuthFlow;
     sdk: IPayboxSdkAdapter;
+    authenticator: PayboxSiweAuthenticator;
+}
+
+export interface PayboxSiweAuthenticator {
+    authenticate(): Promise<string>;
 }
 
 export interface PayboxSdkClient {
