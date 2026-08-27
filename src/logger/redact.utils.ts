@@ -1,4 +1,5 @@
 import {
+    AUTHORIZATION_BEARER_PATTERN,
     JWT_PATTERN,
     PAYBOX_SECRET_PATTERN,
     PRIVATE_KEY_PATTERN,
@@ -22,6 +23,7 @@ function normalizeKey(key: string): string {
  */
 export function redactString(input: string): string {
     return input
+        .replace(AUTHORIZATION_BEARER_PATTERN, `$1${REDACTED}`)
         .replace(SENSITIVE_URL_QUERY_PATTERN, '$1')
         .replace(PRIVATE_KEY_PATTERN, REDACTED)
         .replace(JWT_PATTERN, REDACTED)

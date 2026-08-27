@@ -62,10 +62,12 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             const clientId = await this.register(redirectUri);
             this.assertGeneration(generation);
             this.clientId = clientId;
-            this.completion = new Promise<PayboxAuthMaterial>((resolve, reject) => {
+            const completion = new Promise<PayboxAuthMaterial>((resolve, reject) => {
                 this.rejectCompletion = reject;
-                void this.waitForResult(resolve, reject);
+                void this.waitForResult(resolve);
             });
+            void completion.catch(() => undefined);
+            this.completion = completion;
             this.armTimeout();
             const authorizationUrl = new URL(this.metadata.authorizationEndpoint);
             authorizationUrl.searchParams.set('response_type', 'code');
@@ -202,10 +204,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         });
     }
 
-    private async waitForResult(
-        resolve: (material: PayboxAuthMaterial) => void,
-        reject: (error: Error) => void,
-    ): Promise<void> {
+    private async waitForResult(resolve: (material: PayboxAuthMaterial) => void): Promise<void> {
         try {
             const code = await this.waitFor(() => this.code);
             const token = await this.exchange(code);
@@ -219,8 +218,9 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
                 signingKey,
             });
         } catch (error) {
-            this.close();
-            reject(error instanceof Error ? error : oauthError('authentication failed'));
+            if (this.started) {
+                this.stop(error instanceof Error ? error : oauthError('authentication failed'));
+            }
         }
     }
 

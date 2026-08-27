@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LoopbackAuthFlow } from '../loopback-auth-flow.js';
 import type { PayboxHttpClient } from '../types.js';
+
+const VALID_SIGNING_KEY =
+    'pbxk1.eyJwIjoiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSIsInMiOiIy' +
+    'MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyIn0';
 
 const flows: Array<LoopbackAuthFlow> = [];
 
@@ -55,11 +59,11 @@ describe('LoopbackAuthFlow', () => {
         const keyResponse = await fetch(new URL(keyPath, redirect), {
             method: 'POST',
             headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ key: 'pbxk1.abcdefghijklmnop' }).toString(),
+            body: new URLSearchParams({ key: VALID_SIGNING_KEY }).toString(),
         });
         expect(keyResponse.status).toBe(200);
 
-        await expect(flow.finish()).resolves.toMatchObject({ signingKey: 'pbxk1.abcdefghijklmnop' });
+        await expect(flow.finish()).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
         const registration = JSON.parse(String(requests[1]?.init.body));
         expect(registration.redirect_uris).toEqual([redirect.toString()]);
         const exchanged = new URLSearchParams(String(requests[2]?.init.body));
@@ -118,6 +122,17 @@ describe('LoopbackAuthFlow', () => {
         });
         expect(bad.status).toBe(400);
         expect(await bad.text()).not.toContain('secret');
+        for (const key of ['pbxk1.abcdefghijklmnop', 'pbxk1.eyJwIjoiYWEifQ', 'pbxk1.eyJwIjoiemoiLCJzIjoiMTEifQ']) {
+            expect(
+                (
+                    await fetch(keyUrl, {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({ key }).toString(),
+                    })
+                ).status,
+            ).toBe(400);
+        }
         const huge = await fetch(keyUrl, {
             method: 'POST',
             headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -129,7 +144,7 @@ describe('LoopbackAuthFlow', () => {
                 await fetch(keyUrl, {
                     method: 'POST',
                     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-                    body: 'key=pbxk1.abcdefghijklmnop',
+                    body: new URLSearchParams({ key: VALID_SIGNING_KEY }).toString(),
                 })
             ).status,
         ).toBe(200);
@@ -142,7 +157,91 @@ describe('LoopbackAuthFlow', () => {
                 })
             ).status,
         ).toBe(409);
-        await expect(flow.finish()).resolves.toMatchObject({ signingKey: 'pbxk1.abcdefghijklmnop' });
+        await expect(flow.finish()).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
+    });
+
+    it('observes an unpolled timeout while preserving finish rejection and retry', async () => {
+        let expire = (): void => undefined;
+        const timeoutClock = {
+            setTimeout: vi.fn((callback: () => void) => {
+                expire = callback;
+                return {} as NodeJS.Timeout;
+            }),
+            clearTimeout: vi.fn(),
+        };
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: fakeClient(),
+            clock: timeoutClock,
+            timeoutMs: 10,
+        });
+        flows.push(flow);
+        const unhandled: Array<unknown> = [];
+        const observe = (reason: unknown): void => {
+            unhandled.push(reason);
+        };
+        process.on('unhandledRejection', observe);
+        try {
+            await flow.start();
+            expire();
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(unhandled).toEqual([]);
+            await expect(flow.finish()).rejects.toThrow('timed out');
+            await expect(flow.start()).resolves.toEqual(
+                expect.objectContaining({ authorizationUrl: expect.any(String) }),
+            );
+        } finally {
+            process.off('unhandledRejection', observe);
+        }
+    });
+
+    it('observes an unpolled exchange failure, cleans up, and permits retry', async () => {
+        let failExchange = true;
+        const client: PayboxHttpClient = {
+            async fetch(url) {
+                if (url.endsWith('/.well-known/oauth-authorization-server')) {
+                    return response({
+                        authorization_endpoint: 'https://issuer.example/authorize',
+                        registration_endpoint: 'https://issuer.example/register',
+                        token_endpoint: 'https://issuer.example/token',
+                    });
+                }
+                if (url.endsWith('/register')) return response({ client_id: 'client' });
+                if (failExchange) {
+                    failExchange = false;
+                    return { ...response({}), ok: false, status: 503 };
+                }
+                return response({ access_token: 'access' });
+            },
+        };
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: client,
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+        const unhandled: Array<unknown> = [];
+        const observe = (reason: unknown): void => {
+            unhandled.push(reason);
+        };
+        process.on('unhandledRejection', observe);
+        try {
+            const start = await flow.start();
+            const authorization = new URL(start.authorizationUrl);
+            const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '');
+            callback.searchParams.set('code', 'code');
+            callback.searchParams.set('state', authorization.searchParams.get('state') ?? '');
+            expect((await fetch(callback)).status).toBe(200);
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            expect(unhandled).toEqual([]);
+            await expect(flow.finish()).rejects.toThrow('token exchange returned 503');
+            await expect(flow.start()).resolves.toEqual(
+                expect.objectContaining({ authorizationUrl: expect.any(String) }),
+            );
+        } finally {
+            process.off('unhandledRejection', observe);
+        }
     });
 
     it('cancels pending work and permits a clean replacement start', async () => {

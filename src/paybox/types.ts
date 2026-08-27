@@ -45,6 +45,10 @@ export interface IPayboxAuthStorage {
     clear(): void;
 }
 
+export interface PayboxAuthRecordRemover {
+    remove(filePath: string): void;
+}
+
 export interface PayboxAuthStart {
     authorizationUrl: string;
 }
@@ -109,10 +113,7 @@ export type PayboxAuthenticateResult =
     | { status: PayboxAuthStatus.Authenticated; address: string };
 
 export interface IPayboxSdkAdapter {
-    selectOneAutonomousEvmGrant(
-        tokens: PayboxTokens,
-        signingKey: string,
-    ): Promise<{ credentialId: string; address: string }>;
+    selectOneAutonomousEvmGrant(tokens: PayboxTokens, signingKey: string): Promise<EligiblePayboxGrant>;
     createWallet(tokens: PayboxTokens, signingKey: string, credentialId: string, address: string): WalletManager;
     signMessage(tokens: PayboxTokens, signingKey: string, credentialId: string, message: string): Promise<string>;
 }

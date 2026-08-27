@@ -32,6 +32,7 @@ export const PRIVATE_KEY_PATTERN = /\b0x[a-fA-F0-9]{64}\b/g;
  * with the first segment starting with `eyJ` (base64 of `{"`).
  */
 export const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+export const AUTHORIZATION_BEARER_PATTERN = /(\bAuthorization:\s*Bearer\s+)[^\s,;]+/gi;
 export const PAYBOX_SECRET_PATTERN =
     /\b(?:pbxk1\.[A-Za-z0-9_-]+|(?:access|refresh)[_-]?token[=:]\s*[^\s&]+|code[=:]\s*[^\s&]+)\b/gi;
 export const SENSITIVE_URL_QUERY_PATTERN = /(https?:\/\/[^\s?]+)\?[^\s]*/gi;

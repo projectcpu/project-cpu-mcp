@@ -3,7 +3,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { PAYBOX_AUTH_FILE, PAYBOX_DIR_MODE, PAYBOX_FILE_MODE } from './constants.js';
-import { type IPayboxAuthStorage, type PayboxAuthRecord, payboxAuthRecordSchema } from './types.js';
+import { nodePayboxAuthRecordRemover } from './storage-remover.js';
+import {
+    type IPayboxAuthStorage,
+    type PayboxAuthRecord,
+    type PayboxAuthRecordRemover,
+    payboxAuthRecordSchema,
+} from './types.js';
 import { SESSION_DIR } from '../config/constants.js';
 import type { ILogger } from '../logger/types.js';
 import { errorMessage } from '../utils/error.utils.js';
@@ -13,6 +19,7 @@ export class PayboxAuthStorage implements IPayboxAuthStorage {
     constructor(
         private readonly homeDir: string,
         private readonly logger: ILogger,
+        private readonly remover: PayboxAuthRecordRemover = nodePayboxAuthRecordRemover,
     ) {}
 
     load(): PayboxAuthRecord | null {
@@ -51,11 +58,23 @@ export class PayboxAuthStorage implements IPayboxAuthStorage {
 
     clear(): void {
         try {
-            fs.unlinkSync(this.filePath);
+            this.remover.remove(this.filePath);
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-                this.logger.warn('failed to remove Paybox auth record', { reason: errorMessage(error) });
-            }
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+            this.wipeAfterFailedDelete();
+            this.logger.warn('failed to remove Paybox auth record', { reason: errorMessage(error) });
+            throw error;
+        }
+    }
+
+    private wipeAfterFailedDelete(): void {
+        let descriptor: number | null = null;
+        try {
+            descriptor = fs.openSync(this.filePath, 'r+');
+            fs.ftruncateSync(descriptor, 0);
+            fs.fsyncSync(descriptor);
+        } finally {
+            if (descriptor !== null) fs.closeSync(descriptor);
         }
     }
 

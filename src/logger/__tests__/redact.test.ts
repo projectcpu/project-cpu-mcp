@@ -14,6 +14,10 @@ describe('redactString', () => {
         expect(redactString(`Authorization: Bearer ${jwt}`)).toBe(`Authorization: Bearer ${REDACTED}`);
     });
 
+    it('redacts opaque bearer authorization values', () => {
+        expect(redactString('Authorization: Bearer opaque-access-token')).toBe(`Authorization: Bearer ${REDACTED}`);
+    });
+
     it('leaves non-sensitive text alone', () => {
         const input = 'ok: address=0xABC (short), chainId=2741';
         expect(redactString(input)).toBe(input);

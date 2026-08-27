@@ -6,12 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SESSION_DIR } from '../../config/constants.js';
 import type { ILogger } from '../../logger/types.js';
-import { PAYBOX_AUTH_FILE, PAYBOX_FILE_MODE } from '../constants.js';
+import { PAYBOX_AUTH_FILE } from '../constants.js';
 import { PayboxAuthStorage } from '../storage.js';
 import type { PayboxAuthRecord } from '../types.js';
 
 const directories: Array<string> = [];
 const logger = { warn: vi.fn() } as unknown as ILogger;
+const VALID_SIGNING_KEY =
+    'pbxk1.eyJwIjoiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSIsInMiOiIy' +
+    'MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyIn0';
 const record: PayboxAuthRecord = {
     version: 1,
     tokens: {
@@ -22,7 +25,7 @@ const record: PayboxAuthRecord = {
         resource: null,
         baseUrl: 'https://paybox.test',
     },
-    signingKey: 'pbxk1.abcdefghijklmnop',
+    signingKey: VALID_SIGNING_KEY,
     credentialId: 'credential',
     address: '0x0000000000000000000000000000000000000001',
 };
@@ -44,10 +47,11 @@ describe('PayboxAuthStorage', () => {
     });
 
     it('atomically saves a versioned record with restrictive permissions', () => {
-        const { storage, file } = fixture();
+        const { storage, home, file } = fixture();
         storage.save(record);
         expect(storage.load()).toEqual(record);
-        expect(fs.statSync(file).mode & 0o777).toBe(PAYBOX_FILE_MODE);
+        expect(fs.statSync(path.join(home, SESSION_DIR)).mode & 0o777).toBe(0o700);
+        expect(fs.statSync(file).mode & 0o777).toBe(0o600);
         expect(fs.readdirSync(path.dirname(file)).some((entry) => entry.endsWith('.tmp'))).toBe(false);
     });
 
@@ -60,6 +64,15 @@ describe('PayboxAuthStorage', () => {
         fs.writeFileSync(file, JSON.stringify({ ...record, signingKey: 'not-a-pbxk1', address: 'not-an-evm-address' }));
         expect(storage.load()).toBeNull();
         expect(fs.existsSync(file)).toBe(false);
+        fs.writeFileSync(file, JSON.stringify({ ...record, signingKey: 'pbxk1.abcdefghijklmnop' }));
+        expect(storage.load()).toBeNull();
+        expect(fs.existsSync(file)).toBe(false);
+        fs.writeFileSync(file, JSON.stringify({ ...record, signingKey: 'pbxk1.eyJwIjoiYWEifQ' }));
+        expect(storage.load()).toBeNull();
+        expect(fs.existsSync(file)).toBe(false);
+        fs.writeFileSync(file, JSON.stringify({ ...record, signingKey: 'pbxk1.eyJwIjoiemoiLCJzIjoiMTEifQ' }));
+        expect(storage.load()).toBeNull();
+        expect(fs.existsSync(file)).toBe(false);
         fs.writeFileSync(file, JSON.stringify({ version: 2 }));
         expect(storage.load()).toBeNull();
         expect(fs.existsSync(file)).toBe(false);
@@ -70,5 +83,23 @@ describe('PayboxAuthStorage', () => {
         storage.save(record);
         storage.clear();
         expect(fs.existsSync(file)).toBe(false);
+    });
+
+    it('fails closed and makes stale authority unrestorable when deletion fails', () => {
+        const { storage, home } = fixture();
+        storage.save(record);
+        const remover = {
+            remove: vi.fn(() => {
+                const error = new Error('permission denied') as NodeJS.ErrnoException;
+                error.code = 'EACCES';
+                throw error;
+            }),
+        };
+        const failingStorage = new PayboxAuthStorage(home, logger, remover);
+
+        expect(() => failingStorage.clear()).toThrow();
+        expect(() => new PayboxAuthStorage(home, logger, remover).load()).toThrow();
+
+        expect(new PayboxAuthStorage(home, logger).load()).toBeNull();
     });
 });

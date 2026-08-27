@@ -161,6 +161,47 @@ describe('PayboxCoordinator', () => {
         expect(coordinator.isReady()).toBe(false);
     });
 
+    it('fails closed without reloading or retaining authority when force cannot clear storage', async () => {
+        const load = vi.fn<IPayboxAuthStorage['load']>(() => ({
+            version: 1 as const,
+            tokens: {
+                clientId: 'client',
+                accessToken: 'access',
+                refreshToken: null,
+                expiresAt: null,
+                resource: null,
+                baseUrl: 'https://paybox.test',
+            },
+            signingKey: 'pbxk1.test',
+            credentialId: 'credential',
+            address: '0x0000000000000000000000000000000000000001',
+        }));
+        const clear = vi.fn(() => {
+            throw new Error('storage clear failed');
+        });
+        const authenticate = vi.fn(async () => 'game-jwt');
+        const coordinator = new PayboxCoordinator({
+            storage: { load, save: vi.fn(), clear },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                selectOneAutonomousEvmGrant: vi.fn(),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+            },
+            authenticator: { authenticate },
+        });
+
+        await expect(coordinator.authenticate({ force: false })).resolves.toEqual(
+            expect.objectContaining({ status: PayboxAuthStatus.Authenticated }),
+        );
+        await expect(coordinator.authenticate({ force: true })).rejects.toThrow('storage clear failed');
+
+        expect(load).toHaveBeenCalledOnce();
+        expect(authenticate).toHaveBeenCalledOnce();
+        expect(coordinator.isReady()).toBe(false);
+        expect(() => coordinator.get()).toThrow('not authenticated');
+    });
+
     it('surfaces a completion failure once and permits an explicit browser retry', async () => {
         const start = vi
             .fn()

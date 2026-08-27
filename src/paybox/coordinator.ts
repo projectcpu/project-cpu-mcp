@@ -37,7 +37,6 @@ export class PayboxCoordinator implements WalletProvider {
         if (input.force) {
             this.generation += 1;
             this.options.flow.cancel();
-            this.options.storage.clear();
             this.wallet = null;
             this.address = null;
             this.pendingUrl = null;
@@ -45,6 +44,7 @@ export class PayboxCoordinator implements WalletProvider {
             this.completing = null;
             this.completionError = null;
             this.authenticating = null;
+            this.options.storage.clear();
         }
         if (this.completionError !== null) {
             const error = this.completionError;
