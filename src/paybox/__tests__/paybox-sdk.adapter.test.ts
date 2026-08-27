@@ -2,7 +2,7 @@ import { getAddress } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PayboxSdkAdapter } from '../paybox-sdk.adapter.js';
-import type { PayboxSdkClientFactory, PayboxTokens } from '../types.js';
+import type { PayboxSdkClientFactory, PayboxTokenRefresher, PayboxTokens } from '../types.js';
 
 const tokens: PayboxTokens = {
     clientId: 'client',
@@ -29,6 +29,40 @@ function factory(result: unknown): {
 }
 
 describe('PayboxSdkAdapter', () => {
+    it('refreshes through the explicit SDK helper seam and normalizes the complete rotated token set', async () => {
+        const refresh = vi.fn(async () => ({
+            clientId: 'client',
+            accessToken: 'rotated-access',
+            refreshToken: 'rotated-refresh',
+            expiresAt: 123_456,
+            resource: 'https://api.paybox.test/mcp',
+        }));
+        const refresher: PayboxTokenRefresher = { refresh };
+        const adapter = new PayboxSdkAdapter(factory([]).factory, refresher);
+
+        await expect(
+            adapter.refreshTokens({
+                ...tokens,
+                refreshToken: 'old-refresh',
+                resource: 'https://api.paybox.test/mcp',
+            }),
+        ).resolves.toEqual({
+            clientId: 'client',
+            accessToken: 'rotated-access',
+            refreshToken: 'rotated-refresh',
+            expiresAt: 123_456,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        });
+        expect(refresh).toHaveBeenCalledWith('https://api.paybox.test', {
+            clientId: 'client',
+            accessToken: 'access',
+            refreshToken: 'old-refresh',
+            expiresAt: null,
+            resource: 'https://api.paybox.test/mcp',
+        });
+    });
+
     it('normalizes the declared direct array and observed credentials envelope', async () => {
         const row = {
             credential: {

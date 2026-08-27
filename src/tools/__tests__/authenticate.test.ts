@@ -112,6 +112,7 @@ describe('cpu_authenticate', () => {
             storage,
             flow,
             sdk: {
+                refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: vi.fn(async () => ({
                     grants: [
                         {

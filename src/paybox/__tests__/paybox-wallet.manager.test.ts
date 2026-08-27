@@ -7,7 +7,7 @@ import { AuthService } from '../../services/auth.service.js';
 import type { SessionManager } from '../../session/manager.js';
 import { SessionStatus } from '../../session/types.js';
 import { PayboxWalletManager } from '../paybox-wallet.manager.js';
-import type { IPayboxSdkAdapter, PayboxTokens } from '../types.js';
+import type { IPayboxSdkAdapter, PayboxTokens, PayboxWalletAuthority } from '../types.js';
 
 const key = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const account = privateKeyToAccount(key);
@@ -23,10 +23,32 @@ const tokens: PayboxTokens = {
 function manager(signature: string): { wallet: PayboxWalletManager; sign: ReturnType<typeof vi.fn> } {
     const sign = vi.fn(async () => signature);
     const sdk = { signMessage: sign } as unknown as IPayboxSdkAdapter;
-    return { wallet: new PayboxWalletManager(sdk, tokens, 'pbxk1.key', 'credential-a', account.address), sign };
+    const authority: PayboxWalletAuthority = {
+        current: async () => ({ tokens, signingKey: 'pbxk1.key' }),
+    };
+    return {
+        wallet: new PayboxWalletManager(sdk, tokens, 'pbxk1.key', 'credential-a', account.address, authority),
+        sign,
+    };
 }
 
 describe('PayboxWalletManager', () => {
+    it('loads current coordinator-owned authority before each signing request', async () => {
+        const message = 'Project CPU SIWE proof';
+        const signature = await account.signMessage({ message });
+        const sign = vi.fn(async () => signature);
+        const sdk = { signMessage: sign } as unknown as IPayboxSdkAdapter;
+        const refreshedTokens = { ...tokens, accessToken: 'rotated-access' };
+        const authority: PayboxWalletAuthority = {
+            current: vi.fn(async () => ({ tokens: refreshedTokens, signingKey: 'pbxk1.rotated' })),
+        };
+        const wallet = new PayboxWalletManager(sdk, tokens, 'pbxk1.old', 'credential-a', account.address, authority);
+
+        await expect(wallet.signMessage(message)).resolves.toBe(signature);
+        expect(authority.current).toHaveBeenCalledOnce();
+        expect(sign).toHaveBeenCalledWith(refreshedTokens, 'pbxk1.rotated', 'credential-a', message);
+    });
+
     it('returns only a valid EIP-191 signature bound to the selected wallet and credential', async () => {
         const message = 'Project CPU SIWE proof';
         const signature = await account.signMessage({ message });

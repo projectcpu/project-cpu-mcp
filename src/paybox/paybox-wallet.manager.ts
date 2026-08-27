@@ -1,7 +1,7 @@
 import { getAddress, type Address, type Hash, type Hex } from 'viem';
 
 import { verifiedPayboxMessageSignature } from './paybox-wallet.utils.js';
-import type { IPayboxSdkAdapter, PayboxTokens } from './types.js';
+import type { IPayboxSdkAdapter, PayboxTokens, PayboxWalletAuthority } from './types.js';
 import { LAUNCH_CHAIN_ID } from '../config/constants.js';
 import type {
     GasEstimateRequest,
@@ -16,10 +16,11 @@ export class PayboxWalletManager implements WalletManager {
 
     public constructor(
         private readonly sdk: IPayboxSdkAdapter,
-        private readonly tokens: PayboxTokens,
-        private readonly signingKey: string,
+        _tokens: PayboxTokens,
+        _signingKey: string,
         private readonly credentialId: string,
         address: string,
+        private readonly authority: PayboxWalletAuthority,
     ) {
         this.address = getAddress(address);
     }
@@ -33,7 +34,13 @@ export class PayboxWalletManager implements WalletManager {
     }
 
     public async signMessage(message: string): Promise<Hex> {
-        const signature = await this.sdk.signMessage(this.tokens, this.signingKey, this.credentialId, message);
+        const authority = await this.authority.current();
+        const signature = await this.sdk.signMessage(
+            authority.tokens,
+            authority.signingKey,
+            this.credentialId,
+            message,
+        );
         return verifiedPayboxMessageSignature(message, signature as Hex, this.address);
     }
 

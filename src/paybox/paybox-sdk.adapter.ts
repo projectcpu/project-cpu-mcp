@@ -1,17 +1,37 @@
-import { defaultPayboxSdkClientFactory } from './paybox-sdk.factory.js';
+import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './paybox-sdk.factory.js';
 import { PayboxWalletManager } from './paybox-wallet.manager.js';
 import { autonomousEvmGrants, signatureFromResponse } from './sdk.utils.js';
+import { payboxTokensSchema } from './types.js';
 import type {
     EligiblePayboxGrantList,
     IPayboxSdkAdapter,
     PayboxSdkClient,
     PayboxSdkClientFactory,
+    PayboxTokenRefresher,
     PayboxTokens,
+    PayboxWalletAuthority,
 } from './types.js';
 import type { WalletManager } from '../wallet/types.js';
 
 export class PayboxSdkAdapter implements IPayboxSdkAdapter {
-    public constructor(private readonly factory: PayboxSdkClientFactory = defaultPayboxSdkClientFactory) {}
+    public constructor(
+        private readonly factory: PayboxSdkClientFactory = defaultPayboxSdkClientFactory,
+        private readonly refresher: PayboxTokenRefresher = defaultPayboxTokenRefresher,
+    ) {}
+
+    public async refreshTokens(tokens: PayboxTokens): Promise<PayboxTokens> {
+        const refreshed = await this.refresher.refresh(tokens.baseUrl, {
+            clientId: tokens.clientId,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresAt: tokens.expiresAt,
+            resource: tokens.resource,
+        });
+        return payboxTokensSchema.parse({
+            ...refreshed,
+            baseUrl: tokens.baseUrl,
+        });
+    }
 
     public async listEligibleAutonomousEvmGrants(
         tokens: PayboxTokens,
@@ -25,8 +45,9 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
         signingKey: string,
         credentialId: string,
         address: string,
+        authority: PayboxWalletAuthority,
     ): WalletManager {
-        return new PayboxWalletManager(this, tokens, signingKey, credentialId, address);
+        return new PayboxWalletManager(this, tokens, signingKey, credentialId, address, authority);
     }
 
     public async signMessage(
