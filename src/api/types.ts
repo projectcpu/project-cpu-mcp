@@ -22,8 +22,16 @@ export interface ApiClientOptions {
 export interface IAuthenticator {
     /** Returns a valid bearer token, performing a (re-)login if missing or expired. */
     getAccessToken(): Promise<string>;
-    /** Forces a fresh login (used after a 401) and returns the new token. */
-    reauthenticate(): Promise<string>;
+}
+
+export enum ApiAuthenticationErrorCode {
+    AuthenticationRequired = 'AUTHENTICATION_REQUIRED',
+}
+
+export interface AuthenticationRequiredErrorData {
+    code: ApiAuthenticationErrorCode.AuthenticationRequired;
+    stateCleared: true;
+    nextTool: 'cpu_authenticate';
 }
 
 export interface SiweNonceResponse {
