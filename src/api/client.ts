@@ -8,7 +8,7 @@ import {
     type ServerHealthView,
 } from './types.js';
 import type { ILogger } from '../logger/types.js';
-import type { SessionManager } from '../session/manager.js';
+import type { IJwtSession } from '../session/types.js';
 import { errorMessage } from '../utils/error.utils.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -20,7 +20,7 @@ export interface RequestOptions {
 
 export class ApiClient {
     private readonly baseUrl: string;
-    private readonly session: SessionManager;
+    private readonly session: IJwtSession;
     private readonly logger: ILogger;
     private authenticator: IAuthenticator | null = null;
     private serverReachable = true;
@@ -65,15 +65,17 @@ export class ApiClient {
         const body = options?.body ?? null;
 
         const token = await this.authenticator.getAccessToken();
-        const first = await this.send<T>(path, method, body, { Authorization: `Bearer ${token}` });
+        const response = await this.fetchResponse(path, method, body, { Authorization: `Bearer ${token}` });
 
-        if (first.status !== HttpStatus.Unauthorized) {
-            return first;
+        if (response.status === HttpStatus.Unauthorized) {
+            this.setReachable(true, null);
+            this.logger.debug('api response', { method, path, status: response.status });
+            this.session.clearJwt();
+            this.logger.warn('authenticated request got 401 — game JWT cleared', { path });
+            throw new AuthenticationRequiredError();
         }
 
-        this.session.clearJwt();
-        this.logger.warn('authenticated request got 401 — game JWT cleared', { path });
-        throw new AuthenticationRequiredError();
+        return this.parseResponse<T>(response, method, path);
     }
 
     private async send<T>(
@@ -84,6 +86,19 @@ export class ApiClient {
         timeoutMs: number | null = null,
         trackHealth = true,
     ): Promise<ApiResponse<T>> {
+        const response = await this.fetchResponse(path, method, body, extraHeaders, timeoutMs, trackHealth);
+
+        return this.parseResponse<T>(response, method, path, trackHealth);
+    }
+
+    private async fetchResponse(
+        path: string,
+        method: HttpMethod,
+        body: unknown | null,
+        extraHeaders: Record<string, string> | null,
+        timeoutMs: number | null = null,
+        trackHealth = true,
+    ): Promise<Response> {
         const url = `${this.baseUrl}${path}`;
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
@@ -115,6 +130,15 @@ export class ApiClient {
             );
         }
 
+        return response;
+    }
+
+    private async parseResponse<T>(
+        response: Response,
+        method: HttpMethod,
+        path: string,
+        trackHealth = true,
+    ): Promise<ApiResponse<T>> {
         let data: T;
         try {
             data = await parseJsonBody<T>(response);
@@ -154,7 +178,7 @@ export class ApiClient {
         return this.baseUrl;
     }
 
-    getSession(): SessionManager {
+    getSession(): IJwtSession {
         return this.session;
     }
 }

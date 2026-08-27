@@ -1,4 +1,4 @@
-import { ApiAuthenticationErrorCode, type AuthenticationRequiredErrorData } from './types.js';
+import { ApiAuthenticationErrorCode, AuthenticationNextTool, type AuthenticationRequiredErrorData } from './types.js';
 
 // Max characters of a non-JSON response body echoed back in the error message — enough to identify
 // a gateway/error page without dumping a full HTML document into the agent's context.
@@ -13,5 +13,5 @@ export const OPEN_REVEAL_REQUESTS_PATH = '/api/v1/reveal/requests';
 export const AUTHENTICATION_REQUIRED_RECOVERY: AuthenticationRequiredErrorData = {
     code: ApiAuthenticationErrorCode.AuthenticationRequired,
     stateCleared: true,
-    nextTool: 'cpu_authenticate',
+    nextTool: AuthenticationNextTool.Authenticate,
 };

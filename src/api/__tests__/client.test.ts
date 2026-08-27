@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NoopLogger } from '../../logger/noop.logger.js';
-import type { SessionManager } from '../../session/manager.js';
+import type { IJwtSession } from '../../session/types.js';
 import { AuthenticationRequiredError } from '../authentication-required.error.js';
 import { ApiClient } from '../client.js';
 
 const logger = new NoopLogger();
 
-const mockSession = { clearJwt: vi.fn() } as unknown as SessionManager;
+const mockSession: IJwtSession = { clearJwt: vi.fn() };
 
 function createClient(): ApiClient {
     return new ApiClient({ baseUrl: 'https://api.test.com', session: mockSession, logger });
@@ -205,6 +205,31 @@ describe('ApiClient', () => {
             expect(mockFetch).toHaveBeenCalledTimes(1);
             await expect(failure).rejects.not.toThrow(rejectedToken);
             await expect(failure).rejects.not.toThrow('rejected-body');
+        });
+
+        it.each([
+            ['an empty body', ''],
+            ['a text body', 'rejected non-json body'],
+        ])('clears the JWT before parsing a 401 with %s', async (_description, rejectedBody) => {
+            const rejectedToken = 'rejected-token';
+            mockFetch.mockResolvedValueOnce(
+                new Response(rejectedBody, { status: 401, headers: { 'content-type': 'text/plain' } }),
+            );
+
+            const client = createClient();
+            const authenticator = fakeAuthenticator(rejectedToken, 'fresh');
+            client.setAuthenticator(authenticator);
+
+            const failure = client.authenticatedRequest('/protected');
+
+            await expect(failure).rejects.toMatchObject({
+                data: { code: 'AUTHENTICATION_REQUIRED', stateCleared: true, nextTool: 'cpu_authenticate' },
+            });
+            await expect(failure).rejects.toBeInstanceOf(AuthenticationRequiredError);
+            expect(mockSession.clearJwt).toHaveBeenCalledOnce();
+            expect(mockFetch).toHaveBeenCalledOnce();
+            await expect(failure).rejects.not.toThrow(rejectedToken);
+            await expect(failure).rejects.not.toThrow(rejectedBody);
         });
 
         it('fails a write without replaying its body after 401', async () => {

@@ -40,6 +40,11 @@ export interface ISessionStorage {
     exists(): boolean;
 }
 
+/** The game-session capability API clients need to revoke a rejected bearer token. */
+export interface IJwtSession {
+    clearJwt(): void;
+}
+
 export enum SessionStatus {
     Active = 'active',
     Expired = 'expired',

@@ -43,11 +43,11 @@ export function registerAuthenticateTool(server: ToolRegistrar, context: AppCont
         }
 
         // AGW mode: Device Authorization flow (asynchronous, browser approval).
-        if (!force && context.session.isAuthenticated() && context.session.getSession().jwt !== null) {
-            return { content: [{ type: 'text', text: 'Already authenticated. Session is active.' }] };
-        }
-
         if (!force && context.session.isAuthenticated()) {
+            if (context.session.getSession().jwt !== null) {
+                return { content: [{ type: 'text', text: 'Already authenticated. Session is active.' }] };
+            }
+
             await authService.getAccessToken();
             return {
                 content: [

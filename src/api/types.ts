@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { LAUNCH_CHAIN_ID, LAUNCH_NETWORK } from '../config/constants.js';
 import type { ILogger } from '../logger/types.js';
-import type { SessionManager } from '../session/manager.js';
+import type { IJwtSession } from '../session/types.js';
 
 /** HTTP status codes the client and services branch on. */
 export enum HttpStatus {
@@ -15,7 +15,7 @@ export enum HttpStatus {
 
 export interface ApiClientOptions {
     baseUrl: string;
-    session: SessionManager;
+    session: IJwtSession;
     logger: ILogger;
 }
 
@@ -28,10 +28,14 @@ export enum ApiAuthenticationErrorCode {
     AuthenticationRequired = 'AUTHENTICATION_REQUIRED',
 }
 
+export enum AuthenticationNextTool {
+    Authenticate = 'cpu_authenticate',
+}
+
 export interface AuthenticationRequiredErrorData {
     code: ApiAuthenticationErrorCode.AuthenticationRequired;
     stateCleared: true;
-    nextTool: 'cpu_authenticate';
+    nextTool: AuthenticationNextTool.Authenticate;
 }
 
 export interface SiweNonceResponse {
