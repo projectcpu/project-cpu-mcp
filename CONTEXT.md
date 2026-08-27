@@ -347,7 +347,9 @@ itself or has to be delivered. These terms govern that split and what an undeliv
   to approve. The served payment view names two gameplay legs but never the total, so a value rebuilt from it
   underpays and the request reverts (`InsufficientRevealPayment`). Surfaced on a `cpu_reveal` result as
   `ethPaid` — the whole ETH paid, contribution, randomness fee, and metadata publication charge together —
-  and `cpuBurn`, both `0` when the call settled an open request instead of opening one.
+  and `cpuBurn`, both `0` when the call settled an open request instead of opening one. The $CPU leg is
+  fundable only when the wallet holds at least the quoted burn: a spending allowance permits the transfer
+  but never substitutes for the tokens themselves.
 - **Target round** — the beacon round whose signature closes one particular request. The source stores it
   with the request and hands it back when the request is read, and no signature for it exists until the beacon
   publishes that round — so a fulfilment attempted earlier has nothing to carry and the request just stays

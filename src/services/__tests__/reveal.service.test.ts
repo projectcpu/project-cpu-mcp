@@ -176,21 +176,42 @@ type HarnessOptions = Partial<{
     state: Cell | null;
     bumpTo: number | null;
     quote: RevealQuote | Error;
+    cpuBalance: bigint | Error;
     approve: Hash | null | Error;
     reverts: boolean;
     walletChainId: number;
 }>;
 
+class FakeRevealWallet extends FakeWallet {
+    constructor(
+        chainId: number,
+        private readonly cpuBalance: bigint | Error,
+    ) {
+        super(chainId);
+    }
+
+    override async readContract(params: ReadContractParams): Promise<unknown> {
+        this.reads.push(params);
+        if (params.functionName !== 'balanceOf') {
+            return false;
+        }
+        if (this.cpuBalance instanceof Error) {
+            throw this.cpuBalance;
+        }
+        return this.cpuBalance;
+    }
+}
+
 function makeReveal(opts: HarnessOptions = {}): {
     service: RevealService;
-    wallet: FakeWallet;
+    wallet: FakeRevealWallet;
     allowance: FakeAllowance;
     cellClient: FakeCellClient;
     contracts: FakeContractClient;
     randomness: FakePushRandomnessFactory;
     reader: FakeRevealCellReader;
 } {
-    const wallet = new FakeWallet(opts.walletChainId ?? 1);
+    const wallet = new FakeRevealWallet(opts.walletChainId ?? 1, opts.cpuBalance ?? parseEther('1000000'));
     const allowance = new FakeAllowance(opts.approve ?? null);
     const cellClient = new FakeCellClient(opts.quote ?? DEFAULT_QUOTE);
     const contracts = new FakeContractClient(opts.reverts ?? false);
@@ -226,6 +247,7 @@ describe('RevealService on a push randomness source', () => {
         const result = await p;
 
         expect(h.allowance.calls).toHaveLength(0);
+        expect(h.wallet.reads).toHaveLength(0);
         expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 5_000n }]);
         expect(result.genesis).toBe(true);
         expect(result.ethPaid).toBe(formatEther(4_000n));
@@ -304,6 +326,57 @@ describe('RevealService on a push randomness source', () => {
         expect(value).toBeGreaterThanOrEqual(4_000n);
         expect(value).toBe(5_000n);
         expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: 9n }]);
+    });
+
+    it('explains a $CPU shortfall and the autonomous recovery path before approval or reveal', async () => {
+        const h = makeReveal({
+            quote: {
+                ethContributionWei: parseEther('0.00008'),
+                randomnessFeeWei: parseEther('0.00002'),
+                totalRequiredWei: parseEther('0.0001'),
+                cpuBurnWei: parseEther('10'),
+            },
+            cpuBalance: parseEther('2'),
+        });
+
+        const outcome = h.service.reveal('42').then(
+            () => null,
+            (error: unknown) => error,
+        );
+        await vi.runAllTimersAsync();
+        const error = await outcome;
+
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(
+            /Reveal cell 42 currently costs 0\.0001 ETH \+ 10 \$CPU\. Wallet has 2 \$CPU; shortfall 8 \$CPU\./,
+        );
+        expect((error as Error).message).toMatch(/cpu_quote_swap.*cpu_swap.*sell: "ETH".*cpu_reveal/is);
+        expect((error as Error).message).not.toMatch(/wait for (?:the )?operator|ask (?:the )?operator|stop and/i);
+        expect(h.allowance.calls).toHaveLength(0);
+        expect(h.cellClient.requests).toHaveLength(0);
+        expect(h.wallet.sent).toHaveLength(0);
+    });
+
+    it('continues the existing reveal flow when the $CPU balance preflight cannot be read', async () => {
+        const h = makeReveal({
+            quote: {
+                ethContributionWei: 3_000n,
+                randomnessFeeWei: 1_000n,
+                totalRequiredWei: 4_000n,
+                cpuBurnWei: 9n,
+            },
+            cpuBalance: new Error('balanceOf unavailable'),
+            approve: APPROVE_HASH,
+            bumpTo: 1,
+        });
+
+        const pending = h.service.reveal('42');
+        await vi.runAllTimersAsync();
+        const result = await pending;
+
+        expect(h.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: 9n }]);
+        expect(h.cellClient.requests).toEqual([{ cell: CELL, tokenId: 42n, value: 5_000n }]);
+        expect(result.requestTxHash).toBe(REQUEST_HASH);
     });
 
     it('still overshoots the contribution when the fee leg quotes zero off-chain, which is when a send of the bare total underpays', async () => {
@@ -659,6 +732,7 @@ type SelfServiceOptions = Partial<{
     pending: boolean;
     revealCount: number;
     cpuBurnWei: bigint;
+    cpuBalance: bigint;
     approve: Hash | null;
     beacon: Array<BeaconRoundResult>;
     openRequests: Array<OpenRevealRequestView>;
@@ -702,6 +776,7 @@ function makeSelfService(opts: SelfServiceOptions = {}): SelfServiceHarness {
     const wallet = new ScriptedWallet(
         {
             quoteReveal: [SELF_CONTRIBUTION, FEE, SELF_CONTRIBUTION + FEE, cpuBurnWei],
+            balanceOf: opts.cpuBalance ?? cpuBurnWei,
             requestOf: [opts.consumer ?? SELF_CELL_ON_WIRE, opts.adapterRound ?? round],
         },
         receiptLogs,

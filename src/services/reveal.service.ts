@@ -9,7 +9,7 @@ import {
     REVEAL_PRIME_ATTEMPTS,
     REVEAL_PRIME_INTERVAL_MS,
 } from './reveal.constants.js';
-import { bufferedRevealValue, revealDepositsOf, revealRequestedOf } from './reveal.utils.js';
+import { bufferedRevealValue, revealCpuShortfallMessage, revealDepositsOf, revealRequestedOf } from './reveal.utils.js';
 import {
     type AppConfig,
     type FundedRevealRequest,
@@ -27,6 +27,7 @@ import {
     type SelfServiceRevealInput,
 } from './types.js';
 import { RandomnessKind } from '../api/types.js';
+import { ERC20_ABI } from '../contracts/erc20.abi.js';
 import type { ILogger } from '../logger/types.js';
 import type { Cell, RevealCellReader } from '../map/types.js';
 import { sameAddress } from '../randomness/request.utils.js';
@@ -44,7 +45,7 @@ import {
 import { sleep } from '../utils/async.utils.js';
 import { errorMessage } from '../utils/error.utils.js';
 import { cpuFromWei, ethFromWei } from '../utils/format.utils.js';
-import type { ConfirmedTx, IContractClient, WalletProvider } from '../wallet/types.js';
+import type { ConfirmedTx, IContractClient, WalletManager, WalletProvider } from '../wallet/types.js';
 
 export class RevealService {
     private readonly wallet: WalletProvider;
@@ -542,6 +543,7 @@ export class RevealService {
     private async fundReveal(
         config: AppConfig,
         cell: Address,
+        tokenId: string,
     ): Promise<{ approveTxHash: Hash | null; quote: RevealQuote }> {
         const quote = await this.cellClient.quoteReveal(cell);
         if (quote.cpuBurnWei === 0n) {
@@ -551,13 +553,37 @@ export class RevealService {
         if (!isAddress(cpuToken, { strict: false })) {
             throw new Error(`$CPU token is not configured for network ${config.network}; cannot pay for a reveal.`);
         }
+        const cpuBalanceWei = await this.readCpuBalance(this.wallet.get(), cpuToken);
+        if (cpuBalanceWei !== null && cpuBalanceWei < quote.cpuBurnWei) {
+            throw new Error(revealCpuShortfallMessage(tokenId, quote, cpuBalanceWei));
+        }
         const approveTxHash = await this.allowance.ensureAllowance(cpuToken, cell, quote.cpuBurnWei);
         return { approveTxHash, quote };
     }
 
+    private async readCpuBalance(wallet: WalletManager, cpuToken: Address): Promise<bigint | null> {
+        try {
+            const balance = await wallet.readContract({
+                address: cpuToken,
+                abi: ERC20_ABI,
+                functionName: 'balanceOf',
+                args: [wallet.getAddress()],
+            });
+            if (typeof balance !== 'bigint') {
+                throw new Error(`balanceOf returned ${typeof balance}`);
+            }
+            return balance;
+        } catch (error) {
+            this.logger.warn('could not preflight reveal $CPU balance; continuing with on-chain validation', {
+                error: errorMessage(error),
+            });
+            return null;
+        }
+    }
+
     private async prepareRevealRequest(input: PushRevealInput | SelfServiceRevealInput): Promise<FundedRevealRequest> {
         const { randomness, config, cell, tokenId, genesis } = input;
-        const { approveTxHash, quote } = await this.fundReveal(config, cell);
+        const { approveTxHash, quote } = await this.fundReveal(config, cell, tokenId);
         const value = bufferedRevealValue(quote.totalRequiredWei);
 
         this.logger.info('requesting on-chain reveal', {
