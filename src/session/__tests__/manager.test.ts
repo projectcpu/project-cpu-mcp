@@ -108,6 +108,28 @@ describe('SessionManager', () => {
         expect(() => manager.setJwt('new-jwt')).toThrow(/no session/i);
     });
 
+    it('clearJwt preserves wallet session material while removing the game token', () => {
+        const session = createSession({
+            walletMode: WalletMode.AGW,
+            sessionPrivateKey: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
+            sessionConfig: { accountAddress: '0xWALLET', sessionHash: '0xHASH', policies: {}, expiresAt: 1 },
+        });
+        storage._seed(session);
+        manager.initialize();
+
+        manager.clearJwt();
+
+        expect(manager.getSession()).toEqual(
+            expect.objectContaining({
+                jwt: null,
+                walletMode: WalletMode.AGW,
+                sessionPrivateKey: session.sessionPrivateKey,
+                sessionConfig: session.sessionConfig,
+            }),
+        );
+        expect(storage.load()).toEqual(expect.objectContaining({ jwt: null, address: session.address }));
+    });
+
     it('setSession replaces entire session in memory and storage', () => {
         manager.initialize();
         const session = createSession({ address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });

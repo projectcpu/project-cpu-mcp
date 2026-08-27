@@ -1,3 +1,4 @@
+import { AuthenticationRequiredError } from './authentication-required.error.js';
 import { parseJsonBody } from './response.utils.js';
 import {
     type ApiClientOptions,
@@ -52,8 +53,8 @@ export class ApiClient {
 
     /**
      * Request with a `Authorization: Bearer <jwt>` header. The token is obtained from the
-     * authenticator (which (re-)logs in when missing/expired). On a 401 the authenticator is
-     * asked to re-authenticate and the request is retried exactly once.
+     * authenticator (which logs in when missing/expired). A 401 clears the game JWT and asks the
+     * caller to authenticate explicitly before choosing whether to retry the operation.
      */
     async authenticatedRequest<T>(path: string, options: RequestOptions | null = null): Promise<ApiResponse<T>> {
         if (!this.authenticator) {
@@ -70,9 +71,9 @@ export class ApiClient {
             return first;
         }
 
-        this.logger.warn('authenticated request got 401 — re-authenticating and retrying once', { path });
-        const fresh = await this.authenticator.reauthenticate();
-        return this.send<T>(path, method, body, { Authorization: `Bearer ${fresh}` });
+        this.session.clearJwt();
+        this.logger.warn('authenticated request got 401 — game JWT cleared', { path });
+        throw new AuthenticationRequiredError();
     }
 
     private async send<T>(
