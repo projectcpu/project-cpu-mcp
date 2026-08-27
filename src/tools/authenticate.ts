@@ -43,8 +43,17 @@ export function registerAuthenticateTool(server: ToolRegistrar, context: AppCont
         }
 
         // AGW mode: Device Authorization flow (asynchronous, browser approval).
-        if (!force && context.session.isAuthenticated()) {
+        if (!force && context.session.isAuthenticated() && context.session.getSession().jwt !== null) {
             return { content: [{ type: 'text', text: 'Already authenticated. Session is active.' }] };
+        }
+
+        if (!force && context.session.isAuthenticated()) {
+            await authService.getAccessToken();
+            return {
+                content: [
+                    { type: 'text', text: 'Authenticated. Session token restored from the retained wallet session.' },
+                ],
+            };
         }
 
         const pending = authService.getPendingAuth();
