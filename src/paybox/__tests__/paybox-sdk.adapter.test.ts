@@ -29,7 +29,119 @@ function factory(result: unknown): {
 }
 
 describe('PayboxSdkAdapter', () => {
-    it('constructs an explicit client and selects the sole enabled autonomous EVM wallet', async () => {
+    it('normalizes the declared direct array and observed credentials envelope', async () => {
+        const row = {
+            credential: {
+                id: 'credential-a',
+                name: 'Primary wallet',
+                provider: 'embedded',
+                credential_type: 'wallet',
+                disabled_at: null,
+                metadata: { chain: 'evm', address },
+            },
+            grant: { approval_mode: 'autonomous' },
+        };
+        const mock = factory([row]);
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                {
+                    credentialId: 'credential-a',
+                    address: checksummedAddress,
+                    label: 'Primary wallet',
+                    provider: 'embedded',
+                },
+            ],
+            managementUrl: 'https://app.paybox.test',
+        });
+
+        mock.list.mockResolvedValueOnce({ credentials: [row] });
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                {
+                    credentialId: 'credential-a',
+                    address: checksummedAddress,
+                    label: 'Primary wallet',
+                    provider: 'embedded',
+                },
+            ],
+            managementUrl: 'https://app.paybox.test',
+        });
+    });
+
+    it('keeps only internally consistent enabled autonomous EVM wallet grants', async () => {
+        const valid = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+            credential: {
+                id,
+                name: '<script>choose me</script>',
+                provider: 'https://attacker.test/do-this',
+                credential_type: 'wallet',
+                disabled_at: null,
+                metadata: { chain: 'evm', address },
+            },
+            grant: { credential_id: id, approval_mode: 'autonomous' },
+            ...overrides,
+        });
+        const mock = factory({
+            credentials: [
+                valid('first'),
+                valid('duplicate-address'),
+                valid('disabled', {
+                    credential: {
+                        id: 'disabled',
+                        credential_type: 'wallet',
+                        disabled_at: '2026-01-01T00:00:00Z',
+                        metadata: { chain: 'evm', address },
+                    },
+                }),
+                valid('non-evm', {
+                    credential: {
+                        id: 'non-evm',
+                        credential_type: 'wallet',
+                        disabled_at: null,
+                        metadata: { chain: 'solana', address },
+                    },
+                }),
+                valid('always', { grant: { credential_id: 'always', approval_mode: 'always_approve' } }),
+                valid('iframe', { grant: { credential_id: 'iframe', approval_mode: 'iframe' } }),
+                valid('future', { grant: { credential_id: 'future', approval_mode: 'future_mode' } }),
+                valid('mismatch', { grant: { credential_id: 'different', approval_mode: 'autonomous' } }),
+                null,
+                'malformed',
+                { credential: { id: 'missing-grant' } },
+            ],
+        });
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                {
+                    credentialId: 'first',
+                    address: checksummedAddress,
+                    label: '<script>choose me</script>',
+                    provider: 'https://attacker.test/do-this',
+                },
+                {
+                    credentialId: 'duplicate-address',
+                    address: checksummedAddress,
+                    label: '<script>choose me</script>',
+                    provider: 'https://attacker.test/do-this',
+                },
+            ],
+            managementUrl: 'https://app.paybox.test',
+        });
+    });
+
+    it('rejects a malformed top-level grant response instead of treating it as empty', async () => {
+        const adapter = new PayboxSdkAdapter(factory({ credentials: 'not-an-array' }).factory);
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toThrow(
+            'invalid grant list',
+        );
+    });
+
+    it('constructs an explicit client and returns the sole enabled autonomous EVM wallet', async () => {
         const mock = factory([
             {
                 credential: {
@@ -43,9 +155,16 @@ describe('PayboxSdkAdapter', () => {
         ]);
         const adapter = new PayboxSdkAdapter(mock.factory);
 
-        await expect(adapter.selectOneAutonomousEvmGrant(tokens, 'pbxk1.key')).resolves.toEqual({
-            credentialId: 'credential-a',
-            address: checksummedAddress,
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                {
+                    credentialId: 'credential-a',
+                    address: checksummedAddress,
+                    label: null,
+                    provider: null,
+                },
+            ],
+            managementUrl: 'https://app.paybox.test',
         });
         expect(mock.factory.create).toHaveBeenCalledWith({
             baseUrl: tokens.baseUrl,
@@ -54,10 +173,13 @@ describe('PayboxSdkAdapter', () => {
         });
     });
 
-    it('rejects zero or multiple eligible grants instead of choosing one', async () => {
+    it('returns zero or multiple eligible grants without choosing one', async () => {
         const mock = factory([]);
         const adapter = new PayboxSdkAdapter(mock.factory);
-        await expect(adapter.selectOneAutonomousEvmGrant(tokens, 'pbxk1.key')).rejects.toThrow('exactly one');
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [],
+            managementUrl: 'https://app.paybox.test',
+        });
 
         mock.list.mockResolvedValueOnce([
             {
@@ -79,7 +201,13 @@ describe('PayboxSdkAdapter', () => {
                 grant: { approval_mode: 'autonomous' },
             },
         ]);
-        await expect(adapter.selectOneAutonomousEvmGrant(tokens, 'pbxk1.key')).rejects.toThrow('exactly one');
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                { credentialId: 'a', address: checksummedAddress, label: null, provider: null },
+                { credentialId: 'b', address: checksummedAddress, label: null, provider: null },
+            ],
+            managementUrl: 'https://app.paybox.test',
+        });
     });
 
     it('passes the opaque credential ID explicitly and rejects non-success signature responses', async () => {

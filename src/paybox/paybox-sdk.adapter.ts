@@ -1,8 +1,8 @@
 import { defaultPayboxSdkClientFactory } from './paybox-sdk.factory.js';
 import { PayboxWalletManager } from './paybox-wallet.manager.js';
-import { oneAutonomousEvmGrant, signatureFromResponse } from './sdk.utils.js';
+import { autonomousEvmGrants, signatureFromResponse } from './sdk.utils.js';
 import type {
-    EligiblePayboxGrant,
+    EligiblePayboxGrantList,
     IPayboxSdkAdapter,
     PayboxSdkClient,
     PayboxSdkClientFactory,
@@ -13,8 +13,11 @@ import type { WalletManager } from '../wallet/types.js';
 export class PayboxSdkAdapter implements IPayboxSdkAdapter {
     public constructor(private readonly factory: PayboxSdkClientFactory = defaultPayboxSdkClientFactory) {}
 
-    public async selectOneAutonomousEvmGrant(tokens: PayboxTokens, signingKey: string): Promise<EligiblePayboxGrant> {
-        return oneAutonomousEvmGrant(await this.client(tokens, signingKey).listCredentials());
+    public async listEligibleAutonomousEvmGrants(
+        tokens: PayboxTokens,
+        signingKey: string,
+    ): Promise<EligiblePayboxGrantList> {
+        return autonomousEvmGrants(await this.client(tokens, signingKey).listCredentials(), tokens.baseUrl);
     }
 
     public createWallet(

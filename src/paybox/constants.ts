@@ -7,3 +7,5 @@ export const PAYBOX_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 export const PAYBOX_KEY_PREFIX = 'pbxk1.';
 export const PAYBOX_AUTH_REQUIRED_INSTRUCTIONS =
     'Open the authorization URL in a local browser to continue Paybox authentication.';
+export const PAYBOX_FULL_ACCESS_WALLET_INSTRUCTIONS =
+    'Create or grant an EVM Wallet with autonomous access in Paybox, then call cpu_authenticate again.';

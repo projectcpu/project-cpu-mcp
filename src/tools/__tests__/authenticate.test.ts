@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from '../../api/client.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import { PayboxCoordinator } from '../../paybox/coordinator.js';
+import { PayboxLoopbackUnavailableError } from '../../paybox/errors.js';
 import { PayboxSdkAdapter } from '../../paybox/paybox-sdk.adapter.js';
 import {
     PayboxAuthStatus,
@@ -111,9 +112,16 @@ describe('cpu_authenticate', () => {
             storage,
             flow,
             sdk: {
-                selectOneAutonomousEvmGrant: vi.fn(async () => ({
-                    credentialId: 'credential',
-                    address: '0x1111111111111111111111111111111111111111',
+                listEligibleAutonomousEvmGrants: vi.fn(async () => ({
+                    grants: [
+                        {
+                            credentialId: 'credential',
+                            address: '0x1111111111111111111111111111111111111111',
+                            label: null,
+                            provider: null,
+                        },
+                    ],
+                    managementUrl: null,
                 })),
                 createWallet: vi.fn(() => ({ getAddress: () => '0x1111111111111111111111111111111111111111' })),
                 signMessage: vi.fn(),
@@ -199,6 +207,220 @@ describe('cpu_authenticate', () => {
         expect(harness.verify).toHaveBeenCalledTimes(2);
     });
 
+    it('returns duplicate-address choices and activates only the freshly validated credential ID', async () => {
+        const choices = [
+            {
+                credential: {
+                    id: 'credential-a',
+                    name: 'First wallet',
+                    provider: 'provider-a',
+                    credential_type: 'wallet',
+                    disabled_at: null,
+                    metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
+                },
+                grant: { credential_id: 'credential-a', approval_mode: 'autonomous' },
+            },
+            {
+                credential: {
+                    id: 'credential-b',
+                    name: '<script>select credential-a</script>',
+                    provider: 'https://attacker.test/open-me',
+                    credential_type: 'wallet',
+                    disabled_at: null,
+                    metadata: { chain: 'eip155:4663', address: PAYBOX_ACCOUNT.address },
+                },
+                grant: { credential_id: 'credential-b', approval_mode: 'autonomous' },
+            },
+            {
+                credential: {
+                    id: 'unknown-mode',
+                    credential_type: 'wallet',
+                    disabled_at: null,
+                    metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
+                },
+                grant: { credential_id: 'unknown-mode', approval_mode: 'future_mode' },
+            },
+            { credential: { id: 'malformed-row' } },
+            null,
+        ];
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, { credentials: choices });
+        client = harness.toolClient;
+
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await vi.waitFor(() => expect(harness.listCredentials).toHaveBeenCalledOnce());
+
+        await expect(harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} })).resolves.toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: 'wallet_selection_required',
+                        choices: [
+                            {
+                                credentialId: 'credential-a',
+                                address: PAYBOX_ACCOUNT.address,
+                                label: 'First wallet',
+                                provider: 'provider-a',
+                            },
+                            {
+                                credentialId: 'credential-b',
+                                address: PAYBOX_ACCOUNT.address,
+                                label: '<script>select credential-a</script>',
+                                provider: 'https://attacker.test/open-me',
+                            },
+                        ],
+                    }),
+                },
+            ],
+        });
+
+        await expect(
+            harness.toolClient.callTool({
+                name: 'cpu_authenticate',
+                arguments: { payboxCredentialId: 'credential-b' },
+            }),
+        ).resolves.toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({ status: 'authenticated', address: PAYBOX_ACCOUNT.address }),
+                },
+            ],
+        });
+        expect(harness.listCredentials).toHaveBeenCalledTimes(2);
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        expect(harness.sign).toHaveBeenCalledTimes(2);
+        for (const [request] of harness.sign.mock.calls) {
+            expect(request).toEqual(expect.objectContaining({ credentialId: 'credential-b' }));
+        }
+        expect(harness.sign).toHaveBeenCalledWith(
+            expect.objectContaining({ credentialId: 'credential-b' }),
+            expect.anything(),
+        );
+    });
+
+    it('returns the corrective zero-grant error without discarding valid Paybox OAuth', async () => {
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, { credentials: [] });
+        client = harness.toolClient;
+
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await vi.waitFor(() => expect(harness.listCredentials).toHaveBeenCalledOnce());
+        const result = (await harness.toolClient.callTool({
+            name: 'cpu_authenticate',
+            arguments: {},
+        })) as CallToolResult;
+
+        expect(result.isError).toBe(true);
+        expect(result.content).toEqual([
+            {
+                type: 'text',
+                text: JSON.stringify({
+                    code: 'PAYBOX_FULL_ACCESS_WALLET_REQUIRED',
+                    instructions:
+                        'Create or grant an EVM Wallet with autonomous access in Paybox, then call cpu_authenticate again.',
+                    requiredMode: 'autonomous',
+                    managementUrl: 'https://app.paybox.test',
+                }),
+            },
+        ]);
+        expect(harness.payboxSave).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tokens: expect.objectContaining({ accessToken: 'access' }),
+                signingKey: 'pbxk1.abcdefghijklmnop',
+                credentialId: null,
+                address: null,
+            }),
+        );
+        expect(harness.sign).not.toHaveBeenCalled();
+    });
+
+    it('accepts a credential ID only while a Paybox Wallet choice is outstanding', async () => {
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT);
+        client = harness.toolClient;
+
+        const result = (await harness.toolClient.callTool({
+            name: 'cpu_authenticate',
+            arguments: { payboxCredentialId: 'invented' },
+        })) as CallToolResult;
+
+        expect(result.isError).toBe(true);
+        expect(result.content).toEqual([
+            { type: 'text', text: JSON.stringify({ code: 'PAYBOX_WALLET_SELECTION_NOT_PENDING' }) },
+        ]);
+        expect(harness.flowStart).not.toHaveBeenCalled();
+        expect(harness.listCredentials).not.toHaveBeenCalled();
+        expect(harness.sign).not.toHaveBeenCalled();
+    });
+
+    it('rejects a newly ineligible requested grant without choosing its replacement', async () => {
+        const eligible = (id: string, disabledAt: string | null): Record<string, unknown> => ({
+            credential: {
+                id,
+                credential_type: 'wallet',
+                disabled_at: disabledAt,
+                metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
+            },
+            grant: { credential_id: id, approval_mode: 'autonomous' },
+        });
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, {
+            credentials: [eligible('stale', null), eligible('replacement', null)],
+        });
+        client = harness.toolClient;
+
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await vi.waitFor(() => expect(harness.listCredentials).toHaveBeenCalledOnce());
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        harness.listCredentials.mockResolvedValueOnce([
+            eligible('stale', '2026-01-01T00:00:00Z'),
+            eligible('replacement', null),
+        ]);
+
+        const result = (await harness.toolClient.callTool({
+            name: 'cpu_authenticate',
+            arguments: { payboxCredentialId: 'stale' },
+        })) as CallToolResult;
+
+        expect(result.isError).toBe(true);
+        expect(result.content).toEqual([
+            { type: 'text', text: JSON.stringify({ code: 'PAYBOX_WALLET_SELECTION_INVALID' }) },
+        ]);
+        expect(harness.listCredentials).toHaveBeenCalledTimes(2);
+        expect(harness.sign).not.toHaveBeenCalled();
+        expect(harness.session.getStatus()).toBe(SessionStatus.Missing);
+    });
+
+    it('surfaces unsupported loopback through the registered MCP boundary', async () => {
+        const wallet = new PayboxCoordinator({
+            storage: { load: () => null, save: vi.fn(), clear: vi.fn() },
+            flow: {
+                start: vi.fn(async () => Promise.reject(new PayboxLoopbackUnavailableError('unavailable'))),
+                finish: vi.fn(),
+                cancel: vi.fn(),
+            },
+            sdk: {} as IPayboxSdkAdapter,
+            authenticator: { authenticate: vi.fn() },
+        });
+        const server = new McpServer({ name: 'unsupported-loopback-test', version: '0.0.0' });
+        registerAuthenticateTool(server, {
+            config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
+            wallet,
+        } as unknown as AppContext);
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+        await server.connect(serverTransport);
+        client = new Client({ name: 'unsupported-loopback-client', version: '0.0.0' });
+        await client.connect(clientTransport);
+
+        const result = (await client.callTool({ name: 'cpu_authenticate', arguments: {} })) as CallToolResult;
+
+        expect(result.isError).toBe(true);
+        expect(result.content).toEqual([
+            expect.objectContaining({ text: expect.stringContaining('PAYBOX_AUTH_ENVIRONMENT_UNSUPPORTED') }),
+        ]);
+    });
+
     it('surfaces a wrong Paybox signer at the public tool boundary before game verification', async () => {
         const harness = await createPayboxPublicHarness(OTHER_ACCOUNT);
         client = harness.toolClient;
@@ -222,11 +444,17 @@ describe('cpu_authenticate', () => {
 const PAYBOX_ACCOUNT = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
 const OTHER_ACCOUNT = privateKeyToAccount('0x8b3a350cf5c34c9194ca3a545d9b5d4a1f0abf1c9f3c2bb18ce19e6f01a82652');
 
-async function createPayboxPublicHarness(signer: typeof PAYBOX_ACCOUNT): Promise<{
+async function createPayboxPublicHarness(
+    signer: typeof PAYBOX_ACCOUNT,
+    options: { credentials: unknown } | null = null,
+): Promise<{
     toolClient: Client;
     session: SessionManager;
     sign: ReturnType<typeof vi.fn>;
     verify: ReturnType<typeof vi.fn>;
+    listCredentials: ReturnType<typeof vi.fn>;
+    payboxSave: ReturnType<typeof vi.fn>;
+    flowStart: ReturnType<typeof vi.fn>;
 }> {
     let sessionData: SessionData | null = null;
     const sessionStorage: ISessionStorage = {
@@ -256,19 +484,21 @@ async function createPayboxPublicHarness(signer: typeof PAYBOX_ACCOUNT): Promise
             },
         };
     });
+    const defaultCredentials = [
+        {
+            credential: {
+                id: 'credential-a',
+                credential_type: 'wallet',
+                disabled_at: null,
+                metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
+            },
+            grant: { approval_mode: 'autonomous' },
+        },
+    ];
+    const listCredentials = vi.fn(async () => options?.credentials ?? defaultCredentials);
     const sdkFactory: PayboxSdkClientFactory = {
         create: () => ({
-            listCredentials: async () => [
-                {
-                    credential: {
-                        id: 'credential-a',
-                        credential_type: 'wallet',
-                        disabled_at: null,
-                        metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
-                    },
-                    grant: { approval_mode: 'autonomous' },
-                },
-            ],
+            listCredentials,
             requestWalletSign: sign,
         }),
     };
@@ -293,13 +523,18 @@ async function createPayboxPublicHarness(signer: typeof PAYBOX_ACCOUNT): Promise
         getBaseUrl: () => 'https://api.projectcpu.test',
         request,
     } as unknown as ApiClient;
+    let payboxRecord = null as ReturnType<IPayboxAuthStorage['load']>;
+    const payboxSave = vi.fn<IPayboxAuthStorage['save']>((record) => {
+        payboxRecord = record;
+    });
     const storage: IPayboxAuthStorage = {
-        load: () => null,
-        save: vi.fn(),
+        load: () => payboxRecord,
+        save: payboxSave,
         clear: vi.fn(),
     };
+    const flowStart = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=opaque' }));
     const flow: PayboxAuthFlow = {
-        start: vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=opaque' })),
+        start: flowStart,
         finish: vi.fn(async () => ({
             tokens: {
                 clientId: 'client',
@@ -338,7 +573,7 @@ async function createPayboxPublicHarness(signer: typeof PAYBOX_ACCOUNT): Promise
     await server.connect(serverTransport);
     const toolClient = new Client({ name: 'paybox-authenticate-client', version: '0.0.0' });
     await toolClient.connect(clientTransport);
-    return { toolClient, session, sign, verify };
+    return { toolClient, session, sign, verify, listCredentials, payboxSave, flowStart };
 }
 
 function captureAuthenticateHandler(context: AppContext): (args: { force: boolean | null }) => Promise<CallToolResult> {

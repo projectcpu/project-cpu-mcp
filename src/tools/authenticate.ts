@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import { PayboxCoordinator } from '../paybox/coordinator.js';
+import { PayboxWalletSelectionError } from '../paybox/errors.js';
+import { PayboxErrorCode } from '../paybox/types.js';
 import type { AppContext } from '../types.js';
 import { WalletMode } from '../types.js';
 import { PERSONA_BRIEF_MARKER } from './persona/constants.js';
@@ -24,6 +26,12 @@ const inputSchema = {
         .nullable()
         .default(null)
         .describe('Ignore the stored session and re-run authentication from scratch.'),
+    payboxCredentialId: z
+        .string()
+        .min(1)
+        .nullable()
+        .default(null)
+        .describe('Opaque Paybox credential ID returned by an outstanding wallet selection.'),
 };
 
 export function registerAuthenticateTool(server: ToolRegistrar, context: AppContext): void {
@@ -32,13 +40,17 @@ export function registerAuthenticateTool(server: ToolRegistrar, context: AppCont
 
     server.registerTool('cpu_authenticate', { description, inputSchema }, async (args) => {
         const force = args.force ?? false;
+        const payboxCredentialId = args.payboxCredentialId ?? null;
 
         if (context.config.WALLET_MODE === WalletMode.PAYBOX) {
             if (!(context.wallet instanceof PayboxCoordinator)) {
                 throw new Error('Paybox wallet mode is not configured.');
             }
-            const result = await context.wallet.authenticate({ force });
+            const result = await context.wallet.authenticate({ force, payboxCredentialId });
             return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+        }
+        if (payboxCredentialId !== null) {
+            throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
         }
 
         // EVM mode: SIWE signs locally with the env private key — no browser step.

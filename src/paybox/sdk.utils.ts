@@ -6,13 +6,13 @@ import {
     PAYBOX_SUCCESS_STATUS,
     PAYBOX_WALLET_TYPE,
 } from './sdk.constants.js';
-import type { EligiblePayboxGrant } from './types.js';
+import type { EligiblePayboxGrant, EligiblePayboxGrantList } from './types.js';
 
-export function oneAutonomousEvmGrant(value: unknown): EligiblePayboxGrant {
-    const rows = grantRows(value);
-    const grants = rows.flatMap(normalizeGrant);
-    if (grants.length !== 1) throw new Error('Paybox requires exactly one eligible autonomous EVM wallet grant.');
-    return grants[0] as EligiblePayboxGrant;
+export function autonomousEvmGrants(value: unknown, baseUrl: string): EligiblePayboxGrantList {
+    return {
+        grants: grantRows(value).flatMap(normalizeGrant),
+        managementUrl: managementUrlFromBaseUrl(baseUrl),
+    };
 }
 
 export function signatureFromResponse(value: unknown, credentialId: string): Hex {
@@ -46,6 +46,7 @@ function normalizeGrant(value: unknown): Array<EligiblePayboxGrant> {
         credential.credential_type !== PAYBOX_WALLET_TYPE ||
         credential.disabled_at !== null ||
         grant.approval_mode !== PAYBOX_AUTONOMOUS_MODE ||
+        (grant.credential_id !== undefined && grant.credential_id !== credential.id) ||
         typeof credential.id !== 'string' ||
         credential.id.length === 0
     ) {
@@ -54,7 +55,23 @@ function normalizeGrant(value: unknown): Array<EligiblePayboxGrant> {
     const metadata = isRecord(credential.metadata) ? credential.metadata : null;
     const address = metadata === null ? null : addressField(metadata);
     if (metadata === null || address === null || !isEvm(metadata)) return [];
-    return [{ credentialId: credential.id, address: getAddress(address) }];
+    return [
+        {
+            credentialId: credential.id,
+            address: getAddress(address),
+            label: displayField(credential.name),
+            provider: displayField(credential.provider),
+        },
+    ];
+}
+
+function displayField(value: unknown): string | null {
+    return typeof value === 'string' ? value : null;
+}
+
+function managementUrlFromBaseUrl(baseUrl: string): string | null {
+    const match = baseUrl.replace(/\/+$/, '').match(/^(https?:\/\/)api\.(.+)$/);
+    return match === null ? null : `${match[1]}app.${match[2]}`;
 }
 
 function addressField(metadata: Record<string, unknown>): string | null {

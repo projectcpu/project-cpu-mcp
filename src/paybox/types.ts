@@ -7,6 +7,17 @@ import type { WalletManager } from '../wallet/types.js';
 export enum PayboxAuthStatus {
     Authenticated = 'authenticated',
     AuthRequired = 'paybox_auth_required',
+    WalletSelectionRequired = 'wallet_selection_required',
+}
+
+export enum PayboxApprovalMode {
+    Autonomous = 'autonomous',
+}
+
+export enum PayboxErrorCode {
+    FullAccessWalletRequired = 'PAYBOX_FULL_ACCESS_WALLET_REQUIRED',
+    WalletSelectionInvalid = 'PAYBOX_WALLET_SELECTION_INVALID',
+    WalletSelectionNotPending = 'PAYBOX_WALLET_SELECTION_NOT_PENDING',
 }
 
 export const payboxTokensSchema = z.object({
@@ -30,9 +41,14 @@ export const payboxAuthRecordSchema = z
             .nullable(),
     })
     .superRefine((record, context) => {
-        const values = [record.tokens, record.signingKey, record.credentialId, record.address];
-        if (values.some((value) => value === null) && values.some((value) => value !== null)) {
+        if ((record.tokens === null) !== (record.signingKey === null)) {
             context.addIssue({ code: z.ZodIssueCode.custom, message: 'incomplete Paybox auth record' });
+        }
+        if ((record.credentialId === null) !== (record.address === null)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: 'incomplete Paybox Wallet selection' });
+        }
+        if (record.tokens === null && record.credentialId !== null) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: 'Paybox Wallet selection has no auth material' });
         }
     });
 
@@ -74,6 +90,13 @@ export interface OAuthTokenResponse {
 export interface EligiblePayboxGrant {
     credentialId: string;
     address: string;
+    label: string | null;
+    provider: string | null;
+}
+
+export interface EligiblePayboxGrantList {
+    grants: Array<EligiblePayboxGrant>;
+    managementUrl: string | null;
 }
 
 export interface PayboxAuthFlow {
@@ -106,14 +129,27 @@ export interface LoopbackAuthFlowOptions {
 
 export interface PayboxAuthenticateInput {
     force: boolean;
+    payboxCredentialId: string | null;
 }
 
 export type PayboxAuthenticateResult =
     | { status: PayboxAuthStatus.AuthRequired; instructions: string; authorizationUrl: string }
-    | { status: PayboxAuthStatus.Authenticated; address: string };
+    | { status: PayboxAuthStatus.Authenticated; address: string }
+    | { status: PayboxAuthStatus.WalletSelectionRequired; choices: Array<EligiblePayboxGrant> };
+
+export interface PayboxFullAccessWalletRequiredErrorData {
+    code: PayboxErrorCode.FullAccessWalletRequired;
+    instructions: string;
+    requiredMode: PayboxApprovalMode.Autonomous;
+    managementUrl: string | null;
+}
+
+export interface PayboxWalletSelectionErrorData {
+    code: PayboxErrorCode.WalletSelectionInvalid | PayboxErrorCode.WalletSelectionNotPending;
+}
 
 export interface IPayboxSdkAdapter {
-    selectOneAutonomousEvmGrant(tokens: PayboxTokens, signingKey: string): Promise<EligiblePayboxGrant>;
+    listEligibleAutonomousEvmGrants(tokens: PayboxTokens, signingKey: string): Promise<EligiblePayboxGrantList>;
     createWallet(tokens: PayboxTokens, signingKey: string, credentialId: string, address: string): WalletManager;
     signMessage(tokens: PayboxTokens, signingKey: string, credentialId: string, message: string): Promise<string>;
 }

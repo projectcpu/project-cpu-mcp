@@ -1,7 +1,17 @@
+import { getAddress } from 'viem';
+
 import { PAYBOX_AUTH_REQUIRED_INSTRUCTIONS, PAYBOX_SCHEMA_VERSION } from './constants.js';
-import { PayboxLoopbackUnavailableError } from './errors.js';
+import {
+    PayboxFullAccessWalletRequiredError,
+    PayboxLoopbackUnavailableError,
+    PayboxWalletSelectionError,
+} from './errors.js';
 import {
     PayboxAuthStatus,
+    PayboxErrorCode,
+    type EligiblePayboxGrant,
+    type PayboxAuthMaterial,
+    type PayboxAuthRecord,
     type PayboxAuthenticateInput,
     type PayboxAuthenticateResult,
     type PayboxCoordinatorOptions,
@@ -18,6 +28,8 @@ export class PayboxCoordinator implements WalletProvider {
     private completing: Promise<void> | null = null;
     private completionError: Error | null = null;
     private authenticating: Promise<string> | null = null;
+    private material: PayboxAuthMaterial | null = null;
+    private selectionChoices: Array<EligiblePayboxGrant> | null = null;
     private generation = 0;
 
     constructor(options: PayboxCoordinatorOptions) {
@@ -34,6 +46,7 @@ export class PayboxCoordinator implements WalletProvider {
     }
 
     async authenticate(input: PayboxAuthenticateInput): Promise<PayboxAuthenticateResult> {
+        const requestedCredentialId = input.payboxCredentialId ?? null;
         if (input.force) {
             this.generation += 1;
             this.options.flow.cancel();
@@ -44,6 +57,8 @@ export class PayboxCoordinator implements WalletProvider {
             this.completing = null;
             this.completionError = null;
             this.authenticating = null;
+            this.material = null;
+            this.selectionChoices = null;
             this.options.storage.clear();
         }
         if (this.completionError !== null) {
@@ -52,6 +67,9 @@ export class PayboxCoordinator implements WalletProvider {
             throw error;
         }
         if (this.pendingUrl !== null) {
+            if (requestedCredentialId !== null) {
+                throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
+            }
             if (this.completing === null) {
                 const generation = this.generation;
                 const completion = this.completePending(generation);
@@ -75,10 +93,16 @@ export class PayboxCoordinator implements WalletProvider {
             return this.authRequired(this.pendingUrl);
         }
         if (this.wallet !== null && this.address !== null) {
+            if (requestedCredentialId !== null) {
+                throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
+            }
             const generation = this.generation;
             await this.authenticateFresh(this.wallet, generation);
             this.assertCurrent(generation);
             return { status: PayboxAuthStatus.Authenticated, address: this.address };
+        }
+        if (this.material !== null) {
+            return this.continueWithMaterial(this.material, requestedCredentialId, this.generation);
         }
         const stored = this.options.storage.load();
         if (
@@ -88,6 +112,9 @@ export class PayboxCoordinator implements WalletProvider {
             stored.credentialId !== null &&
             stored.address !== null
         ) {
+            if (requestedCredentialId !== null) {
+                throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
+            }
             const wallet = this.options.sdk.createWallet(
                 stored.tokens,
                 stored.signingKey,
@@ -100,6 +127,13 @@ export class PayboxCoordinator implements WalletProvider {
             this.wallet = wallet;
             this.address = stored.address;
             return { status: PayboxAuthStatus.Authenticated, address: stored.address };
+        }
+        if (stored !== null && stored.tokens !== null && stored.signingKey !== null) {
+            this.material = { tokens: stored.tokens, signingKey: stored.signingKey };
+            return this.continueWithMaterial(this.material, requestedCredentialId, this.generation);
+        }
+        if (requestedCredentialId !== null) {
+            throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
         }
         if (this.starting === null) {
             const generation = this.generation;
@@ -140,27 +174,79 @@ export class PayboxCoordinator implements WalletProvider {
         if (this.pendingUrl === null) throw new Error('No Paybox authentication is pending.');
         const material = await this.options.flow.finish();
         this.assertCurrent(generation);
-        const grant = await this.options.sdk.selectOneAutonomousEvmGrant(material.tokens, material.signingKey);
+        await this.continueWithMaterial(material, null, generation);
+    }
+
+    private async continueWithMaterial(
+        material: PayboxAuthMaterial,
+        requestedCredentialId: string | null,
+        generation: number,
+    ): Promise<PayboxAuthenticateResult> {
+        if (requestedCredentialId === null && this.selectionChoices !== null) {
+            return { status: PayboxAuthStatus.WalletSelectionRequired, choices: this.selectionChoices };
+        }
+        if (requestedCredentialId !== null && this.selectionChoices === null) {
+            throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
+        }
+        const discovery = await this.options.sdk.listEligibleAutonomousEvmGrants(material.tokens, material.signingKey);
         this.assertCurrent(generation);
-        const record = {
+        if (requestedCredentialId !== null) {
+            const selected = discovery.grants.find((grant) => grant.credentialId === requestedCredentialId);
+            this.selectionChoices = discovery.grants;
+            if (selected === undefined) {
+                throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionInvalid);
+            }
+            return this.activateGrant(material, selected, generation);
+        }
+        if (discovery.grants.length === 0) {
+            this.rememberMaterial(material);
+            this.pendingUrl = null;
+            throw new PayboxFullAccessWalletRequiredError(discovery.managementUrl);
+        }
+        if (discovery.grants.length > 1) {
+            this.rememberMaterial(material);
+            this.selectionChoices = discovery.grants;
+            this.pendingUrl = null;
+            return { status: PayboxAuthStatus.WalletSelectionRequired, choices: discovery.grants };
+        }
+        return this.activateGrant(material, discovery.grants[0] as EligiblePayboxGrant, generation);
+    }
+
+    private async activateGrant(
+        material: PayboxAuthMaterial,
+        grant: EligiblePayboxGrant,
+        generation: number,
+    ): Promise<PayboxAuthenticateResult> {
+        const address = getAddress(grant.address);
+        const record: PayboxAuthRecord = {
             version: PAYBOX_SCHEMA_VERSION,
             tokens: material.tokens,
             signingKey: material.signingKey,
             credentialId: grant.credentialId,
-            address: grant.address,
-        } as import('./types.js').PayboxAuthRecord;
-        const wallet = this.options.sdk.createWallet(
-            material.tokens,
-            material.signingKey,
-            grant.credentialId,
-            grant.address,
-        );
+            address,
+        };
+        const wallet = this.options.sdk.createWallet(material.tokens, material.signingKey, grant.credentialId, address);
         await this.authenticateFresh(wallet, generation);
         this.assertCurrent(generation);
         this.options.storage.save(record);
         this.wallet = wallet;
-        this.address = grant.address;
+        this.address = address;
+        this.material = null;
+        this.selectionChoices = null;
         this.pendingUrl = null;
+        return { status: PayboxAuthStatus.Authenticated, address };
+    }
+
+    private rememberMaterial(material: PayboxAuthMaterial): void {
+        const record: PayboxAuthRecord = {
+            version: PAYBOX_SCHEMA_VERSION,
+            tokens: material.tokens,
+            signingKey: material.signingKey,
+            credentialId: null,
+            address: null,
+        };
+        this.options.storage.save(record);
+        this.material = material;
     }
 
     private async authenticateFresh(wallet: WalletManager, generation: number): Promise<string> {

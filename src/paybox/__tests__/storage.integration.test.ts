@@ -55,6 +55,15 @@ describe('PayboxAuthStorage', () => {
         expect(fs.readdirSync(path.dirname(file)).some((entry) => entry.endsWith('.tmp'))).toBe(false);
     });
 
+    it('persists complete OAuth material while Wallet selection remains pending', () => {
+        const { storage } = fixture();
+        const pendingSelection: PayboxAuthRecord = { ...record, credentialId: null, address: null };
+
+        storage.save(pendingSelection);
+
+        expect(storage.load()).toEqual(pendingSelection);
+    });
+
     it('rejects corrupt, partial, and incompatible records without touching a real home', () => {
         const { storage, file } = fixture();
         fs.mkdirSync(path.dirname(file), { recursive: true });
