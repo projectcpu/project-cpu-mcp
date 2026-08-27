@@ -30,9 +30,10 @@ export class PayboxWalletManager implements WalletManager {
     }
 
     public async signMessage(message: string): Promise<Hex> {
+        const authority = await this.options.authority.current();
         const signature = await this.options.sdk.signMessage(
-            this.options.tokens,
-            this.options.signingKey,
+            authority.tokens,
+            authority.signingKey,
             this.options.credentialId,
             message,
         );
@@ -69,6 +70,7 @@ export class PayboxWalletManager implements WalletManager {
     }
 
     private async sendAtQueueHead(tx: TransactionRequest): Promise<Hash> {
+        const authority = await this.options.authority.current();
         const gasRequest = { to: tx.to, data: tx.data, value: tx.value };
         const [nonce, fees, gas] = await Promise.all([
             this.options.rpc.getPendingNonce(this.address),
@@ -91,8 +93,8 @@ export class PayboxWalletManager implements WalletManager {
             nonce: intent.nonce,
         });
         const serializedTransaction = await this.options.sdk.signTransaction(
-            this.options.tokens,
-            this.options.signingKey,
+            authority.tokens,
+            authority.signingKey,
             this.options.credentialId,
             intent,
         );

@@ -16,7 +16,7 @@ import { MapSync } from './map/sync.js';
 import { PayboxCoordinator } from './paybox/coordinator.js';
 import { LoopbackAuthFlow } from './paybox/loopback-auth-flow.js';
 import { PayboxSdkAdapter } from './paybox/paybox-sdk.adapter.js';
-import { defaultPayboxSdkClientFactory } from './paybox/paybox-sdk.factory.js';
+import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './paybox/paybox-sdk.factory.js';
 import { PayboxAuthStorage } from './paybox/storage.js';
 import { FulfilmentClaims } from './randomness/claims.js';
 import { RandomnessStrategyFactory } from './randomness/factory.js';
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
                       clock: { setTimeout, clearTimeout },
                       timeoutMs: null,
                   }),
-                  sdk: new PayboxSdkAdapter(defaultPayboxSdkClientFactory, {
+                  sdk: new PayboxSdkAdapter(defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher, {
                       rpcUrl: config.RPC_URL,
                       logger: logger.child('paybox:wallet'),
                   }),

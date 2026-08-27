@@ -94,10 +94,9 @@ describe('Paybox economic tool flow', () => {
         };
         const wallet = new PayboxWalletManager({
             sdk,
-            tokens,
-            signingKey: 'pbxk1.key',
             credentialId: 'persisted-credential',
             address: account.address,
+            authority: { current: async () => ({ tokens, signingKey: 'pbxk1.key' }) },
             rpc,
             logger: new NoopLogger(),
         });

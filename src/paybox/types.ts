@@ -75,6 +75,10 @@ export interface PayboxAuthMaterial {
     signingKey: string;
 }
 
+export interface PayboxWalletAuthority {
+    current(): Promise<PayboxAuthMaterial>;
+}
+
 export interface OAuthMetadata {
     authorizationEndpoint: string;
     registrationEndpoint: string;
@@ -181,8 +185,15 @@ export interface PayboxWalletSelectionErrorData {
 }
 
 export interface IPayboxSdkAdapter {
+    refreshTokens(tokens: PayboxTokens): Promise<PayboxTokens>;
     listEligibleAutonomousEvmGrants(tokens: PayboxTokens, signingKey: string): Promise<EligiblePayboxGrantList>;
-    createWallet(tokens: PayboxTokens, signingKey: string, credentialId: string, address: string): WalletManager;
+    createWallet(
+        tokens: PayboxTokens,
+        signingKey: string,
+        credentialId: string,
+        address: string,
+        authority: PayboxWalletAuthority,
+    ): WalletManager;
     signMessage(tokens: PayboxTokens, signingKey: string, credentialId: string, message: string): Promise<string>;
     signTransaction(
         tokens: PayboxTokens,
@@ -241,10 +252,9 @@ export interface IPayboxRpcClient {
 
 export interface PayboxWalletManagerOptions {
     sdk: IPayboxSdkAdapter;
-    tokens: PayboxTokens;
-    signingKey: string;
     credentialId: string;
     address: string;
+    authority: PayboxWalletAuthority;
     rpc: IPayboxRpcClient;
     logger: ILogger;
 }
@@ -256,4 +266,21 @@ export interface PayboxSdkWalletOptions {
 
 export interface PayboxRpcClientOptions {
     rpcUrl: string | null;
+}
+
+export interface PayboxSdkOAuthTokens {
+    clientId: string;
+    accessToken: string;
+    refreshToken: string | null;
+    expiresAt: number | null;
+    resource: string | null;
+}
+
+export interface PayboxTokenRefresher {
+    refresh(baseUrl: string, current: PayboxSdkOAuthTokens): Promise<PayboxSdkOAuthTokens>;
+}
+
+export interface PayboxRefreshFlight {
+    generation: number;
+    promise: Promise<void>;
 }

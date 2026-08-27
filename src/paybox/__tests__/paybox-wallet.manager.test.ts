@@ -17,7 +17,13 @@ import { SessionStatus } from '../../session/types.js';
 import { TxStatus } from '../../wallet/types.js';
 import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import { verifiedPayboxTransaction } from '../paybox-wallet.utils.js';
-import type { IPayboxRpcClient, IPayboxSdkAdapter, PayboxTransactionIntent, PayboxTokens } from '../types.js';
+import type {
+    IPayboxRpcClient,
+    IPayboxSdkAdapter,
+    PayboxTransactionIntent,
+    PayboxTokens,
+    PayboxWalletAuthority,
+} from '../types.js';
 
 const key = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const otherKey = '0x8b3a350cf5c34c9194ca3a545d9b5d4a1f0abf1c9f3c2bb18ce19e6f01a82652';
@@ -81,12 +87,14 @@ function rpc(overrides: Partial<IPayboxRpcClient> = {}): IPayboxRpcClient {
 }
 
 function manager(sdk: Partial<IPayboxSdkAdapter>, rpcClient: IPayboxRpcClient = rpc()): PayboxWalletManager {
+    const authority: PayboxWalletAuthority = {
+        current: async () => ({ tokens, signingKey: 'pbxk1.key' }),
+    };
     return new PayboxWalletManager({
         sdk: sdk as IPayboxSdkAdapter,
-        tokens,
-        signingKey: 'pbxk1.key',
         credentialId: 'credential-a',
         address: account.address,
+        authority,
         rpc: rpcClient,
         logger: new NoopLogger(),
     });
@@ -145,6 +153,29 @@ describe('verifiedPayboxTransaction', () => {
 });
 
 describe('PayboxWalletManager', () => {
+    it('loads current coordinator-owned authority before each signing request', async () => {
+        const message = 'Project CPU SIWE proof';
+        const signature = await account.signMessage({ message });
+        const sign = vi.fn(async () => signature);
+        const sdk = { signMessage: sign } as unknown as IPayboxSdkAdapter;
+        const refreshedTokens = { ...tokens, accessToken: 'rotated-access' };
+        const authority: PayboxWalletAuthority = {
+            current: vi.fn(async () => ({ tokens: refreshedTokens, signingKey: 'pbxk1.rotated' })),
+        };
+        const wallet = new PayboxWalletManager({
+            sdk,
+            credentialId: 'credential-a',
+            address: account.address,
+            authority,
+            rpc: rpc(),
+            logger: new NoopLogger(),
+        });
+
+        await expect(wallet.signMessage(message)).resolves.toBe(signature);
+        expect(authority.current).toHaveBeenCalledOnce();
+        expect(sign).toHaveBeenCalledWith(refreshedTokens, 'pbxk1.rotated', 'credential-a', message);
+    });
+
     it('returns only a valid EIP-191 signature bound to the selected wallet and credential', async () => {
         const message = 'Project CPU SIWE proof';
         const signature = await account.signMessage({ message });
@@ -155,6 +186,17 @@ describe('PayboxWalletManager', () => {
         expect(signMessage).toHaveBeenCalledWith(tokens, 'pbxk1.key', 'credential-a', message);
         expect(wallet.getAddress()).toBe(account.address);
         expect(wallet.getChainId()).toBe(4663);
+    });
+
+    it('rejects wrong signer, wrong message, and malformed signatures before downstream use', async () => {
+        const message = 'Project CPU SIWE proof';
+        for (const signMessage of [
+            vi.fn(async () => other.signMessage({ message })),
+            vi.fn(async () => account.signMessage({ message: 'other' })),
+            vi.fn(async () => '0xdeadbeef'),
+        ]) {
+            await expect(manager({ signMessage }).signMessage(message)).rejects.toThrow(/does not match|malformed/);
+        }
     });
 
     it('constructs, signs, verifies, and broadcasts an EIP-1559 intent at queue head', async () => {
