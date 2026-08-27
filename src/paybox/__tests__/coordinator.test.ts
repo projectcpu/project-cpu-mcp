@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { WalletManager } from '../../wallet/types.js';
 import { PayboxCoordinator } from '../coordinator.js';
-import { PayboxAuthStatus, type IPayboxAuthStorage, type PayboxAuthFlow, type PayboxSdkAdapter } from '../types.js';
+import { PayboxAuthStatus, type IPayboxAuthStorage, type IPayboxSdkAdapter, type PayboxAuthFlow } from '../types.js';
 
 const wallet = { getAddress: () => '0x0000000000000000000000000000000000000001' } as unknown as WalletManager;
 
@@ -24,12 +24,13 @@ describe('PayboxCoordinator', () => {
             })),
             cancel: vi.fn(),
         };
-        const sdk: PayboxSdkAdapter = {
+        const sdk: IPayboxSdkAdapter = {
             selectOneAutonomousEvmGrant: vi.fn(async () => ({
                 credentialId: 'credential',
                 address: '0x0000000000000000000000000000000000000001',
             })),
             createWallet: vi.fn(() => wallet),
+            signMessage: vi.fn(),
         };
         const coordinator = new PayboxCoordinator({ storage, flow, sdk });
         await expect(coordinator.authenticate({ force: false })).resolves.toEqual(

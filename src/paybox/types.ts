@@ -78,16 +78,26 @@ export type PayboxAuthenticateResult =
     | { status: PayboxAuthStatus.AuthRequired; instructions: string; authorizationUrl: string }
     | { status: PayboxAuthStatus.Authenticated; address: string };
 
-export interface PayboxSdkAdapter {
+export interface IPayboxSdkAdapter {
     selectOneAutonomousEvmGrant(
         tokens: PayboxTokens,
         signingKey: string,
     ): Promise<{ credentialId: string; address: string }>;
     createWallet(tokens: PayboxTokens, signingKey: string, credentialId: string, address: string): WalletManager;
+    signMessage(tokens: PayboxTokens, signingKey: string, credentialId: string, message: string): Promise<string>;
 }
 
 export interface PayboxCoordinatorOptions {
     storage: IPayboxAuthStorage;
     flow: PayboxAuthFlow;
-    sdk: PayboxSdkAdapter;
+    sdk: IPayboxSdkAdapter;
+}
+
+export interface PayboxSdkClient {
+    listCredentials(): Promise<unknown>;
+    requestWalletSign(args: unknown, options: unknown): Promise<unknown>;
+}
+
+export interface PayboxSdkClientFactory {
+    create(options: { baseUrl: string; token: string; signingKey: string }): PayboxSdkClient;
 }
