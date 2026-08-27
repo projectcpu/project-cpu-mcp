@@ -2,6 +2,7 @@ import { getAddress, isAddress, type Hex } from 'viem';
 
 import {
     PAYBOX_AUTONOMOUS_MODE,
+    PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
     PAYBOX_SIGNATURE_OUTPUT,
     PAYBOX_SUCCESS_STATUS,
     PAYBOX_WALLET_TYPE,
@@ -33,8 +34,10 @@ export function signatureFromResponse(value: unknown, credentialId: string): Hex
 function grantRows(value: unknown): Array<unknown> {
     if (Array.isArray(value)) return value;
     if (!isRecord(value)) throw new Error('Paybox returned an invalid grant list.');
-    if (Array.isArray(value.grants)) return value.grants;
-    if (Array.isArray(value.credentials)) return value.credentials;
+    const keys = Object.keys(value);
+    if (keys.length === 1 && keys[0] === 'credentials' && Array.isArray(value.credentials)) {
+        return value.credentials;
+    }
     throw new Error('Paybox returned an invalid grant list.');
 }
 
@@ -70,8 +73,25 @@ function displayField(value: unknown): string | null {
 }
 
 function managementUrlFromBaseUrl(baseUrl: string): string | null {
-    const match = baseUrl.replace(/\/+$/, '').match(/^(https?:\/\/)api\.(.+)$/);
-    return match === null ? null : `${match[1]}app.${match[2]}`;
+    let parsed: URL;
+    try {
+        parsed = new URL(baseUrl);
+    } catch {
+        return null;
+    }
+    if (
+        parsed.protocol !== 'https:' ||
+        parsed.username !== '' ||
+        parsed.password !== '' ||
+        parsed.port !== '' ||
+        parsed.pathname !== '/' ||
+        parsed.search !== '' ||
+        parsed.hash !== ''
+    ) {
+        return null;
+    }
+    const managementHost = PAYBOX_MANAGEMENT_HOST_BY_API_HOST[parsed.hostname];
+    return managementHost === undefined ? null : `https://${managementHost}`;
 }
 
 function addressField(metadata: Record<string, unknown>): string | null {

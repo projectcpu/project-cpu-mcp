@@ -133,8 +133,42 @@ describe('PayboxSdkAdapter', () => {
         });
     });
 
-    it('rejects a malformed top-level grant response instead of treating it as empty', async () => {
-        const adapter = new PayboxSdkAdapter(factory({ credentials: 'not-an-array' }).factory);
+    it('isolates an invalid Wallet address without substituting another identity', async () => {
+        const row = (id: string, walletAddress: string): Record<string, unknown> => ({
+            credential: {
+                id,
+                credential_type: 'wallet',
+                disabled_at: null,
+                metadata: { chain: 'evm', address: walletAddress },
+            },
+            grant: { credential_id: id, approval_mode: 'autonomous' },
+        });
+        const adapter = new PayboxSdkAdapter(
+            factory({ credentials: [row('invalid-address', 'not-an-address'), row('valid-address', address)] }).factory,
+        );
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).resolves.toEqual({
+            grants: [
+                {
+                    credentialId: 'valid-address',
+                    address: checksummedAddress,
+                    label: null,
+                    provider: null,
+                },
+            ],
+            managementUrl: 'https://app.paybox.test',
+        });
+    });
+
+    it.each([
+        { credentials: 'not-an-array' },
+        { grants: [] },
+        { credentials: [], grants: [] },
+        { credentials: [], shadow: [] },
+        null,
+        'not-an-envelope',
+    ])('rejects malformed or ambiguous top-level grant data: %j', async (response) => {
+        const adapter = new PayboxSdkAdapter(factory(response).factory);
 
         await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toThrow(
             'invalid grant list',
@@ -207,6 +241,27 @@ describe('PayboxSdkAdapter', () => {
                 { credentialId: 'b', address: checksummedAddress, label: null, provider: null },
             ],
             managementUrl: 'https://app.paybox.test',
+        });
+    });
+
+    it.each([
+        ['https://api.paybox.sh', 'https://app.paybox.sh'],
+        ['https://api.paybox.sh/', 'https://app.paybox.sh'],
+        ['https://api.paybox.test', 'https://app.paybox.test'],
+        ['https://api.paybox.sh@attacker.test', null],
+        ['https://api.not-paybox.test', null],
+        ['http://api.paybox.sh', null],
+        ['https://api.paybox.sh/v1', null],
+        ['https://api.paybox.sh?redirect=attacker.test', null],
+        ['https://api.paybox.sh#attacker.test', null],
+        ['https://api.paybox.sh:8443', null],
+        ['https://user:password@api.paybox.sh', null],
+    ])('derives a management URL only from a trusted Paybox API origin: %s', async (baseUrl, managementUrl) => {
+        const adapter = new PayboxSdkAdapter(factory([]).factory);
+
+        await expect(adapter.listEligibleAutonomousEvmGrants({ ...tokens, baseUrl }, 'pbxk1.key')).resolves.toEqual({
+            grants: [],
+            managementUrl,
         });
     });
 

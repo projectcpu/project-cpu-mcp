@@ -11,10 +11,13 @@ import {
     PayboxErrorCode,
     type EligiblePayboxGrant,
     type PayboxAuthMaterial,
+    type PayboxAuthenticationFlight,
     type PayboxAuthRecord,
     type PayboxAuthenticateInput,
     type PayboxAuthenticateResult,
     type PayboxCoordinatorOptions,
+    PayboxSelectionPhase,
+    type PayboxSelectionState,
 } from './types.js';
 import type { WalletManager, WalletProvider } from '../wallet/types.js';
 
@@ -27,9 +30,10 @@ export class PayboxCoordinator implements WalletProvider {
     private starting: Promise<string> | null = null;
     private completing: Promise<void> | null = null;
     private completionError: Error | null = null;
-    private authenticating: Promise<string> | null = null;
+    private authenticating: PayboxAuthenticationFlight | null = null;
     private material: PayboxAuthMaterial | null = null;
-    private selectionChoices: Array<EligiblePayboxGrant> | null = null;
+    private selection: PayboxSelectionState | null = null;
+    private credentialId: string | null = null;
     private generation = 0;
 
     constructor(options: PayboxCoordinatorOptions) {
@@ -58,7 +62,8 @@ export class PayboxCoordinator implements WalletProvider {
             this.completionError = null;
             this.authenticating = null;
             this.material = null;
-            this.selectionChoices = null;
+            this.selection = null;
+            this.credentialId = null;
             this.options.storage.clear();
         }
         if (this.completionError !== null) {
@@ -96,8 +101,9 @@ export class PayboxCoordinator implements WalletProvider {
             if (requestedCredentialId !== null) {
                 throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
             }
+            if (this.credentialId === null) throw new Error('Paybox Wallet identity is incomplete.');
             const generation = this.generation;
-            await this.authenticateFresh(this.wallet, generation);
+            await this.authenticateFresh(this.wallet, generation, this.credentialId, this.address);
             this.assertCurrent(generation);
             return { status: PayboxAuthStatus.Authenticated, address: this.address };
         }
@@ -122,10 +128,11 @@ export class PayboxCoordinator implements WalletProvider {
                 stored.address,
             );
             const generation = this.generation;
-            await this.authenticateFresh(wallet, generation);
+            await this.authenticateFresh(wallet, generation, stored.credentialId, stored.address);
             this.assertCurrent(generation);
             this.wallet = wallet;
             this.address = stored.address;
+            this.credentialId = stored.credentialId;
             return { status: PayboxAuthStatus.Authenticated, address: stored.address };
         }
         if (stored !== null && stored.tokens !== null && stored.signingKey !== null) {
@@ -182,22 +189,29 @@ export class PayboxCoordinator implements WalletProvider {
         requestedCredentialId: string | null,
         generation: number,
     ): Promise<PayboxAuthenticateResult> {
-        if (requestedCredentialId === null && this.selectionChoices !== null) {
-            return { status: PayboxAuthStatus.WalletSelectionRequired, choices: this.selectionChoices };
+        if (requestedCredentialId === null && this.selection !== null) {
+            return { status: PayboxAuthStatus.WalletSelectionRequired, choices: this.selection.choices };
         }
-        if (requestedCredentialId !== null && this.selectionChoices === null) {
+        if (requestedCredentialId !== null && this.selection === null) {
             throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
+        }
+        if (requestedCredentialId !== null && this.selection?.phase === PayboxSelectionPhase.Activating) {
+            if (this.selection.credentialId === requestedCredentialId) return this.selection.promise;
+            throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
+        }
+        if (requestedCredentialId !== null && this.selection?.phase === PayboxSelectionPhase.AwaitingChoice) {
+            const choices = this.selection.choices;
+            const activation = this.selectGrant(material, requestedCredentialId, choices, generation);
+            this.selection = {
+                phase: PayboxSelectionPhase.Activating,
+                choices,
+                credentialId: requestedCredentialId,
+                promise: activation,
+            };
+            return activation;
         }
         const discovery = await this.options.sdk.listEligibleAutonomousEvmGrants(material.tokens, material.signingKey);
         this.assertCurrent(generation);
-        if (requestedCredentialId !== null) {
-            const selected = discovery.grants.find((grant) => grant.credentialId === requestedCredentialId);
-            this.selectionChoices = discovery.grants;
-            if (selected === undefined) {
-                throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionInvalid);
-            }
-            return this.activateGrant(material, selected, generation);
-        }
         if (discovery.grants.length === 0) {
             this.rememberMaterial(material);
             this.pendingUrl = null;
@@ -205,11 +219,43 @@ export class PayboxCoordinator implements WalletProvider {
         }
         if (discovery.grants.length > 1) {
             this.rememberMaterial(material);
-            this.selectionChoices = discovery.grants;
+            this.selection = { phase: PayboxSelectionPhase.AwaitingChoice, choices: discovery.grants };
             this.pendingUrl = null;
             return { status: PayboxAuthStatus.WalletSelectionRequired, choices: discovery.grants };
         }
         return this.activateGrant(material, discovery.grants[0] as EligiblePayboxGrant, generation);
+    }
+
+    private async selectGrant(
+        material: PayboxAuthMaterial,
+        requestedCredentialId: string,
+        previousChoices: Array<EligiblePayboxGrant>,
+        generation: number,
+    ): Promise<PayboxAuthenticateResult> {
+        let discovery;
+        try {
+            discovery = await this.options.sdk.listEligibleAutonomousEvmGrants(material.tokens, material.signingKey);
+            this.assertCurrent(generation);
+        } catch (error) {
+            this.restoreSelection(requestedCredentialId, previousChoices, generation);
+            throw error;
+        }
+        const selected = discovery.grants.find((grant) => grant.credentialId === requestedCredentialId);
+        if (selected === undefined) {
+            if (this.isSelectionActivation(requestedCredentialId, generation)) {
+                this.selection =
+                    discovery.grants.length === 0
+                        ? null
+                        : { phase: PayboxSelectionPhase.AwaitingChoice, choices: discovery.grants };
+            }
+            throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionInvalid);
+        }
+        try {
+            return await this.activateGrant(material, selected, generation);
+        } catch (error) {
+            this.restoreSelection(requestedCredentialId, discovery.grants, generation);
+            throw error;
+        }
     }
 
     private async activateGrant(
@@ -226,13 +272,14 @@ export class PayboxCoordinator implements WalletProvider {
             address,
         };
         const wallet = this.options.sdk.createWallet(material.tokens, material.signingKey, grant.credentialId, address);
-        await this.authenticateFresh(wallet, generation);
+        await this.authenticateFresh(wallet, generation, grant.credentialId, address);
         this.assertCurrent(generation);
         this.options.storage.save(record);
         this.wallet = wallet;
         this.address = address;
+        this.credentialId = grant.credentialId;
         this.material = null;
-        this.selectionChoices = null;
+        this.selection = null;
         this.pendingUrl = null;
         return { status: PayboxAuthStatus.Authenticated, address };
     }
@@ -249,15 +296,48 @@ export class PayboxCoordinator implements WalletProvider {
         this.material = material;
     }
 
-    private async authenticateFresh(wallet: WalletManager, generation: number): Promise<string> {
-        if (this.authenticating !== null) return this.authenticating;
+    private async authenticateFresh(
+        wallet: WalletManager,
+        generation: number,
+        credentialId: string,
+        address: string,
+    ): Promise<string> {
+        if (this.authenticating !== null) {
+            if (
+                this.authenticating.generation === generation &&
+                this.authenticating.credentialId === credentialId &&
+                this.authenticating.address === address
+            ) {
+                return this.authenticating.promise;
+            }
+            throw new Error('Paybox authentication is already in progress for another Wallet.');
+        }
         const authentication = this.options.authenticator.authenticate(wallet, () => this.generation === generation);
-        this.authenticating = authentication;
+        const flight: PayboxAuthenticationFlight = { credentialId, address, generation, promise: authentication };
+        this.authenticating = flight;
         try {
             return await authentication;
         } finally {
-            if (this.authenticating === authentication) this.authenticating = null;
+            if (this.authenticating === flight) this.authenticating = null;
         }
+    }
+
+    private restoreSelection(
+        requestedCredentialId: string,
+        choices: Array<EligiblePayboxGrant>,
+        generation: number,
+    ): void {
+        if (this.isSelectionActivation(requestedCredentialId, generation)) {
+            this.selection = { phase: PayboxSelectionPhase.AwaitingChoice, choices };
+        }
+    }
+
+    private isSelectionActivation(requestedCredentialId: string, generation: number): boolean {
+        return (
+            this.generation === generation &&
+            this.selection?.phase === PayboxSelectionPhase.Activating &&
+            this.selection.credentialId === requestedCredentialId
+        );
     }
 
     private assertCurrent(generation: number): void {

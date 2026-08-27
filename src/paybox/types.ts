@@ -137,6 +137,30 @@ export type PayboxAuthenticateResult =
     | { status: PayboxAuthStatus.Authenticated; address: string }
     | { status: PayboxAuthStatus.WalletSelectionRequired; choices: Array<EligiblePayboxGrant> };
 
+export enum PayboxSelectionPhase {
+    AwaitingChoice = 'awaiting_choice',
+    Activating = 'activating',
+}
+
+export type PayboxSelectionState =
+    | {
+          phase: PayboxSelectionPhase.AwaitingChoice;
+          choices: Array<EligiblePayboxGrant>;
+      }
+    | {
+          phase: PayboxSelectionPhase.Activating;
+          choices: Array<EligiblePayboxGrant>;
+          credentialId: string;
+          promise: Promise<PayboxAuthenticateResult>;
+      };
+
+export interface PayboxAuthenticationFlight {
+    credentialId: string;
+    address: string;
+    generation: number;
+    promise: Promise<string>;
+}
+
 export interface PayboxFullAccessWalletRequiredErrorData {
     code: PayboxErrorCode.FullAccessWalletRequired;
     instructions: string;

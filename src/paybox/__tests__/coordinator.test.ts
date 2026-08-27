@@ -85,6 +85,151 @@ describe('PayboxCoordinator', () => {
         expect(saved).toEqual(expect.objectContaining({ credentialId: 'credential-b' }));
     });
 
+    it('moves a disappeared choice with zero fresh grants into the corrective protocol', async () => {
+        const tokens = {
+            clientId: 'client',
+            accessToken: 'access',
+            refreshToken: null,
+            expiresAt: null,
+            resource: null,
+            baseUrl: 'https://api.paybox.test',
+        };
+        let saved: ReturnType<IPayboxAuthStorage['load']> = {
+            version: 1 as const,
+            tokens,
+            signingKey: 'pbxk1.test',
+            credentialId: null,
+            address: null,
+        };
+        const save = vi.fn<IPayboxAuthStorage['save']>((record) => {
+            saved = record;
+        });
+        const grants = [
+            {
+                credentialId: 'credential-a',
+                address: '0x0000000000000000000000000000000000000001',
+                label: null,
+                provider: null,
+            },
+            {
+                credentialId: 'credential-b',
+                address: '0x0000000000000000000000000000000000000002',
+                label: null,
+                provider: null,
+            },
+        ];
+        const listGrants = vi
+            .fn()
+            .mockResolvedValueOnce({ grants, managementUrl: 'https://app.paybox.test' })
+            .mockResolvedValue({ grants: [], managementUrl: 'https://app.paybox.test' });
+        const createWallet = vi.fn(() => wallet);
+        const authenticate = vi.fn(async () => 'game-jwt');
+        const coordinator = new PayboxCoordinator({
+            storage: { load: () => saved, save, clear: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                listEligibleAutonomousEvmGrants: listGrants,
+                createWallet,
+                signMessage: vi.fn(),
+            },
+            authenticator: { authenticate },
+        });
+
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
+            status: PayboxAuthStatus.WalletSelectionRequired,
+            choices: grants,
+        });
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: 'credential-b' })).rejects.toThrow(
+            'PAYBOX_WALLET_SELECTION_INVALID',
+        );
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
+            'PAYBOX_FULL_ACCESS_WALLET_REQUIRED',
+        );
+
+        expect(listGrants).toHaveBeenCalledTimes(3);
+        expect(save).toHaveBeenLastCalledWith({
+            version: 1,
+            tokens,
+            signingKey: 'pbxk1.test',
+            credentialId: null,
+            address: null,
+        });
+        expect(createWallet).not.toHaveBeenCalled();
+        expect(authenticate).not.toHaveBeenCalled();
+        expect(coordinator.isReady()).toBe(false);
+    });
+
+    it('allows only one opaque identity to own an overlapping selection and SIWE flight', async () => {
+        const tokens = {
+            clientId: 'client',
+            accessToken: 'access',
+            refreshToken: null,
+            expiresAt: null,
+            resource: null,
+            baseUrl: 'https://api.paybox.test',
+        };
+        const grants = [
+            {
+                credentialId: 'credential-a',
+                address: '0x0000000000000000000000000000000000000001',
+                label: null,
+                provider: null,
+            },
+            {
+                credentialId: 'credential-b',
+                address: '0x0000000000000000000000000000000000000002',
+                label: null,
+                provider: null,
+            },
+        ];
+        const walletA = { getAddress: () => grants[0]?.address } as unknown as WalletManager;
+        const walletB = { getAddress: () => grants[1]?.address } as unknown as WalletManager;
+        const save = vi.fn();
+        const listGrants = vi.fn(async () => ({ grants, managementUrl: 'https://app.paybox.test' }));
+        const createWallet = vi.fn(
+            (_tokens: Parameters<IPayboxSdkAdapter['createWallet']>[0], _signingKey: string, credentialId: string) =>
+                (credentialId === 'credential-a' ? walletA : walletB) as WalletManager,
+        );
+        const authentication = controlledPromise<string>();
+        const authenticate = vi.fn((_wallet: WalletManager, _isCurrent: () => boolean) => authentication.promise);
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: null,
+                    address: null,
+                }),
+                save,
+                clear: vi.fn(),
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: { listEligibleAutonomousEvmGrants: listGrants, createWallet, signMessage: vi.fn() },
+            authenticator: { authenticate },
+        });
+
+        await coordinator.authenticate({ force: false, payboxCredentialId: null });
+        const first = coordinator.authenticate({ force: false, payboxCredentialId: 'credential-a' });
+        await vi.waitFor(() => expect(authenticate).toHaveBeenCalledOnce());
+        const second = coordinator.authenticate({ force: false, payboxCredentialId: 'credential-b' });
+        const secondResult = expect(second).rejects.toThrow('PAYBOX_WALLET_SELECTION_NOT_PENDING');
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        authentication.resolve('game-jwt-a');
+
+        await expect(first).resolves.toEqual({
+            status: PayboxAuthStatus.Authenticated,
+            address: grants[0]?.address,
+        });
+        await secondResult;
+        expect(listGrants).toHaveBeenCalledTimes(2);
+        expect(createWallet).toHaveBeenCalledOnce();
+        expect(authenticate).toHaveBeenCalledOnce();
+        expect(authenticate.mock.calls[0]?.[0]).toBe(walletA);
+        expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: 'credential-a' }));
+        expect(coordinator.get()).toBe(walletA);
+    });
+
     it('reports an injected unavailable loopback environment with the stable public error', async () => {
         const coordinator = new PayboxCoordinator({
             storage: { load: () => null, save: vi.fn(), clear: vi.fn() },
