@@ -5,6 +5,8 @@ export const LIST_CELL_DESCRIPTION = [
     'The call performs the whole action itself: it checks that you are not about to duplicate an order, prepares',
     'the order, sends any collection approval your wallet still owes and waits for each receipt, signs the order',
     'locally, and publishes it. There is nothing to confirm afterwards.',
+    'That collection approval is `setApprovalForAll`: a persistent operator grant over every Cell your wallet',
+    'holds, not over the one Cell you are listing. It is sent once and then stays in force.',
     '`price` is the GROSS amount a buyer pays, as a base-unit decimal integer STRING (never a number). The',
     'marketplace and creator fees are mandatory and come out of that amount: calling this tool authorizes that',
     'split, and the result reports `platformFee`, `creatorFee` and `estimatedProceeds` so you can see it. There',

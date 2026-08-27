@@ -19,6 +19,7 @@ export const ACCEPT_CELL_OFFER_DESCRIPTION = [
     'repeat of a transaction already broadcast re-checks that transaction instead of selling again. At worst a',
     'retry spends gas on a transaction the protocol rejects.',
     'The result reports `status` (`completed`, or `already_completed` when the sale proved to be done already), the',
-    '`orderHash` accepted, the Cell sold, the buyer, the amount and currency you are paid, and every transaction',
+    "`orderHash` accepted, the Cell sold, the buyer, the offer amount and currency before the marketplace's",
+    'mandatory fee split, and every transaction',
     'hash in `txHashes` in the order it was broadcast.',
 ].join(' ');

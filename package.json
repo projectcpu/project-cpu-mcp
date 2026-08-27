@@ -28,7 +28,7 @@
     "types": "dist/index.d.ts",
     "files": [
         "dist",
-        "docs",
+        "docs/cell-marketplace.md",
         "README.md",
         "LICENSE"
     ],

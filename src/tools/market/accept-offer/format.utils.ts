@@ -19,8 +19,8 @@ export function summarizeSoldCell(result: AcceptCellOfferResult): string {
 
     return [
         `${opening} (order ${result.orderHash}, seller ${result.wallet}, buyer ${result.buyer})`,
-        `paid: ${result.amount} ${result.currency.symbol} base units (decimals=${result.currency.decimals}), from ` +
-            `${offerShape(result.offer.kind)}`,
+        `offer amount before the marketplace's mandatory fee split: ${result.amount} ${result.currency.symbol} ` +
+            `base units (decimals=${result.currency.decimals}), from ${offerShape(result.offer.kind)}`,
         approvals,
         `fulfilment transaction: ${result.fulfilmentTxHash}`,
     ].join('\n');
