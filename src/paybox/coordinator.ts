@@ -1,6 +1,7 @@
 import { PAYBOX_AUTH_REQUIRED_INSTRUCTIONS, PAYBOX_SCHEMA_VERSION } from './constants.js';
 import {
     PayboxAuthStatus,
+    PayboxLoopbackUnavailableError,
     type PayboxAuthenticateInput,
     type PayboxAuthenticateResult,
     type PayboxCoordinatorOptions,
@@ -11,8 +12,10 @@ import type { WalletManager, WalletProvider } from '../wallet/types.js';
 export class PayboxCoordinator implements WalletProvider {
     private readonly options: PayboxCoordinatorOptions;
     private wallet: WalletManager | null = null;
+    private address: string | null = null;
     private pendingUrl: string | null = null;
     private starting: Promise<string> | null = null;
+    private completing: Promise<void> | null = null;
 
     constructor(options: PayboxCoordinatorOptions) {
         this.options = options;
@@ -32,8 +35,14 @@ export class PayboxCoordinator implements WalletProvider {
             this.options.flow.cancel();
             this.options.storage.clear();
             this.wallet = null;
+            this.address = null;
             this.pendingUrl = null;
             this.starting = null;
+            this.completing = null;
+        }
+        if (this.wallet !== null && this.address !== null) {
+            await this.options.authenticator.authenticate();
+            return { status: PayboxAuthStatus.Authenticated, address: this.address };
         }
         const stored = this.options.storage.load();
         if (
@@ -49,18 +58,24 @@ export class PayboxCoordinator implements WalletProvider {
                 stored.credentialId,
                 stored.address,
             );
+            this.address = stored.address;
             await this.options.authenticator.authenticate();
             return { status: PayboxAuthStatus.Authenticated, address: stored.address };
         }
         if (this.pendingUrl !== null) {
-            return this.completePending();
+            if (this.completing === null) this.completing = this.completePending();
+            if (this.address !== null) return { status: PayboxAuthStatus.Authenticated, address: this.address };
+            return this.authRequired(this.pendingUrl);
         }
         if (this.starting === null) {
             this.starting = this.options.flow
                 .start()
                 .then((result) => result.authorizationUrl)
                 .catch((error: unknown) => {
-                    throw new Error('PAYBOX_AUTH_ENVIRONMENT_UNSUPPORTED', { cause: error });
+                    if (error instanceof PayboxLoopbackUnavailableError) {
+                        throw new Error('PAYBOX_AUTH_ENVIRONMENT_UNSUPPORTED', { cause: error });
+                    }
+                    throw error;
                 });
         }
         try {
@@ -68,14 +83,18 @@ export class PayboxCoordinator implements WalletProvider {
         } finally {
             this.starting = null;
         }
+        return this.authRequired(this.pendingUrl);
+    }
+
+    private authRequired(authorizationUrl: string): PayboxAuthenticateResult {
         return {
             status: PayboxAuthStatus.AuthRequired,
             instructions: PAYBOX_AUTH_REQUIRED_INSTRUCTIONS,
-            authorizationUrl: this.pendingUrl,
+            authorizationUrl,
         };
     }
 
-    private async completePending(): Promise<PayboxAuthenticateResult> {
+    private async completePending(): Promise<void> {
         if (this.pendingUrl === null) throw new Error('No Paybox authentication is pending.');
         const material = await this.options.flow.finish();
         const grant = await this.options.sdk.selectOneAutonomousEvmGrant(material.tokens, material.signingKey);
@@ -85,15 +104,15 @@ export class PayboxCoordinator implements WalletProvider {
             signingKey: material.signingKey,
             credentialId: grant.credentialId,
             address: grant.address,
-        });
+        } as import('./types.js').PayboxAuthRecord);
         this.wallet = this.options.sdk.createWallet(
             material.tokens,
             material.signingKey,
             grant.credentialId,
             grant.address,
         );
+        this.address = grant.address;
         this.pendingUrl = null;
         await this.options.authenticator.authenticate();
-        return { status: PayboxAuthStatus.Authenticated, address: grant.address };
     }
 }

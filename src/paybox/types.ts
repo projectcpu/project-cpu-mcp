@@ -1,5 +1,7 @@
+import { isAddress } from 'viem';
 import { z } from 'zod';
 
+import { isPbxk1 } from './auth-flow.utils.js';
 import type { WalletManager } from '../wallet/types.js';
 
 export enum PayboxAuthStatus {
@@ -10,19 +12,29 @@ export enum PayboxAuthStatus {
 export const payboxTokensSchema = z.object({
     clientId: z.string().min(1),
     accessToken: z.string().min(1),
-    refreshToken: z.string().nullable(),
+    refreshToken: z.string().min(1).nullable(),
     expiresAt: z.number().finite().nullable(),
-    resource: z.string().nullable(),
+    resource: z.string().min(1).nullable(),
     baseUrl: z.string().url(),
 });
 
-export const payboxAuthRecordSchema = z.object({
-    version: z.literal(1),
-    tokens: payboxTokensSchema.nullable(),
-    signingKey: z.string().nullable(),
-    credentialId: z.string().nullable(),
-    address: z.string().nullable(),
-});
+export const payboxAuthRecordSchema = z
+    .object({
+        version: z.literal(1),
+        tokens: payboxTokensSchema.nullable(),
+        signingKey: z.string().refine(isPbxk1, 'invalid signing key').nullable(),
+        credentialId: z.string().min(1).nullable(),
+        address: z
+            .string()
+            .refine((value) => isAddress(value, { strict: true }), 'invalid checksummed EVM address')
+            .nullable(),
+    })
+    .superRefine((record, context) => {
+        const values = [record.tokens, record.signingKey, record.credentialId, record.address];
+        if (values.some((value) => value === null) && values.some((value) => value !== null)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: 'incomplete Paybox auth record' });
+        }
+    });
 
 export type PayboxTokens = z.infer<typeof payboxTokensSchema>;
 export type PayboxAuthRecord = z.infer<typeof payboxAuthRecordSchema>;
@@ -41,6 +53,26 @@ export interface PayboxAuthMaterial {
     tokens: PayboxTokens;
     signingKey: string;
 }
+
+export interface OAuthMetadata {
+    authorizationEndpoint: string;
+    registrationEndpoint: string;
+    tokenEndpoint: string;
+}
+
+export interface OAuthTokenResponse {
+    accessToken: string;
+    refreshToken: string | null;
+    expiresAt: number | null;
+    resource: string | null;
+}
+
+export interface EligiblePayboxGrant {
+    credentialId: string;
+    address: string;
+}
+
+export class PayboxLoopbackUnavailableError extends Error {}
 
 export interface PayboxAuthFlow {
     start(): Promise<PayboxAuthStart>;

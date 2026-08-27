@@ -11,20 +11,16 @@ import {
     OAUTH_SCOPE,
 } from './auth-flow.constants.js';
 import { isPbxk1, oauthError, pkceChallenge, randomUrlPart } from './auth-flow.utils.js';
-import type { LoopbackAuthFlowOptions, PayboxAuthFlow, PayboxAuthMaterial, PayboxAuthStart } from './types.js';
-
-interface OAuthMetadata {
-    authorizationEndpoint: string;
-    registrationEndpoint: string;
-    tokenEndpoint: string;
-}
-
-interface OAuthTokenResponse {
-    accessToken: string;
-    refreshToken: string | null;
-    expiresAt: number | null;
-    resource: string | null;
-}
+import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-auth-flow.utils.js';
+import {
+    PayboxLoopbackUnavailableError,
+    type LoopbackAuthFlowOptions,
+    type OAuthMetadata,
+    type OAuthTokenResponse,
+    type PayboxAuthFlow,
+    type PayboxAuthMaterial,
+    type PayboxAuthStart,
+} from './types.js';
 
 export class LoopbackAuthFlow implements PayboxAuthFlow {
     private server: Server | null = null;
@@ -40,6 +36,8 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private code: string | null = null;
     private key: string | null = null;
     private started = false;
+    private readonly waiters = new Set<() => void>();
+    private readonly waiterRejectors = new Set<(error: Error) => void>();
 
     public constructor(private readonly options: LoopbackAuthFlowOptions) {}
 
@@ -72,7 +70,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             authorizationUrl.searchParams.set('code_challenge_method', 'S256');
             return { authorizationUrl: authorizationUrl.toString() };
         } catch (error) {
-            this.close();
+            this.reset();
             throw error;
         }
     }
@@ -81,12 +79,12 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         if (this.completion === null) {
             throw oauthError('flow not started');
         }
-        return this.completion;
+        return this.completion.finally(() => this.close());
     }
 
     public cancel(): void {
-        this.rejectCompletion?.(oauthError('cancelled'));
-        this.close();
+        void this.completion?.catch(() => undefined);
+        this.stop(oauthError('cancelled'));
     }
 
     private async discover(): Promise<OAuthMetadata> {
@@ -97,9 +95,9 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         if (!response.ok) throw oauthError(`discovery returned ${response.status}`);
         const value = await response.json();
         if (!isObject(value)) throw oauthError('malformed discovery response');
-        const authorizationEndpoint = stringField(value, 'authorization_endpoint');
-        const registrationEndpoint = stringField(value, 'registration_endpoint');
-        const tokenEndpoint = stringField(value, 'token_endpoint');
+        const authorizationEndpoint = urlField(value, 'authorization_endpoint');
+        const registrationEndpoint = urlField(value, 'registration_endpoint');
+        const tokenEndpoint = urlField(value, 'token_endpoint');
         return { authorizationEndpoint, registrationEndpoint, tokenEndpoint };
     }
 
@@ -120,7 +118,9 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         this.server = createServer((request, response) => this.handle(request, response));
         await new Promise<void>((resolve, reject) => {
             const server = this.required(this.server, 'server');
-            server.once('error', reject);
+            server.once('error', (error) =>
+                reject(new PayboxLoopbackUnavailableError('loopback unavailable', { cause: error })),
+            );
             server.listen(0, LOOPBACK_HOST, () => {
                 server.off('error', reject);
                 resolve();
@@ -154,6 +154,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         }
         if (this.code !== null) return this.respond(response, 409, 'Already used');
         this.code = url.searchParams.get('code');
+        this.notifyWaiters();
         this.respond(
             response,
             200,
@@ -167,7 +168,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             return;
         }
         if (request.method !== 'POST') return this.respond(response, 405, 'Method not allowed');
-        if (!String(request.headers['content-type'] ?? '').startsWith('application/json')) {
+        if (!String(request.headers['content-type'] ?? '').startsWith('application/x-www-form-urlencoded')) {
             return this.respond(response, 415, 'Unsupported media type');
         }
         let body = '';
@@ -180,12 +181,12 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             if (size > KEY_BODY_LIMIT_BYTES) return this.respond(response, 413, 'Request too large');
             if (this.key !== null) return this.respond(response, 409, 'Already used');
             try {
-                const value: unknown = JSON.parse(body);
-                const key = isObject(value) ? value.key : null;
+                const key = formKey(body);
                 if (typeof key !== 'string' || !isPbxk1(key)) {
                     return this.respond(response, 400, 'Invalid signing key');
                 }
                 this.key = key;
+                this.notifyWaiters();
                 this.respond(response, 200, 'Authentication complete');
             } catch {
                 this.respond(response, 400, 'Invalid request');
@@ -201,7 +202,6 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             const code = await this.waitFor(() => this.code);
             const token = await this.exchange(code);
             const signingKey = await this.waitFor(() => this.key);
-            this.close();
             resolve({
                 tokens: {
                     clientId: this.required(this.clientId, 'client id'),
@@ -217,11 +217,19 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     }
 
     private async waitFor<T>(read: () => T | null): Promise<T> {
-        while (true) {
-            const value = read();
-            if (value !== null) return value;
-            await new Promise((resolve) => setTimeout(resolve, 10));
-        }
+        const value = read();
+        if (value !== null) return value;
+        return new Promise<T>((resolve, reject) => {
+            const check = () => {
+                const next = read();
+                if (next === null) return;
+                this.waiters.delete(check);
+                this.waiterRejectors.delete(reject);
+                resolve(next);
+            };
+            this.waiters.add(check);
+            this.waiterRejectors.add(reject);
+        });
     }
 
     private async exchange(code: string): Promise<OAuthTokenResponse> {
@@ -242,7 +250,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
 
     private armTimeout(): void {
         const delay = this.options.timeoutMs ?? DEFAULT_LOOPBACK_TIMEOUT_MS;
-        this.timeout = this.options.clock.setTimeout(() => this.cancel(), delay);
+        this.timeout = this.options.clock.setTimeout(() => this.stop(oauthError('timed out')), delay);
     }
 
     private close(): void {
@@ -250,6 +258,32 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         this.timeout = null;
         this.server?.close();
         this.server = null;
+    }
+
+    private stop(error: Error): void {
+        this.rejectCompletion?.(error);
+        for (const reject of this.waiterRejectors) reject(error);
+        this.waiters.clear();
+        this.waiterRejectors.clear();
+        this.reset();
+        this.rejectCompletion = null;
+    }
+
+    private reset(): void {
+        this.close();
+        this.started = false;
+        this.callbackPath = null;
+        this.keyPath = null;
+        this.state = null;
+        this.verifier = null;
+        this.metadata = null;
+        this.clientId = null;
+        this.code = null;
+        this.key = null;
+    }
+
+    private notifyWaiters(): void {
+        for (const waiter of this.waiters) waiter();
     }
 
     private respond(response: ServerResponse, status: number, body: string): void {
@@ -261,40 +295,4 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         if (value === null) throw oauthError(`${name} unavailable`);
         return value;
     }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function stringField(value: Record<string, unknown>, name: string): string {
-    const field = nonEmptyString(value, name);
-    try {
-        new URL(field);
-    } catch {
-        throw oauthError(`invalid ${name}`);
-    }
-    return field;
-}
-
-function nonEmptyString(value: Record<string, unknown>, name: string): string {
-    const field = value[name];
-    if (typeof field !== 'string' || field.length === 0) throw oauthError(`discovery missing ${name}`);
-    return field;
-}
-
-function tokenResponse(value: unknown): OAuthTokenResponse {
-    if (!isObject(value) || typeof value.access_token !== 'string' || value.access_token.length === 0) {
-        throw oauthError('malformed token response');
-    }
-    const refreshToken = typeof value.refresh_token === 'string' ? value.refresh_token : null;
-    const resource = typeof value.resource === 'string' ? value.resource : null;
-    const expiresIn =
-        typeof value.expires_in === 'number' && Number.isFinite(value.expires_in) ? value.expires_in : null;
-    return {
-        accessToken: value.access_token,
-        refreshToken,
-        resource,
-        expiresAt: expiresIn === null ? null : Date.now() + expiresIn * 1000,
-    };
 }

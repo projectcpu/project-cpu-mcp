@@ -98,6 +98,7 @@ describe('cpu_authenticate', () => {
             })),
             cancel: vi.fn(),
         };
+        const authenticate = vi.fn(async () => 'jwt');
         const wallet = new PayboxCoordinator({
             storage,
             flow,
@@ -109,13 +110,26 @@ describe('cpu_authenticate', () => {
                 createWallet: vi.fn(() => ({ getAddress: () => '0x1111111111111111111111111111111111111111' })),
                 signMessage: vi.fn(),
             } as unknown as IPayboxSdkAdapter,
-            authenticator: { authenticate: vi.fn(async () => 'jwt') },
+            authenticator: { authenticate },
         });
         const handler = captureAuthenticateHandler({
             config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
             wallet,
         } as unknown as AppContext);
 
+        await expect(handler({ force: null })).resolves.toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: 'paybox_auth_required',
+                        instructions:
+                            'Open the authorization URL in a local browser to continue Paybox authentication.',
+                        authorizationUrl: 'https://accounts.test/authorize?state=opaque',
+                    }),
+                },
+            ],
+        });
         await expect(handler({ force: null })).resolves.toEqual({
             content: [
                 {
@@ -129,6 +143,7 @@ describe('cpu_authenticate', () => {
                 },
             ],
         });
+        await vi.waitFor(() => expect(authenticate).toHaveBeenCalledOnce());
         await expect(handler({ force: null })).resolves.toEqual({
             content: [
                 {

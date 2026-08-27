@@ -54,8 +54,8 @@ describe('LoopbackAuthFlow', () => {
         const keyPath = /action="([^"]+)"/.exec(await callbackResponse.text())?.[1] ?? '';
         const keyResponse = await fetch(new URL(keyPath, redirect), {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ key: 'pbxk1.abcdefghijklmnop' }),
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ key: 'pbxk1.abcdefghijklmnop' }).toString(),
         });
         expect(keyResponse.status).toBe(200);
 
@@ -113,14 +113,14 @@ describe('LoopbackAuthFlow', () => {
         expect((await fetch(keyUrl)).status).toBe(405);
         const bad = await fetch(keyUrl, {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: '{"key":"secret"}',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: 'key=secret',
         });
         expect(bad.status).toBe(400);
         expect(await bad.text()).not.toContain('secret');
         const huge = await fetch(keyUrl, {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
             body: 'x'.repeat(5000),
         });
         expect(huge.status).toBe(413);
@@ -128,8 +128,8 @@ describe('LoopbackAuthFlow', () => {
             (
                 await fetch(keyUrl, {
                     method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ key: 'pbxk1.abcdefghijklmnop' }),
+                    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                    body: 'key=pbxk1.abcdefghijklmnop',
                 })
             ).status,
         ).toBe(200);
@@ -137,12 +137,26 @@ describe('LoopbackAuthFlow', () => {
             (
                 await fetch(keyUrl, {
                     method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ key: 'pbxk1.qrstuvwxyzabcdef' }),
+                    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                    body: 'key=pbxk1.qrstuvwxyzabcdef',
                 })
             ).status,
         ).toBe(409);
         await expect(flow.finish()).resolves.toMatchObject({ signingKey: 'pbxk1.abcdefghijklmnop' });
+    });
+
+    it('cancels pending work and permits a clean replacement start', async () => {
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: fakeClient(),
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+        await flow.start();
+        flow.cancel();
+        await expect(flow.finish()).rejects.toThrow('cancelled');
+        await expect(flow.start()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
     });
 });
 

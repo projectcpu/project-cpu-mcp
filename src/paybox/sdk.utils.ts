@@ -1,4 +1,4 @@
-import { getAddress, isAddress, type Address, type Hex } from 'viem';
+import { getAddress, isAddress, type Hex } from 'viem';
 
 import {
     PAYBOX_AUTONOMOUS_MODE,
@@ -6,11 +6,7 @@ import {
     PAYBOX_SUCCESS_STATUS,
     PAYBOX_WALLET_TYPE,
 } from './sdk.constants.js';
-
-export interface EligiblePayboxGrant {
-    credentialId: string;
-    address: Address;
-}
+import type { EligiblePayboxGrant } from './types.js';
 
 export function oneAutonomousEvmGrant(value: unknown): EligiblePayboxGrant {
     const rows = grantRows(value);

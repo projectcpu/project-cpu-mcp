@@ -22,7 +22,7 @@ const record: PayboxAuthRecord = {
         resource: null,
         baseUrl: 'https://paybox.test',
     },
-    signingKey: 'pbxk1.test',
+    signingKey: 'pbxk1.abcdefghijklmnop',
     credentialId: 'credential',
     address: '0x0000000000000000000000000000000000000001',
 };
@@ -55,6 +55,9 @@ describe('PayboxAuthStorage', () => {
         const { storage, file } = fixture();
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, '{');
+        expect(storage.load()).toBeNull();
+        expect(fs.existsSync(file)).toBe(false);
+        fs.writeFileSync(file, JSON.stringify({ ...record, signingKey: 'not-a-pbxk1', address: 'not-an-evm-address' }));
         expect(storage.load()).toBeNull();
         expect(fs.existsSync(file)).toBe(false);
         fs.writeFileSync(file, JSON.stringify({ version: 2 }));
