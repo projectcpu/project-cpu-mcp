@@ -10,9 +10,11 @@ import {
     OAUTH_DISCOVERY_PATH,
     OAUTH_SCOPE,
 } from './auth-flow.constants.js';
-import { isPbxk1, oauthError, oauthTokenError, pkceChallenge, randomUrlPart } from './auth-flow.utils.js';
+import { oauthError, oauthTokenError, pkceChallenge, randomUrlPart } from './auth-flow.utils.js';
 import { PayboxLoopbackUnavailableError } from './errors.js';
 import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-auth-flow.utils.js';
+import { classifiedPayboxError, classifiedPayboxHttpStatus } from './sdk.utils.js';
+import { isPbxk1 } from './signing-key.utils.js';
 import {
     type LoopbackAuthFlowOptions,
     type OAuthMetadata,
@@ -20,6 +22,8 @@ import {
     type PayboxAuthFlow,
     type PayboxAuthMaterial,
     type PayboxAuthStart,
+    type PayboxHttpResponse,
+    PayboxRequestContext,
 } from './types.js';
 
 export class LoopbackAuthFlow implements PayboxAuthFlow {
@@ -99,10 +103,12 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
 
     private async discover(): Promise<OAuthMetadata> {
         const issuer = new URL(this.options.issuerUrl);
-        const response = await this.options.httpClient.fetch(new URL(OAUTH_DISCOVERY_PATH, issuer).toString(), {
+        const response = await this.payboxRequest(new URL(OAUTH_DISCOVERY_PATH, issuer).toString(), {
             method: 'GET',
         });
-        if (!response.ok) throw oauthError(`discovery returned ${response.status}`);
+        if (!response.ok) {
+            throw classifiedPayboxHttpStatus(response.status, PayboxRequestContext.Unauthenticated);
+        }
         const value = await response.json();
         if (!isObject(value)) throw oauthError('malformed discovery response');
         const authorizationEndpoint = urlField(value, 'authorization_endpoint');
@@ -113,12 +119,14 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
 
     private async register(redirectUri: string): Promise<string> {
         const metadata = this.required(this.metadata, 'metadata');
-        const response = await this.options.httpClient.fetch(metadata.registrationEndpoint, {
+        const response = await this.payboxRequest(metadata.registrationEndpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' }),
         });
-        if (!response.ok) throw oauthError(`registration returned ${response.status}`);
+        if (!response.ok) {
+            throw classifiedPayboxHttpStatus(response.status, PayboxRequestContext.Unauthenticated);
+        }
         const value = await response.json();
         if (!isObject(value)) throw oauthError('malformed registration response');
         return nonEmptyString(value, 'client_id');
@@ -241,7 +249,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     }
 
     private async exchange(code: string): Promise<OAuthTokenResponse> {
-        const response = await this.options.httpClient.fetch(this.required(this.metadata, 'metadata').tokenEndpoint, {
+        const response = await this.payboxRequest(this.required(this.metadata, 'metadata').tokenEndpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
@@ -259,6 +267,14 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private armTimeout(): void {
         const delay = this.options.timeoutMs ?? DEFAULT_LOOPBACK_TIMEOUT_MS;
         this.timeout = this.options.clock.setTimeout(() => this.stop(oauthError('timed out')), delay);
+    }
+
+    private async payboxRequest(url: string, init: RequestInit): Promise<PayboxHttpResponse> {
+        try {
+            return await this.options.httpClient.fetch(url, init);
+        } catch (error) {
+            throw classifiedPayboxError(error, PayboxRequestContext.Unauthenticated);
+        }
     }
 
     private close(): void {

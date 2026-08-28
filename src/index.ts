@@ -73,26 +73,30 @@ async function main(): Promise<void> {
     let auth: AuthService | null = null;
     const wallet =
         config.WALLET_MODE === WalletMode.PAYBOX
-            ? new PayboxCoordinator({
-                  storage: new PayboxAuthStorage(os.homedir(), logger.child('paybox:storage')),
-                  flow: new LoopbackAuthFlow({
-                      issuerUrl: PAYBOX_ISSUER_URL,
-                      httpClient: { fetch: (url, init) => fetch(url, init) },
-                      clock: { setTimeout, clearTimeout },
-                      timeoutMs: null,
-                  }),
-                  sdk: new PayboxSdkAdapter(defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher, {
-                      rpcUrl: config.RPC_URL,
-                      logger: logger.child('paybox:wallet'),
-                  }),
-                  authenticator: {
-                      authenticate: async (payboxWallet, isCurrent) => {
-                          if (auth === null) throw new Error('Paybox authentication is unavailable during startup.');
-                          return auth.authenticateWithWallet(payboxWallet, isCurrent);
+            ? new PayboxCoordinator(
+                  {
+                      storage: new PayboxAuthStorage(os.homedir(), logger.child('paybox:storage')),
+                      flow: new LoopbackAuthFlow({
+                          issuerUrl: PAYBOX_ISSUER_URL,
+                          httpClient: { fetch: (url, init) => fetch(url, init) },
+                          clock: { setTimeout, clearTimeout },
+                          timeoutMs: null,
+                      }),
+                      sdk: new PayboxSdkAdapter(defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher, {
+                          rpcUrl: config.RPC_URL,
+                          logger: logger.child('paybox:wallet'),
+                      }),
+                      authenticator: {
+                          authenticate: async (payboxWallet, isCurrent) => {
+                              if (auth === null)
+                                  throw new Error('Paybox authentication is unavailable during startup.');
+                              return auth.authenticateWithWallet(payboxWallet, isCurrent);
+                          },
+                          clearSession: () => session.clear(),
                       },
-                      clearSession: () => session.clear(),
                   },
-              })
+                  logger.child('paybox:coordinator'),
+              )
             : createWalletProvider({ config, session, logger });
     logger.info('wallet provider created', { ready: wallet.isReady() });
 

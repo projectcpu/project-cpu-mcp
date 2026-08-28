@@ -2,7 +2,7 @@ import { PayboxError } from '@paybox-sh/sdk';
 import { getAddress, parseEther } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PayboxAuthInvalidError } from '../errors.js';
+import { PayboxAuthInvalidError, PayboxOperationDeniedError, PayboxTemporarilyUnavailableError } from '../errors.js';
 import { PayboxSdkAdapter } from '../paybox-sdk.adapter.js';
 import type { PayboxSdkClientFactory, PayboxTokenRefresher, PayboxTokens, PayboxTransactionIntent } from '../types.js';
 
@@ -41,14 +41,79 @@ function factory(result: unknown): {
 }
 
 describe('PayboxSdkAdapter', () => {
-    it.each([401, 403])('classifies authenticated Paybox HTTP %i as confirmed invalid authority', async (status) => {
+    it.each([
+        ['message', (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')],
+        [
+            'transaction',
+            (adapter: PayboxSdkAdapter) => adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
+        ],
+    ])('classifies an ordinary denied %s exactly once without invalidating authority', async (_kind, request) => {
         const mock = factory([]);
-        mock.list.mockRejectedValueOnce(new PayboxError(status, 'rejected', 'GET /agent/credentials'));
+        mock.sign.mockResolvedValueOnce({ status: 'denied', output: null });
         const adapter = new PayboxSdkAdapter(mock.factory);
 
-        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toBeInstanceOf(
-            PayboxAuthInvalidError,
-        );
+        const failure = request(adapter);
+
+        await expect(failure).rejects.toBeInstanceOf(PayboxOperationDeniedError);
+        await expect(failure).rejects.toMatchObject({
+            data: { code: 'PAYBOX_OPERATION_DENIED' },
+            diagnostic: {
+                failureClass: 'operation_denied',
+                resetCause: null,
+                resetDepth: 'none',
+            },
+        });
+        await expect(failure).rejects.not.toBeInstanceOf(PayboxAuthInvalidError);
+        expect(mock.sign).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['HTTP 429', new PayboxError(429, 'rate body secret', 'POST /agent/wallet-sign')],
+        ['HTTP 503', new PayboxError(503, 'outage body secret', 'POST /agent/wallet-sign')],
+        ['network failure', new TypeError('fetch failed with access_token=secret')],
+        ['timeout', new DOMException('request timed out with refresh_token=secret', 'TimeoutError')],
+    ])('classifies %s as temporary exactly once without exposing its raw cause', async (_case, error) => {
+        const mock = factory([]);
+        mock.sign.mockRejectedValueOnce(error);
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        const failure = adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent);
+
+        await expect(failure).rejects.toBeInstanceOf(PayboxTemporarilyUnavailableError);
+        await expect(failure).rejects.toMatchObject({
+            data: {
+                code: 'PAYBOX_TEMPORARILY_UNAVAILABLE',
+                stateCleared: false,
+                retryable: true,
+            },
+            diagnostic: {
+                failureClass: 'temporarily_unavailable',
+                resetCause: null,
+                resetDepth: 'none',
+            },
+        });
+        await expect(failure).rejects.not.toThrow('secret');
+        await expect(failure).rejects.not.toBeInstanceOf(PayboxAuthInvalidError);
+        expect(mock.sign).toHaveBeenCalledOnce();
+    });
+
+    it.each([401, 403])('classifies authenticated Paybox HTTP %i as confirmed invalid authority', async (status) => {
+        const mock = factory([]);
+        mock.list.mockRejectedValueOnce(new PayboxError(status, 'raw-body-secret', 'GET /agent/credentials'));
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        const failure = adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key');
+
+        await expect(failure).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        await expect(failure).rejects.toMatchObject({
+            diagnostic: {
+                failureClass: 'confirmed_authentication',
+                resetCause: 'authenticated_request_rejected',
+                resetDepth: 'full',
+            },
+        });
+        await expect(failure).rejects.not.toThrow('raw-body-secret');
+        expect(mock.list).toHaveBeenCalledOnce();
     });
 
     it('classifies authenticated transaction-signing rejection as confirmed invalid authority', async () => {
@@ -73,8 +138,18 @@ describe('PayboxSdkAdapter', () => {
             }),
         });
 
-        await expect(invalidGrant.refreshTokens(tokens)).rejects.toBeInstanceOf(PayboxAuthInvalidError);
-        await expect(unavailable.refreshTokens(tokens)).rejects.not.toBeInstanceOf(PayboxAuthInvalidError);
+        const confirmed = invalidGrant.refreshTokens(tokens);
+        const transient = unavailable.refreshTokens(tokens);
+
+        await expect(confirmed).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        await expect(confirmed).rejects.toMatchObject({
+            diagnostic: {
+                failureClass: 'confirmed_authentication',
+                resetCause: 'invalid_refresh',
+                resetDepth: 'full',
+            },
+        });
+        await expect(transient).rejects.toBeInstanceOf(PayboxTemporarilyUnavailableError);
     });
 
     it('refreshes through the explicit SDK helper seam and normalizes the complete rotated token set', async () => {

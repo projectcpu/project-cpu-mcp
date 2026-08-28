@@ -14,6 +14,7 @@ import {
 import {
     PayboxAuthStatus,
     PayboxErrorCode,
+    PayboxResetCause,
     type EligiblePayboxGrant,
     type PayboxAuthMaterial,
     type PayboxAuthenticationFlight,
@@ -28,6 +29,8 @@ import {
     type PayboxSelectionState,
     type PayboxWalletAuthority,
 } from './types.js';
+import { NoopLogger } from '../logger/noop.logger.js';
+import type { ILogger } from '../logger/types.js';
 import type { WalletManager, WalletProvider } from '../wallet/types.js';
 
 /** The sole lifecycle owner: auth transport returns material, this module decides persistence and selection. */
@@ -51,7 +54,10 @@ export class PayboxCoordinator implements WalletProvider {
     private refreshPersistenceError: Error | null = null;
     private generation = 0;
 
-    constructor(options: PayboxCoordinatorOptions) {
+    constructor(
+        options: PayboxCoordinatorOptions,
+        private readonly logger: ILogger = new NoopLogger(),
+    ) {
         this.options = options;
         const stored = options.storage.load();
         if (stored?.tokens === null || stored?.signingKey === null || stored === null) return;
@@ -107,6 +113,7 @@ export class PayboxCoordinator implements WalletProvider {
             return await this.authenticateCurrent(requestedCredentialId);
         } catch (error) {
             if (!(error instanceof PayboxAuthInvalidError)) throw error;
+            this.logger.warn('Paybox authentication authority invalidated', { ...error.diagnostic });
             this.resetAuthState();
             return this.authenticateCurrent(null);
         }
@@ -269,7 +276,10 @@ export class PayboxCoordinator implements WalletProvider {
         this.assertCurrent(generation);
         const selected = discovery.grants.find((grant) => grant.credentialId === credentialId);
         if (selected === undefined || getAddress(selected.address) !== address) {
-            throw new PayboxAuthInvalidError('The selected Paybox Wallet grant is no longer valid.');
+            throw new PayboxAuthInvalidError(
+                'The selected Paybox Wallet grant is no longer valid.',
+                PayboxResetCause.SelectedGrantMissing,
+            );
         }
         await this.authenticateFresh(wallet, generation, credentialId, address);
         this.assertCurrent(generation);
@@ -474,7 +484,10 @@ export class PayboxCoordinator implements WalletProvider {
 
     private async rotateTokens(material: PayboxAuthMaterial, generation: number): Promise<void> {
         if (material.tokens.refreshToken === null) {
-            throw new PayboxAuthInvalidError('Paybox OAuth refresh token is unavailable.');
+            throw new PayboxAuthInvalidError(
+                'Paybox OAuth refresh token is unavailable.',
+                PayboxResetCause.InvalidRefresh,
+            );
         }
         // A rotating refresh token must be unrecoverable before an exchange can consume it.
         this.options.storage.clear();

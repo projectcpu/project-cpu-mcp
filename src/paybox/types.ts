@@ -1,7 +1,7 @@
 import { isAddress, type Address, type Hash, type Hex } from 'viem';
 import { z } from 'zod';
 
-import { isPbxk1 } from './auth-flow.utils.js';
+import { isPbxk1 } from './signing-key.utils.js';
 import type { ILogger } from '../logger/types.js';
 import type { GasEstimateRequest, ReadContractParams, TxReceipt, WalletManager } from '../wallet/types.js';
 
@@ -17,8 +17,52 @@ export enum PayboxApprovalMode {
 
 export enum PayboxErrorCode {
     FullAccessWalletRequired = 'PAYBOX_FULL_ACCESS_WALLET_REQUIRED',
+    OperationDenied = 'PAYBOX_OPERATION_DENIED',
+    TemporarilyUnavailable = 'PAYBOX_TEMPORARILY_UNAVAILABLE',
     WalletSelectionInvalid = 'PAYBOX_WALLET_SELECTION_INVALID',
     WalletSelectionNotPending = 'PAYBOX_WALLET_SELECTION_NOT_PENDING',
+}
+
+export enum PayboxFailureClass {
+    ConfirmedAuthentication = 'confirmed_authentication',
+    OperationDenied = 'operation_denied',
+    TemporarilyUnavailable = 'temporarily_unavailable',
+}
+
+export enum PayboxResetCause {
+    AuthenticatedRequestRejected = 'authenticated_request_rejected',
+    InvalidRefresh = 'invalid_refresh',
+    InvalidSigningAuthority = 'invalid_signing_authority',
+    OAuthRejected = 'oauth_rejected',
+    SelectedGrantMissing = 'selected_grant_missing',
+}
+
+export enum PayboxResetDepth {
+    None = 'none',
+    Full = 'full',
+}
+
+export enum PayboxRequestContext {
+    Authenticated = 'authenticated',
+    OAuthToken = 'oauth_token',
+    Refresh = 'refresh',
+    Unauthenticated = 'unauthenticated',
+}
+
+export interface PayboxFailureDiagnostic {
+    failureClass: PayboxFailureClass;
+    resetCause: PayboxResetCause | null;
+    resetDepth: PayboxResetDepth;
+}
+
+export interface PayboxOperationDeniedErrorData {
+    code: PayboxErrorCode.OperationDenied;
+}
+
+export interface PayboxTemporarilyUnavailableErrorData {
+    code: PayboxErrorCode.TemporarilyUnavailable;
+    stateCleared: false;
+    retryable: true;
 }
 
 export const payboxTokensSchema = z.object({

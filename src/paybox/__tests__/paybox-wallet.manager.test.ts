@@ -9,15 +9,18 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it, vi } from 'vitest';
 
+import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import type { ApiClient } from '../../api/client.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
+import type { ILogger, LogMeta } from '../../logger/types.js';
 import { AuthService } from '../../services/auth.service.js';
 import type { SessionManager } from '../../session/manager.js';
 import { SessionStatus } from '../../session/types.js';
 import { TxStatus } from '../../wallet/types.js';
-import { PayboxAuthInvalidError } from '../errors.js';
+import { PayboxAuthInvalidError, PayboxOperationDeniedError, PayboxTemporarilyUnavailableError } from '../errors.js';
 import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import { verifiedPayboxTransaction } from '../paybox-wallet.utils.js';
+import { PayboxResetCause } from '../types.js';
 import type {
     IPayboxRpcClient,
     IPayboxSdkAdapter,
@@ -102,6 +105,20 @@ function manager(sdk: Partial<IPayboxSdkAdapter>, rpcClient: IPayboxRpcClient = 
     });
 }
 
+class RecordingLogger implements ILogger {
+    readonly warnings = new Array<{ message: string; meta: LogMeta | undefined }>();
+    readonly info = vi.fn();
+    readonly error = vi.fn();
+    readonly debug = vi.fn();
+
+    warn(message: string, meta?: LogMeta): void {
+        this.warnings.push({ message, meta });
+    }
+    child(): ILogger {
+        return this;
+    }
+}
+
 describe('verifiedPayboxTransaction', () => {
     it('accepts only the exact selected-wallet EIP-1559 artifact', async () => {
         const artifact = await signed();
@@ -161,6 +178,116 @@ describe('verifiedPayboxTransaction', () => {
 });
 
 describe('PayboxWalletManager', () => {
+    it.each([
+        ['ordinary denial', new PayboxOperationDeniedError(), PayboxOperationDeniedError],
+        ['temporary outage', new PayboxTemporarilyUnavailableError(), PayboxTemporarilyUnavailableError],
+    ])('preserves authority and never broadcasts after %s', async (_case, signingError, errorType) => {
+        const invalidate = vi.fn();
+        const rpcClient = rpc();
+        const logger = new RecordingLogger();
+        const signTransaction = vi.fn(async () => Promise.reject(signingError));
+        const wallet = new PayboxWalletManager({
+            sdk: { signTransaction } as unknown as IPayboxSdkAdapter,
+            credentialId: 'credential-a',
+            address: account.address,
+            authority: {
+                current: async () => ({ tokens, signingKey: 'pbxk1.key' }),
+                invalidate,
+            },
+            rpc: rpcClient,
+            logger,
+        });
+
+        await expect(
+            wallet.sendTransaction({ to: destination, data: intent.data, value: intent.value, gas: null }),
+        ).rejects.toBeInstanceOf(errorType);
+        expect(signTransaction).toHaveBeenCalledOnce();
+        expect(invalidate).not.toHaveBeenCalled();
+        expect(rpcClient.sendRawTransaction).not.toHaveBeenCalled();
+        expect(logger.warnings).toEqual([
+            {
+                message: 'Paybox signing request failed',
+                meta: signingError.diagnostic,
+            },
+        ]);
+    });
+
+    it('publishes deterministic recovery and redacted reset diagnostics after confirmed signing failure', async () => {
+        const invalidate = vi.fn();
+        const rpcClient = rpc();
+        const logger = new RecordingLogger();
+        const signTransaction = vi.fn(async () => {
+            throw new PayboxAuthInvalidError(
+                'rejected raw body with access_token=secret',
+                PayboxResetCause.AuthenticatedRequestRejected,
+            );
+        });
+        const wallet = new PayboxWalletManager({
+            sdk: { signTransaction } as unknown as IPayboxSdkAdapter,
+            credentialId: 'credential-a',
+            address: account.address,
+            authority: {
+                current: async () => ({ tokens, signingKey: 'pbxk1.key' }),
+                invalidate,
+            },
+            rpc: rpcClient,
+            logger,
+        });
+
+        const failure = wallet.sendTransaction({
+            to: destination,
+            data: intent.data,
+            value: intent.value,
+            gas: null,
+        });
+
+        await expect(failure).rejects.toBeInstanceOf(AuthenticationRequiredError);
+        await expect(failure).rejects.toMatchObject({
+            data: { code: 'AUTHENTICATION_REQUIRED', stateCleared: true, nextTool: 'cpu_authenticate' },
+        });
+        await expect(failure).rejects.not.toThrow('secret');
+        expect(signTransaction).toHaveBeenCalledOnce();
+        expect(invalidate).toHaveBeenCalledOnce();
+        expect(rpcClient.sendRawTransaction).not.toHaveBeenCalled();
+        expect(logger.warnings).toEqual([
+            {
+                message: 'Paybox signing authority invalidated',
+                meta: {
+                    failureClass: 'confirmed_authentication',
+                    resetCause: 'authenticated_request_rejected',
+                    resetDepth: 'full',
+                },
+            },
+        ]);
+    });
+
+    it('publishes the same recovery when current authority proves an invalid refresh before signing', async () => {
+        const invalidate = vi.fn();
+        const signTransaction = vi.fn();
+        const rpcClient = rpc();
+        const wallet = new PayboxWalletManager({
+            sdk: { signTransaction } as unknown as IPayboxSdkAdapter,
+            credentialId: 'credential-a',
+            address: account.address,
+            authority: {
+                current: vi.fn(async () => {
+                    throw new PayboxAuthInvalidError('invalid refresh', PayboxResetCause.InvalidRefresh);
+                }),
+                invalidate,
+            },
+            rpc: rpcClient,
+            logger: new NoopLogger(),
+        });
+
+        await expect(
+            wallet.sendTransaction({ to: destination, data: intent.data, value: intent.value, gas: null }),
+        ).rejects.toBeInstanceOf(AuthenticationRequiredError);
+        expect(invalidate).toHaveBeenCalledOnce();
+        expect(signTransaction).not.toHaveBeenCalled();
+        expect(rpcClient.getPendingNonce).not.toHaveBeenCalled();
+        expect(rpcClient.sendRawTransaction).not.toHaveBeenCalled();
+    });
+
     it('loads current coordinator-owned authority before each signing request', async () => {
         const message = 'Project CPU SIWE proof';
         const signature = await account.signMessage({ message });
@@ -197,24 +324,28 @@ describe('PayboxWalletManager', () => {
         expect(wallet.getChainId()).toBe(4663);
     });
 
-    it('rejects wrong signer, wrong message, and malformed signatures before downstream use', async () => {
+    it('requires explicit authentication for wrong signer, wrong message, and malformed signatures', async () => {
         const message = 'Project CPU SIWE proof';
         for (const signMessage of [
             vi.fn(async () => other.signMessage({ message })),
             vi.fn(async () => account.signMessage({ message: 'other' })),
             vi.fn(async () => '0xdeadbeef'),
         ]) {
-            await expect(manager({ signMessage }).signMessage(message)).rejects.toThrow(/does not match|malformed/);
+            await expect(manager({ signMessage }).signMessage(message)).rejects.toBeInstanceOf(
+                AuthenticationRequiredError,
+            );
         }
     });
 
-    it('marks malformed and wrong-wallet SIWE signatures as confirmed invalid authority', async () => {
+    it('requires explicit authentication after malformed and wrong-wallet SIWE signatures', async () => {
         const message = 'Project CPU SIWE proof';
         for (const signMessage of [
             vi.fn(async () => other.signMessage({ message })),
             vi.fn(async () => '0xdeadbeef'),
         ]) {
-            await expect(manager({ signMessage }).signMessage(message)).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+            await expect(manager({ signMessage }).signMessage(message)).rejects.toBeInstanceOf(
+                AuthenticationRequiredError,
+            );
         }
     });
 
@@ -236,7 +367,7 @@ describe('PayboxWalletManager', () => {
             logger: new NoopLogger(),
         });
 
-        await expect(wallet.signMessage('Project CPU SIWE proof')).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        await expect(wallet.signMessage('Project CPU SIWE proof')).rejects.toBeInstanceOf(AuthenticationRequiredError);
         expect(invalidate).toHaveBeenCalledOnce();
     });
 
@@ -367,7 +498,7 @@ describe('PayboxWalletManager', () => {
             logger: new NoopLogger(),
         });
 
-        await expect(service.authenticateSiwe()).rejects.toThrow('does not match');
+        await expect(service.authenticateSiwe()).rejects.toBeInstanceOf(AuthenticationRequiredError);
         expect(request).toHaveBeenCalledTimes(1);
     });
 });

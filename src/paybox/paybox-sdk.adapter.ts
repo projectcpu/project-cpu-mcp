@@ -7,7 +7,7 @@ import {
     serializedTransactionFromResponse,
     signatureFromResponse,
 } from './sdk.utils.js';
-import { payboxTokensSchema } from './types.js';
+import { PayboxRequestContext, payboxTokensSchema } from './types.js';
 import type {
     EligiblePayboxGrantList,
     IPayboxSdkAdapter,
@@ -30,32 +30,35 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
     ) {}
 
     public async refreshTokens(tokens: PayboxTokens): Promise<PayboxTokens> {
+        let refreshed;
         try {
-            const refreshed = await this.refresher.refresh(tokens.baseUrl, {
+            refreshed = await this.refresher.refresh(tokens.baseUrl, {
                 clientId: tokens.clientId,
                 accessToken: tokens.accessToken,
                 refreshToken: tokens.refreshToken,
                 expiresAt: tokens.expiresAt,
                 resource: tokens.resource,
             });
-            return payboxTokensSchema.parse({
-                ...refreshed,
-                baseUrl: tokens.baseUrl,
-            });
         } catch (error) {
-            throw classifiedPayboxError(error);
+            throw classifiedPayboxError(error, PayboxRequestContext.Refresh);
         }
+        return payboxTokensSchema.parse({
+            ...refreshed,
+            baseUrl: tokens.baseUrl,
+        });
     }
 
     public async listEligibleAutonomousEvmGrants(
         tokens: PayboxTokens,
         signingKey: string,
     ): Promise<EligiblePayboxGrantList> {
+        let response;
         try {
-            return autonomousEvmGrants(await this.client(tokens, signingKey).listCredentials(), tokens.baseUrl);
+            response = await this.client(tokens, signingKey).listCredentials();
         } catch (error) {
-            throw classifiedPayboxError(error);
+            throw classifiedPayboxError(error, PayboxRequestContext.Authenticated);
         }
+        return autonomousEvmGrants(response, tokens.baseUrl);
     }
 
     public createWallet(
@@ -81,15 +84,16 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
         credentialId: string,
         message: string,
     ): Promise<string> {
+        let response;
         try {
-            const response = await this.client(tokens, signingKey).requestWalletSign(
+            response = await this.client(tokens, signingKey).requestWalletSign(
                 { credentialId, intent: { op: 'message', message } },
                 { autoSign: true },
             );
-            return signatureFromResponse(response, credentialId);
         } catch (error) {
-            throw classifiedPayboxError(error);
+            throw classifiedPayboxError(error, PayboxRequestContext.Authenticated);
         }
+        return signatureFromResponse(response, credentialId);
     }
 
     public async signTransaction(
@@ -98,8 +102,9 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
         credentialId: string,
         intent: PayboxTransactionIntent,
     ): Promise<`0x${string}`> {
+        let response;
         try {
-            const response = await this.client(tokens, signingKey).requestWalletSign(
+            response = await this.client(tokens, signingKey).requestWalletSign(
                 {
                     credentialId,
                     intent: {
@@ -118,10 +123,10 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
                 },
                 { autoSign: true },
             );
-            return serializedTransactionFromResponse(response, credentialId);
         } catch (error) {
-            throw classifiedPayboxError(error);
+            throw classifiedPayboxError(error, PayboxRequestContext.Authenticated);
         }
+        return serializedTransactionFromResponse(response, credentialId);
     }
 
     private client(tokens: PayboxTokens, signingKey: string): PayboxSdkClient {

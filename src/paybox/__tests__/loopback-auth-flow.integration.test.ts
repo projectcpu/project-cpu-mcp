@@ -17,6 +17,33 @@ afterEach(() => {
 });
 
 describe('LoopbackAuthFlow', () => {
+    it.each([
+        ['HTTP 429', { ...response({}), ok: false, status: 429 }],
+        ['HTTP 503', { ...response({}), ok: false, status: 503 }],
+        ['network failure', new TypeError('fetch failed with access_token=secret')],
+        ['timeout', new DOMException('timed out with refresh_token=secret', 'TimeoutError')],
+    ])('classifies discovery %s as temporary before opening a browser listener', async (_case, outcome) => {
+        const fetchRequest = vi.fn(async () => {
+            if (outcome instanceof Error) throw outcome;
+            return outcome;
+        });
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: { fetch: fetchRequest },
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+
+        const failure = flow.start();
+
+        await expect(failure).rejects.toMatchObject({
+            data: { code: 'PAYBOX_TEMPORARILY_UNAVAILABLE', stateCleared: false, retryable: true },
+        });
+        await expect(failure).rejects.not.toThrow('secret');
+        expect(fetchRequest).toHaveBeenCalledOnce();
+    });
+
     it('performs discovery, registration, PKCE exchange and one-shot key capture', async () => {
         const requests: Array<{ url: string; init: RequestInit }> = [];
         const client: PayboxHttpClient = {
@@ -235,7 +262,9 @@ describe('LoopbackAuthFlow', () => {
             expect((await fetch(callback)).status).toBe(200);
             await new Promise<void>((resolve) => setImmediate(resolve));
             expect(unhandled).toEqual([]);
-            await expect(flow.finish()).rejects.toThrow('token exchange returned 503');
+            await expect(flow.finish()).rejects.toMatchObject({
+                data: { code: 'PAYBOX_TEMPORARILY_UNAVAILABLE', stateCleared: false, retryable: true },
+            });
             await expect(flow.start()).resolves.toEqual(
                 expect.objectContaining({ authorizationUrl: expect.any(String) }),
             );

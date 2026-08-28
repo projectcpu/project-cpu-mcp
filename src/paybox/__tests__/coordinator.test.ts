@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
+import type { ILogger } from '../../logger/types.js';
 import type { WalletManager } from '../../wallet/types.js';
 import { PayboxCoordinator } from '../coordinator.js';
 import { PayboxAuthInvalidError, PayboxLoopbackUnavailableError } from '../errors.js';
 import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import {
     PayboxAuthStatus,
+    PayboxResetCause,
     type IPayboxAuthStorage,
     type IPayboxRpcClient,
     type IPayboxSdkAdapter,
@@ -17,6 +20,20 @@ import {
 } from '../types.js';
 
 const wallet = { getAddress: () => '0x0000000000000000000000000000000000000001' } as unknown as WalletManager;
+
+function recordingLogger(): { logger: ILogger; warn: ReturnType<typeof vi.fn> } {
+    const warn = vi.fn();
+    return {
+        logger: {
+            info: vi.fn(),
+            warn,
+            error: vi.fn(),
+            debug: vi.fn(),
+            child: vi.fn(),
+        } as unknown as ILogger,
+        warn,
+    };
+}
 
 describe('PayboxCoordinator', () => {
     it('clears the game session before forced authentication returns a new OAuth state', async () => {
@@ -121,45 +138,49 @@ describe('PayboxCoordinator', () => {
         const clearSession = vi.fn();
         const authenticate = vi.fn(async () => 'game-jwt');
         const start = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=fresh' }));
-        const coordinator = new PayboxCoordinator({
-            storage: {
-                load: () => ({
-                    version: 1,
-                    tokens: {
-                        clientId: 'client',
-                        accessToken: 'access',
-                        refreshToken: null,
-                        expiresAt: null,
-                        resource: null,
-                        baseUrl: 'https://paybox.test',
-                    },
-                    signingKey: 'pbxk1.test',
-                    credentialId: 'missing-credential',
-                    address: '0x0000000000000000000000000000000000000001',
-                }),
-                save: vi.fn(),
-                clear,
-            },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
-            sdk: {
-                refreshTokens: vi.fn(),
-                listEligibleAutonomousEvmGrants: vi.fn(async () => ({
-                    grants: [
-                        {
-                            credentialId: 'replacement',
-                            address: '0x0000000000000000000000000000000000000002',
-                            label: null,
-                            provider: null,
+        const diagnostics = recordingLogger();
+        const coordinator = new PayboxCoordinator(
+            {
+                storage: {
+                    load: () => ({
+                        version: 1,
+                        tokens: {
+                            clientId: 'client',
+                            accessToken: 'access',
+                            refreshToken: null,
+                            expiresAt: null,
+                            resource: null,
+                            baseUrl: 'https://paybox.test',
                         },
-                    ],
-                    managementUrl: null,
-                })),
-                createWallet: vi.fn(() => wallet),
-                signMessage: vi.fn(),
-                signTransaction: vi.fn(),
+                        signingKey: 'pbxk1.test',
+                        credentialId: 'missing-credential',
+                        address: '0x0000000000000000000000000000000000000001',
+                    }),
+                    save: vi.fn(),
+                    clear,
+                },
+                flow: { start, finish: vi.fn(), cancel: vi.fn() },
+                sdk: {
+                    refreshTokens: vi.fn(),
+                    listEligibleAutonomousEvmGrants: vi.fn(async () => ({
+                        grants: [
+                            {
+                                credentialId: 'replacement',
+                                address: '0x0000000000000000000000000000000000000002',
+                                label: null,
+                                provider: null,
+                            },
+                        ],
+                        managementUrl: null,
+                    })),
+                    createWallet: vi.fn(() => wallet),
+                    signMessage: vi.fn(),
+                    signTransaction: vi.fn(),
+                },
+                authenticator: { authenticate, clearSession },
             },
-            authenticator: { authenticate, clearSession },
-        });
+            diagnostics.logger,
+        );
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
             expect.objectContaining({
@@ -173,6 +194,11 @@ describe('PayboxCoordinator', () => {
         expect(start).toHaveBeenCalledOnce();
         expect(authenticate).not.toHaveBeenCalled();
         expect(coordinator.isReady()).toBe(false);
+        expect(diagnostics.warn).toHaveBeenCalledWith('Paybox authentication authority invalidated', {
+            failureClass: 'confirmed_authentication',
+            resetCause: 'selected_grant_missing',
+            resetDepth: 'full',
+        });
     });
 
     it('single-flights restored grant validation and fresh SIWE', async () => {
@@ -249,37 +275,44 @@ describe('PayboxCoordinator', () => {
         const clear = vi.fn();
         const clearSession = vi.fn();
         const start = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=recovery' }));
-        const coordinator = new PayboxCoordinator({
-            storage: {
-                load: () => ({
-                    version: 1,
-                    tokens: {
-                        clientId: 'client',
-                        accessToken: 'revoked-access',
-                        refreshToken: null,
-                        expiresAt: null,
-                        resource: null,
-                        baseUrl: 'https://paybox.test',
-                    },
-                    signingKey: 'pbxk1.test',
-                    credentialId: 'credential',
-                    address: '0x0000000000000000000000000000000000000001',
-                }),
-                save: vi.fn(),
-                clear,
+        const diagnostics = recordingLogger();
+        const coordinator = new PayboxCoordinator(
+            {
+                storage: {
+                    load: () => ({
+                        version: 1,
+                        tokens: {
+                            clientId: 'client',
+                            accessToken: 'revoked-access',
+                            refreshToken: null,
+                            expiresAt: null,
+                            resource: null,
+                            baseUrl: 'https://paybox.test',
+                        },
+                        signingKey: 'pbxk1.test',
+                        credentialId: 'credential',
+                        address: '0x0000000000000000000000000000000000000001',
+                    }),
+                    save: vi.fn(),
+                    clear,
+                },
+                flow: { start, finish: vi.fn(), cancel: vi.fn() },
+                sdk: {
+                    refreshTokens: vi.fn(),
+                    listEligibleAutonomousEvmGrants: vi.fn(async () => {
+                        throw new PayboxAuthInvalidError(
+                            'Paybox OAuth authority was rejected.',
+                            PayboxResetCause.AuthenticatedRequestRejected,
+                        );
+                    }),
+                    createWallet: vi.fn(() => wallet),
+                    signMessage: vi.fn(),
+                    signTransaction: vi.fn(),
+                },
+                authenticator: { authenticate: vi.fn(), clearSession },
             },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
-            sdk: {
-                refreshTokens: vi.fn(),
-                listEligibleAutonomousEvmGrants: vi.fn(async () => {
-                    throw new PayboxAuthInvalidError('Paybox OAuth authority was rejected.');
-                }),
-                createWallet: vi.fn(() => wallet),
-                signMessage: vi.fn(),
-                signTransaction: vi.fn(),
-            },
-            authenticator: { authenticate: vi.fn(), clearSession },
-        });
+            diagnostics.logger,
+        );
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
             expect.objectContaining({
@@ -292,6 +325,11 @@ describe('PayboxCoordinator', () => {
         expect(clearSession).toHaveBeenCalledOnce();
         expect(start).toHaveBeenCalledOnce();
         expect(coordinator.isReady()).toBe(false);
+        expect(diagnostics.warn).toHaveBeenCalledWith('Paybox authentication authority invalidated', {
+            failureClass: 'confirmed_authentication',
+            resetCause: 'authenticated_request_rejected',
+            resetDepth: 'full',
+        });
     });
 
     it('does not expose a manager from an obsolete generation when replacement construction fails', async () => {
@@ -1019,7 +1057,7 @@ describe('PayboxCoordinator', () => {
         });
         const retainedWallet = coordinator.get();
 
-        await expect(retainedWallet.signMessage('economic intent')).rejects.toThrow('refreshed signing authority');
+        await expect(retainedWallet.signMessage('economic intent')).rejects.toBeInstanceOf(AuthenticationRequiredError);
 
         expect(signMessage).toHaveBeenCalledOnce();
         expect(clear).toHaveBeenCalledTimes(2);

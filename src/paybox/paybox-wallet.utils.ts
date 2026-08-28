@@ -9,17 +9,26 @@ import {
 } from 'viem';
 
 import { PayboxAuthInvalidError } from './errors.js';
-import type { PayboxTransactionIntent } from './types.js';
+import { PayboxResetCause, type PayboxTransactionIntent } from './types.js';
 
 export async function verifiedPayboxMessageSignature(message: string, signature: Hex, address: Address): Promise<Hex> {
     let signer: Address;
     try {
         signer = await recoverMessageAddress({ message, signature });
     } catch (error) {
-        throw new PayboxAuthInvalidError('Paybox returned a malformed message signature.', { cause: error });
+        throw new PayboxAuthInvalidError(
+            'Paybox returned a malformed message signature.',
+            PayboxResetCause.InvalidSigningAuthority,
+            {
+                cause: error,
+            },
+        );
     }
     if (getAddress(signer) !== getAddress(address)) {
-        throw new PayboxAuthInvalidError('Paybox signature does not match the selected wallet.');
+        throw new PayboxAuthInvalidError(
+            'Paybox signature does not match the selected wallet.',
+            PayboxResetCause.InvalidSigningAuthority,
+        );
     }
     return signature;
 }
@@ -43,7 +52,10 @@ export async function verifiedPayboxTransaction(
         throw new Error('Paybox signed transaction must be EIP-1559.');
     }
     if (getAddress(signer) !== getAddress(address)) {
-        throw new PayboxAuthInvalidError('Paybox signed transaction signer does not match the selected wallet.');
+        throw new PayboxAuthInvalidError(
+            'Paybox signed transaction signer does not match the selected wallet.',
+            PayboxResetCause.InvalidSigningAuthority,
+        );
     }
     if (transaction.to == null || getAddress(transaction.to) !== getAddress(intent.to)) {
         throw new Error('Paybox signed transaction destination does not match the requested intent.');
