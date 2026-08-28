@@ -316,7 +316,13 @@ describe('buildAttentionReport', () => {
                     revealCount: 1,
                     building: { type: BuildingType.Mine, buildFinishAt: 5, modeResource: null, modeRecipeId: null },
                     process: makeCraftProcess({ recipeId: 'refine', durationSec: 10, batches: 1, startAt: 0 }),
-                    resources: [makeResource({ resourceId: 10, deposit: '1000' })],
+                    resources: [
+                        makeResource({
+                            resourceId: 10,
+                            deposit: '1000',
+                            storage: makeStorage({ cellCap: '100', hubCap: '100' }),
+                        }),
+                    ],
                 },
             ],
             { refine: [{ resourceId: 10, amount: 20 }] },

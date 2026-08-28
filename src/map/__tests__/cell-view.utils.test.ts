@@ -187,6 +187,15 @@ describe('toCell storage cap', () => {
         expect(projected).not.toHaveProperty('hubCap');
     });
 
+    it('normalizes a null non-WCPU shelf to zero room rather than uncapped storage', () => {
+        const cell = rawCell({
+            resources: [resource({ resourceId: 5, storage: storage({ cellCap: null, hubCap: null }) })],
+        });
+        const projected = toCell(cell, FINISH_AT, config()).resources[0]?.storage;
+
+        expect(projected).toMatchObject({ cap: '0', full: true });
+    });
+
     it('leaves a resource with no warehouse alone', () => {
         const cell = rawCell({ building: hub(), resources: [resource({ storage: null })] });
         expect(toCell(cell, FINISH_AT, config()).resources[0]?.storage).toBeNull();

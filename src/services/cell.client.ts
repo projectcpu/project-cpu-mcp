@@ -1,6 +1,6 @@
 import { encodeFunctionData, type Address, type Hash } from 'viem';
 
-import { withRevealInFlightPhrase, withRevealRequestPhrase } from './reveal-revert.utils.js';
+import { withRevealInFlightPhrase, withRevealQuotePhrase, withRevealRequestPhrase } from './reveal-revert.utils.js';
 import type {
     CellClientOptions,
     CellViewResult,
@@ -38,20 +38,30 @@ export class CellClient implements ICellClient {
     }
 
     async quoteReveal(cell: Address): Promise<RevealQuote> {
-        const [ethContributionWei, randomnessFeeWei, totalRequiredWei, cpuBurnWei] = await this.contracts.read<
-            readonly [bigint, bigint, bigint, bigint, bigint]
-        >({
-            address: cell,
-            abi: CELL_ABI,
-            functionName: 'quoteReveal',
-            args: [],
-        });
+        let quote: readonly [bigint, bigint, bigint, bigint, bigint];
+        try {
+            quote = await this.contracts.read({
+                address: cell,
+                abi: CELL_ABI,
+                functionName: 'quoteReveal',
+                args: [],
+            });
+        } catch (error) {
+            throw withRevealQuotePhrase(error);
+        }
+        const [poolContributionWei, randomnessFeeWei, ethBudgetWei, cpuBurnWei, metadataPublicationChargeWei] = quote;
         this.logger.info('quoted the reveal', {
             cell,
-            totalRequiredWei: totalRequiredWei.toString(),
+            ethBudgetWei: ethBudgetWei.toString(),
             cpuBurnWei: cpuBurnWei.toString(),
         });
-        return { ethContributionWei, randomnessFeeWei, totalRequiredWei, cpuBurnWei };
+        return {
+            poolContributionWei,
+            randomnessFeeWei,
+            ethBudgetWei,
+            cpuBurnWei,
+            metadataPublicationChargeWei,
+        };
     }
 
     async requestReveal(params: RequestRevealParams): Promise<Hash> {

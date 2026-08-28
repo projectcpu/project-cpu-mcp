@@ -32,12 +32,26 @@ export function assertWarehouseHas(
 /**
  * Whether a shipment of `required` units of one resource still fits in a cell as it stands. The game API's
  * `used` figure already includes liquid balance, incoming transport, and lot reservations, so it is the full
- * occupancy to subtract from the shelf. A shelf the projection reports no cap for is uncapped: nothing can
- * overflow it, and quoting a free figure for it would be an invention.
+ * occupancy to subtract from the shelf. `emptyStorageCap` carries the config rule when the map has no held row:
+ * null is uncapped WCPU, while every other missing cap resolves to zero.
  */
-export function assessDestinationCapacity(cell: Cell, resourceId: number, required: bigint): DestinationCapacityView {
+export function assessDestinationCapacity(
+    cell: Cell,
+    resourceId: number,
+    required: bigint,
+    emptyStorageCap: bigint | null,
+): DestinationCapacityView {
     const storage = cell.resources.find((r) => r.resourceId === resourceId)?.storage ?? null;
-    if (storage === null || storage.cap === null) {
+    if (storage === null) {
+        return emptyStorageCap === null
+            ? { fits: true, required: required.toString(), free: null }
+            : {
+                  fits: required <= emptyStorageCap,
+                  required: required.toString(),
+                  free: emptyStorageCap.toString(),
+              };
+    }
+    if (storage.cap === null) {
         return { fits: true, required: required.toString(), free: null };
     }
     const taken = BigInt(storage.used);
