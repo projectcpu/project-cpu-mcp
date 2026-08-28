@@ -61,6 +61,20 @@ export enum PayboxRequestContext {
     Unauthenticated = 'unauthenticated',
 }
 
+export enum PayboxSdkOperation {
+    ListEligibleAutonomousEvmGrants = 'list_eligible_autonomous_evm_grants',
+    RefreshTokens = 'refresh_tokens',
+    SignMessage = 'sign_message',
+    SignTransaction = 'sign_transaction',
+}
+
+export enum PayboxSdkStage {
+    ListCredentials = 'list_credentials',
+    NormalizeCredentials = 'normalize_credentials',
+    RefreshTokens = 'refresh_tokens',
+    RequestWalletSign = 'request_wallet_sign',
+}
+
 export enum PayboxRefreshFailureDisposition {
     Ambiguous = 'ambiguous',
     NotApplicable = 'not_applicable',

@@ -2,6 +2,7 @@ import { PayboxError } from '@paybox-sh/sdk';
 import { getAddress, parseEther } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ILogger } from '../../logger/types.js';
 import {
     PayboxAuthInvalidError,
     PayboxInvalidOperationArtifactError,
@@ -10,6 +11,7 @@ import {
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
 import { PayboxSdkAdapter } from '../sdk/adapter.js';
+import { defaultPayboxTokenRefresher } from '../sdk/factory.js';
 import type { PayboxSdkClientFactory, PayboxTokenRefresher, PayboxTokens, PayboxTransactionIntent } from '../types.js';
 
 const tokens: PayboxTokens = {
@@ -46,7 +48,69 @@ function factory(result: unknown): {
     return { factory: { create: vi.fn(() => ({ listCredentials: list, requestWalletSign: sign })) }, list, sign };
 }
 
+function recordingLogger(): { logger: ILogger; warn: ReturnType<typeof vi.fn> } {
+    const warn = vi.fn();
+    const logger: ILogger = {
+        info: vi.fn(),
+        warn,
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn(() => logger),
+    };
+    return { logger, warn };
+}
+
 describe('PayboxSdkAdapter', () => {
+    it('logs safe SDK diagnostics when authenticated credential discovery fails unexpectedly', async () => {
+        const mock = factory([]);
+        const diagnostics = recordingLogger();
+        mock.list.mockRejectedValueOnce(
+            new PayboxError(422, 'access_token=secret raw response body', 'GET /agent/credentials'),
+        );
+        const adapter = new PayboxSdkAdapter(mock.factory, defaultPayboxTokenRefresher, {
+            rpcUrl: null,
+            logger: diagnostics.logger,
+        });
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toBeInstanceOf(
+            PayboxOperationIncompleteError,
+        );
+        expect(diagnostics.warn).toHaveBeenCalledOnce();
+        expect(diagnostics.warn).toHaveBeenCalledWith('Paybox SDK operation failed', {
+            operation: 'list_eligible_autonomous_evm_grants',
+            stage: 'list_credentials',
+            requestContext: 'authenticated',
+            errorName: 'PayboxError',
+            errorMessage: null,
+            httpStatus: 422,
+            classifiedErrorName: 'PayboxOperationIncompleteError',
+        });
+        expect(JSON.stringify(diagnostics.warn.mock.calls)).not.toContain('secret');
+        expect(mock.list).toHaveBeenCalledOnce();
+    });
+
+    it('distinguishes malformed credential data from a failed SDK request', async () => {
+        const mock = factory({ credentials: 'not-an-array' });
+        const diagnostics = recordingLogger();
+        const adapter = new PayboxSdkAdapter(mock.factory, defaultPayboxTokenRefresher, {
+            rpcUrl: null,
+            logger: diagnostics.logger,
+        });
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toBeInstanceOf(
+            PayboxOperationIncompleteError,
+        );
+        expect(diagnostics.warn).toHaveBeenCalledWith('Paybox SDK operation failed', {
+            operation: 'list_eligible_autonomous_evm_grants',
+            stage: 'normalize_credentials',
+            requestContext: 'authenticated',
+            errorName: 'Error',
+            errorMessage: 'Paybox returned an invalid grant list.',
+            httpStatus: null,
+            classifiedErrorName: 'PayboxOperationIncompleteError',
+        });
+    });
+
     it('classifies an untyped SDK signing failure without exposing or replaying it', async () => {
         const mock = factory([]);
         mock.sign.mockRejectedValueOnce(new Error('unknown SDK failure with access_token=secret'));

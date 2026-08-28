@@ -1,4 +1,5 @@
 import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './factory.js';
+import { payboxSdkFailureLogMeta } from './logging.utils.js';
 import {
     autonomousEvmGrants,
     classifiedPayboxError,
@@ -7,7 +8,7 @@ import {
 } from './utils.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import type { WalletManager } from '../../wallet/types.js';
-import { PayboxRequestContext, payboxTokensSchema } from '../types.js';
+import { PayboxRequestContext, PayboxSdkOperation, PayboxSdkStage, payboxTokensSchema } from '../types.js';
 import type {
     EligiblePayboxGrantList,
     IPayboxSdkAdapter,
@@ -43,7 +44,12 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
                 baseUrl: tokens.baseUrl,
             });
         } catch (error) {
-            throw classifiedPayboxError(error, PayboxRequestContext.Refresh);
+            throw this.classifiedFailure(
+                PayboxSdkOperation.RefreshTokens,
+                PayboxSdkStage.RefreshTokens,
+                PayboxRequestContext.Refresh,
+                error,
+            );
         }
     }
 
@@ -51,11 +57,26 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
         tokens: PayboxTokens,
         signingKey: string,
     ): Promise<EligiblePayboxGrantList> {
+        let response;
         try {
-            const response = await this.client(tokens, signingKey).listCredentials();
+            response = await this.client(tokens, signingKey).listCredentials();
+        } catch (error) {
+            throw this.classifiedFailure(
+                PayboxSdkOperation.ListEligibleAutonomousEvmGrants,
+                PayboxSdkStage.ListCredentials,
+                PayboxRequestContext.Authenticated,
+                error,
+            );
+        }
+        try {
             return autonomousEvmGrants(response, tokens.baseUrl);
         } catch (error) {
-            throw classifiedPayboxError(error, PayboxRequestContext.Authenticated);
+            throw this.classifiedFailure(
+                PayboxSdkOperation.ListEligibleAutonomousEvmGrants,
+                PayboxSdkStage.NormalizeCredentials,
+                PayboxRequestContext.Authenticated,
+                error,
+            );
         }
     }
 
@@ -89,7 +110,12 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
                 { autoSign: true },
             );
         } catch (error) {
-            throw classifiedPayboxError(error, PayboxRequestContext.Authenticated);
+            throw this.classifiedFailure(
+                PayboxSdkOperation.SignMessage,
+                PayboxSdkStage.RequestWalletSign,
+                PayboxRequestContext.Authenticated,
+                error,
+            );
         }
         return signatureFromResponse(response, credentialId);
     }
@@ -122,12 +148,31 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
                 { autoSign: true },
             );
         } catch (error) {
-            throw classifiedPayboxError(error, PayboxRequestContext.Authenticated);
+            throw this.classifiedFailure(
+                PayboxSdkOperation.SignTransaction,
+                PayboxSdkStage.RequestWalletSign,
+                PayboxRequestContext.Authenticated,
+                error,
+            );
         }
         return serializedTransactionFromResponse(response, credentialId);
     }
 
     private client(tokens: PayboxTokens, signingKey: string): PayboxSdkClient {
         return this.factory.create({ baseUrl: tokens.baseUrl, token: tokens.accessToken, signingKey });
+    }
+
+    private classifiedFailure(
+        operation: PayboxSdkOperation,
+        stage: PayboxSdkStage,
+        requestContext: PayboxRequestContext,
+        error: unknown,
+    ): Error {
+        const classifiedError = classifiedPayboxError(error, requestContext);
+        this.walletOptions.logger.warn(
+            'Paybox SDK operation failed',
+            payboxSdkFailureLogMeta(operation, stage, requestContext, error, classifiedError),
+        );
+        return classifiedError;
     }
 }
