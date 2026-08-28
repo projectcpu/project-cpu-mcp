@@ -15,6 +15,7 @@ import { AuthService } from '../../services/auth.service.js';
 import type { SessionManager } from '../../session/manager.js';
 import { SessionStatus } from '../../session/types.js';
 import { TxStatus } from '../../wallet/types.js';
+import { PayboxAuthInvalidError } from '../errors.js';
 import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import { verifiedPayboxTransaction } from '../paybox-wallet.utils.js';
 import type {
@@ -89,6 +90,7 @@ function rpc(overrides: Partial<IPayboxRpcClient> = {}): IPayboxRpcClient {
 function manager(sdk: Partial<IPayboxSdkAdapter>, rpcClient: IPayboxRpcClient = rpc()): PayboxWalletManager {
     const authority: PayboxWalletAuthority = {
         current: async () => ({ tokens, signingKey: 'pbxk1.key' }),
+        invalidate: vi.fn(),
     };
     return new PayboxWalletManager({
         sdk: sdk as IPayboxSdkAdapter,
@@ -150,6 +152,12 @@ describe('verifiedPayboxTransaction', () => {
         const unsigned = serializeTransaction({ ...intent, type: 'eip1559' } as TransactionSerializableEIP1559);
         await expect(verifiedPayboxTransaction(intent, unsigned, account.address)).rejects.toThrow(/malformed/);
     });
+
+    it('marks a wrong transaction signer as confirmed invalid key binding', async () => {
+        await expect(
+            verifiedPayboxTransaction(intent, await signed(intent, other), account.address),
+        ).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+    });
 });
 
 describe('PayboxWalletManager', () => {
@@ -161,6 +169,7 @@ describe('PayboxWalletManager', () => {
         const refreshedTokens = { ...tokens, accessToken: 'rotated-access' };
         const authority: PayboxWalletAuthority = {
             current: vi.fn(async () => ({ tokens: refreshedTokens, signingKey: 'pbxk1.rotated' })),
+            invalidate: vi.fn(),
         };
         const wallet = new PayboxWalletManager({
             sdk,
@@ -197,6 +206,38 @@ describe('PayboxWalletManager', () => {
         ]) {
             await expect(manager({ signMessage }).signMessage(message)).rejects.toThrow(/does not match|malformed/);
         }
+    });
+
+    it('marks malformed and wrong-wallet SIWE signatures as confirmed invalid authority', async () => {
+        const message = 'Project CPU SIWE proof';
+        for (const signMessage of [
+            vi.fn(async () => other.signMessage({ message })),
+            vi.fn(async () => '0xdeadbeef'),
+        ]) {
+            await expect(manager({ signMessage }).signMessage(message)).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        }
+    });
+
+    it('invalidates coordinator authority after a confirmed signing failure', async () => {
+        const invalidate = vi.fn();
+        const wallet = new PayboxWalletManager({
+            sdk: {
+                signMessage: vi.fn(async () => {
+                    throw new PayboxAuthInvalidError('signing key rejected');
+                }),
+            } as unknown as IPayboxSdkAdapter,
+            credentialId: 'credential-a',
+            address: account.address,
+            authority: {
+                current: async () => ({ tokens, signingKey: 'pbxk1.key' }),
+                invalidate,
+            },
+            rpc: rpc(),
+            logger: new NoopLogger(),
+        });
+
+        await expect(wallet.signMessage('Project CPU SIWE proof')).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        expect(invalidate).toHaveBeenCalledOnce();
     });
 
     it('constructs, signs, verifies, and broadcasts an EIP-1559 intent at queue head', async () => {

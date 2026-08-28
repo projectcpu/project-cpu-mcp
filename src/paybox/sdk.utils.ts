@@ -1,9 +1,13 @@
+import { PayboxError } from '@paybox-sh/sdk';
 import { getAddress, isAddress, type Hex } from 'viem';
 
+import { PayboxAuthInvalidError } from './errors.js';
 import {
     PAYBOX_AUTONOMOUS_MODE,
+    PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES,
     PAYBOX_DENIED_STATUS,
     PAYBOX_EIP155_CHAIN_ID_PATTERN,
+    PAYBOX_INVALID_REFRESH_PATTERN,
     PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
     PAYBOX_SIGNATURE_OUTPUT,
     PAYBOX_SUCCESS_STATUS,
@@ -16,6 +20,16 @@ export function autonomousEvmGrants(value: unknown, baseUrl: string): EligiblePa
         grants: grantRows(value).flatMap(normalizeGrant),
         managementUrl: managementUrlFromBaseUrl(baseUrl),
     };
+}
+
+export function classifiedPayboxError(error: unknown): Error {
+    if (
+        (error instanceof PayboxError && PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES.has(error.status)) ||
+        (error instanceof Error && PAYBOX_INVALID_REFRESH_PATTERN.test(error.message))
+    ) {
+        return new PayboxAuthInvalidError('Paybox authentication authority was rejected.', { cause: error });
+    }
+    return error instanceof Error ? error : new Error('Paybox request failed.');
 }
 
 export function signatureFromResponse(value: unknown, credentialId: string): Hex {

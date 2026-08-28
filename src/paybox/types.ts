@@ -77,6 +77,7 @@ export interface PayboxAuthMaterial {
 
 export interface PayboxWalletAuthority {
     current(): Promise<PayboxAuthMaterial>;
+    invalidate(): void;
 }
 
 export interface OAuthMetadata {
@@ -166,6 +167,13 @@ export interface PayboxAuthenticationFlight {
     promise: Promise<string>;
 }
 
+export interface PayboxRestoredAuthenticationFlight {
+    credentialId: string;
+    address: string;
+    generation: number;
+    promise: Promise<PayboxAuthenticateResult>;
+}
+
 export interface PayboxContinuationFlight {
     material: PayboxAuthMaterial;
     requestedCredentialId: string | null;
@@ -212,6 +220,7 @@ export interface PayboxCoordinatorOptions {
 
 export interface PayboxSiweAuthenticator {
     authenticate(wallet: WalletManager, isCurrent: () => boolean): Promise<string>;
+    clearSession(): void;
 }
 
 export interface PayboxSdkClient {

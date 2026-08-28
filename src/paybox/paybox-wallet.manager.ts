@@ -1,5 +1,6 @@
 import { getAddress, type Address, type Hash, type Hex } from 'viem';
 
+import { PayboxAuthInvalidError } from './errors.js';
 import { verifiedPayboxMessageSignature, verifiedPayboxTransaction } from './paybox-wallet.utils.js';
 import type { PayboxTransactionIntent, PayboxWalletManagerOptions } from './types.js';
 import { LAUNCH_CHAIN_ID } from '../config/constants.js';
@@ -31,13 +32,18 @@ export class PayboxWalletManager implements WalletManager {
 
     public async signMessage(message: string): Promise<Hex> {
         const authority = await this.options.authority.current();
-        const signature = await this.options.sdk.signMessage(
-            authority.tokens,
-            authority.signingKey,
-            this.options.credentialId,
-            message,
-        );
-        return verifiedPayboxMessageSignature(message, signature as Hex, this.address);
+        try {
+            const signature = await this.options.sdk.signMessage(
+                authority.tokens,
+                authority.signingKey,
+                this.options.credentialId,
+                message,
+            );
+            return await verifiedPayboxMessageSignature(message, signature as Hex, this.address);
+        } catch (error) {
+            this.invalidateConfirmedAuthority(error);
+            throw error;
+        }
     }
 
     public sendTransaction(tx: TransactionRequest): Promise<Hash> {
@@ -92,15 +98,25 @@ export class PayboxWalletManager implements WalletManager {
             value: intent.value.toString(),
             nonce: intent.nonce,
         });
-        const serializedTransaction = await this.options.sdk.signTransaction(
-            authority.tokens,
-            authority.signingKey,
-            this.options.credentialId,
-            intent,
-        );
-        const verified = await verifiedPayboxTransaction(intent, serializedTransaction, this.address);
+        let verified: Hex;
+        try {
+            const serializedTransaction = await this.options.sdk.signTransaction(
+                authority.tokens,
+                authority.signingKey,
+                this.options.credentialId,
+                intent,
+            );
+            verified = await verifiedPayboxTransaction(intent, serializedTransaction, this.address);
+        } catch (error) {
+            this.invalidateConfirmedAuthority(error);
+            throw error;
+        }
         const hash = await this.options.rpc.sendRawTransaction(verified);
         this.options.logger.info('Paybox transaction sent', { hash });
         return hash;
+    }
+
+    private invalidateConfirmedAuthority(error: unknown): void {
+        if (error instanceof PayboxAuthInvalidError) this.options.authority.invalidate();
     }
 }

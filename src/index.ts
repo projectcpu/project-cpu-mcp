@@ -90,6 +90,7 @@ async function main(): Promise<void> {
                           if (auth === null) throw new Error('Paybox authentication is unavailable during startup.');
                           return auth.authenticateWithWallet(payboxWallet, isCurrent);
                       },
+                      clearSession: () => session.clear(),
                   },
               })
             : createWalletProvider({ config, session, logger });

@@ -96,7 +96,7 @@ describe('Paybox economic tool flow', () => {
             sdk,
             credentialId: 'persisted-credential',
             address: account.address,
-            authority: { current: async () => ({ tokens, signingKey: 'pbxk1.key' }) },
+            authority: { current: async () => ({ tokens, signingKey: 'pbxk1.key' }), invalidate: vi.fn() },
             rpc,
             logger: new NoopLogger(),
         });

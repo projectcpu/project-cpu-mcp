@@ -2,19 +2,353 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { WalletManager } from '../../wallet/types.js';
 import { PayboxCoordinator } from '../coordinator.js';
-import { PayboxLoopbackUnavailableError } from '../errors.js';
+import { PayboxAuthInvalidError, PayboxLoopbackUnavailableError } from '../errors.js';
 import {
     PayboxAuthStatus,
     type IPayboxAuthStorage,
     type IPayboxSdkAdapter,
     type PayboxAuthFlow,
     type PayboxAuthRecord,
+    type PayboxSiweAuthenticator,
     type PayboxWalletAuthority,
 } from '../types.js';
 
 const wallet = { getAddress: () => '0x0000000000000000000000000000000000000001' } as unknown as WalletManager;
 
 describe('PayboxCoordinator', () => {
+    it('clears the game session before forced authentication returns a new OAuth state', async () => {
+        const events = new Array<string>();
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: {
+                        clientId: 'client',
+                        accessToken: 'access',
+                        refreshToken: null,
+                        expiresAt: null,
+                        resource: null,
+                        baseUrl: 'https://paybox.test',
+                    },
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear: vi.fn(() => events.push('paybox-cleared')),
+            },
+            flow: {
+                start: vi.fn(async () => {
+                    events.push('oauth-started');
+                    return { authorizationUrl: 'https://accounts.test/authorize?state=fresh' };
+                }),
+                finish: vi.fn(),
+                cancel: vi.fn(),
+            },
+            sdk: {
+                refreshTokens: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: {
+                authenticate: vi.fn(),
+                clearSession: vi.fn(() => events.push('session-cleared')),
+            },
+        });
+
+        await expect(coordinator.authenticate({ force: true, payboxCredentialId: null })).resolves.toEqual(
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=fresh',
+            }),
+        );
+
+        expect(events).toEqual(['paybox-cleared', 'session-cleared', 'oauth-started']);
+        expect(coordinator.isReady()).toBe(false);
+        expect(() => coordinator.get()).toThrow('not authenticated');
+    });
+
+    it('fully resets a restored selection that disappears without choosing its replacement', async () => {
+        const clear = vi.fn();
+        const clearSession = vi.fn();
+        const authenticate = vi.fn(async () => 'game-jwt');
+        const start = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=fresh' }));
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: {
+                        clientId: 'client',
+                        accessToken: 'access',
+                        refreshToken: null,
+                        expiresAt: null,
+                        resource: null,
+                        baseUrl: 'https://paybox.test',
+                    },
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'missing-credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear,
+            },
+            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => ({
+                    grants: [
+                        {
+                            credentialId: 'replacement',
+                            address: '0x0000000000000000000000000000000000000002',
+                            label: null,
+                            provider: null,
+                        },
+                    ],
+                    managementUrl: null,
+                })),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate, clearSession },
+        });
+
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=fresh',
+            }),
+        );
+
+        expect(clear).toHaveBeenCalledOnce();
+        expect(clearSession).toHaveBeenCalledOnce();
+        expect(start).toHaveBeenCalledOnce();
+        expect(authenticate).not.toHaveBeenCalled();
+        expect(coordinator.isReady()).toBe(false);
+    });
+
+    it('single-flights restored grant validation and fresh SIWE', async () => {
+        const discovery = controlledPromise<{
+            grants: Array<{
+                credentialId: string;
+                address: string;
+                label: string | null;
+                provider: string | null;
+            }>;
+            managementUrl: string | null;
+        }>();
+        const authentication = controlledPromise<string>();
+        const listGrants = vi.fn(() => discovery.promise);
+        const authenticate = vi.fn(() => authentication.promise);
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: {
+                        clientId: 'client',
+                        accessToken: 'access',
+                        refreshToken: null,
+                        expiresAt: null,
+                        resource: null,
+                        baseUrl: 'https://paybox.test',
+                    },
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear: vi.fn(),
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(),
+                listEligibleAutonomousEvmGrants: listGrants,
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate, clearSession: vi.fn() },
+        });
+
+        const first = coordinator.authenticate({ force: false, payboxCredentialId: null });
+        const second = coordinator.authenticate({ force: false, payboxCredentialId: null });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(listGrants).toHaveBeenCalledOnce();
+
+        discovery.resolve({
+            grants: [
+                {
+                    credentialId: 'credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                    label: null,
+                    provider: null,
+                },
+            ],
+            managementUrl: null,
+        });
+        await vi.waitFor(() => expect(authenticate).toHaveBeenCalledOnce());
+        authentication.resolve('game-jwt');
+
+        await expect(Promise.all([first, second])).resolves.toEqual([
+            { status: PayboxAuthStatus.Authenticated, address: '0x0000000000000000000000000000000000000001' },
+            { status: PayboxAuthStatus.Authenticated, address: '0x0000000000000000000000000000000000000001' },
+        ]);
+        expect(listGrants).toHaveBeenCalledOnce();
+        expect(authenticate).toHaveBeenCalledOnce();
+    });
+
+    it('uses the full reset transition for a confirmed auth failure and restarts OAuth', async () => {
+        const clear = vi.fn();
+        const clearSession = vi.fn();
+        const start = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=recovery' }));
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: {
+                        clientId: 'client',
+                        accessToken: 'revoked-access',
+                        refreshToken: null,
+                        expiresAt: null,
+                        resource: null,
+                        baseUrl: 'https://paybox.test',
+                    },
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear,
+            },
+            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => {
+                    throw new PayboxAuthInvalidError('Paybox OAuth authority was rejected.');
+                }),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(), clearSession },
+        });
+
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=recovery',
+            }),
+        );
+
+        expect(clear).toHaveBeenCalledOnce();
+        expect(clearSession).toHaveBeenCalledOnce();
+        expect(start).toHaveBeenCalledOnce();
+        expect(coordinator.isReady()).toBe(false);
+    });
+
+    it('does not expose a manager from an obsolete generation when replacement construction fails', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'old-refresh',
+            expiresAt: Date.now() - 1,
+            resource: null,
+            baseUrl: 'https://paybox.test',
+        };
+        const oldWallet = {
+            getAddress: () => '0x0000000000000000000000000000000000000001',
+        } as unknown as WalletManager;
+        const createWallet = vi
+            .fn<IPayboxSdkAdapter['createWallet']>()
+            .mockReturnValueOnce(oldWallet)
+            .mockImplementationOnce(() => {
+                throw new Error('replacement construction failed');
+            });
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: storedTokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear: vi.fn(),
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(async () => ({
+                    ...storedTokens,
+                    accessToken: 'new-access',
+                    refreshToken: 'new-refresh',
+                    expiresAt: Date.now() + 600_000,
+                })),
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet,
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(), clearSession: vi.fn() },
+        });
+
+        expect(coordinator.get()).toBe(oldWallet);
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
+            'replacement construction failed',
+        );
+
+        expect(coordinator.isReady()).toBe(false);
+        expect(() => coordinator.get()).toThrow('not authenticated');
+    });
+
+    it('fully resets expired authority that has no refresh token and restarts OAuth', async () => {
+        const clear = vi.fn();
+        const clearSession = vi.fn();
+        const start = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=refresh' }));
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: {
+                        clientId: 'client',
+                        accessToken: 'expired-access',
+                        refreshToken: null,
+                        expiresAt: Date.now() - 1,
+                        resource: null,
+                        baseUrl: 'https://paybox.test',
+                    },
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear,
+            },
+            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(), clearSession },
+        });
+
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=refresh',
+            }),
+        );
+        expect(clear).toHaveBeenCalledOnce();
+        expect(clearSession).toHaveBeenCalledOnce();
+        expect(start).toHaveBeenCalledOnce();
+        expect(coordinator.isReady()).toBe(false);
+    });
+
     it('restores a selected Wallet synchronously without repeating OAuth', async () => {
         const tokens = {
             clientId: 'client',
@@ -42,12 +376,12 @@ describe('PayboxCoordinator', () => {
             flow: { start, finish: vi.fn(), cancel: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
-                listEligibleAutonomousEvmGrants: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
                 createWallet,
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         expect(coordinator.isReady()).toBe(true);
@@ -111,12 +445,12 @@ describe('PayboxCoordinator', () => {
             flow: { start, finish: vi.fn(), cancel: vi.fn() },
             sdk: {
                 refreshTokens,
-                listEligibleAutonomousEvmGrants: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
                 createWallet,
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         expect(coordinator.get()).toBe(oldWallet);
@@ -196,12 +530,12 @@ describe('PayboxCoordinator', () => {
             flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(async () => rotatedTokens),
-                listEligibleAutonomousEvmGrants: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
                 createWallet,
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+            authenticator: testAuthenticator(vi.fn(async () => 'game-jwt')),
         });
         const retainedWallet = coordinator.get();
 
@@ -251,7 +585,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow('disk full');
@@ -296,7 +630,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+            authenticator: testAuthenticator(vi.fn(async () => 'game-jwt')),
         });
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
@@ -350,7 +684,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+            authenticator: testAuthenticator(vi.fn(async () => 'game-jwt')),
         };
 
         const firstProcess = new PayboxCoordinator(options);
@@ -415,7 +749,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn() },
+            authenticator: testAuthenticator(vi.fn()),
         });
 
         const staleAuthentication = coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -479,7 +813,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+            authenticator: testAuthenticator(vi.fn(async () => 'game-jwt')),
         });
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
@@ -552,7 +886,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn() },
+            authenticator: testAuthenticator(vi.fn()),
         });
 
         await expect(coordinator.get().signMessage('economic intent')).resolves.toBe('0xsigned');
@@ -615,7 +949,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+            authenticator: testAuthenticator(vi.fn(async () => 'game-jwt')),
         });
 
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -693,7 +1027,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
@@ -773,7 +1107,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -807,7 +1141,7 @@ describe('PayboxCoordinator', () => {
                 cancel: vi.fn(),
             },
             sdk: {} as IPayboxSdkAdapter,
-            authenticator: { authenticate: vi.fn() },
+            authenticator: testAuthenticator(vi.fn()),
         });
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
@@ -859,7 +1193,12 @@ describe('PayboxCoordinator', () => {
             signTransaction: vi.fn(),
         };
         const authenticate = vi.fn(async () => 'game-jwt');
-        const coordinator = new PayboxCoordinator({ storage, flow, sdk, authenticator: { authenticate } });
+        const coordinator = new PayboxCoordinator({
+            storage,
+            flow,
+            sdk,
+            authenticator: testAuthenticator(authenticate),
+        });
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
             expect.objectContaining({ status: PayboxAuthStatus.AuthRequired }),
         );
@@ -898,7 +1237,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn() },
+            authenticator: testAuthenticator(vi.fn()),
         });
         const first = await coordinator.authenticate({ force: false, payboxCredentialId: null });
         const second = await Promise.race([
@@ -918,7 +1257,7 @@ describe('PayboxCoordinator', () => {
                 cancel: vi.fn(),
             },
             sdk: {} as IPayboxSdkAdapter,
-            authenticator: { authenticate: vi.fn() },
+            authenticator: testAuthenticator(vi.fn()),
         });
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
             'malformed discovery response',
@@ -962,7 +1301,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn() },
+            authenticator: testAuthenticator(vi.fn()),
         });
 
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -1005,18 +1344,19 @@ describe('PayboxCoordinator', () => {
         const clear = vi.fn(() => {
             throw new Error('storage clear failed');
         });
+        const clearSession = vi.fn();
         const authenticate = vi.fn(async () => 'game-jwt');
         const coordinator = new PayboxCoordinator({
             storage: { load, save: vi.fn(), clear },
             flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
-                listEligibleAutonomousEvmGrants: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
                 createWallet: vi.fn(() => wallet),
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: { authenticate, clearSession },
         });
 
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
@@ -1027,6 +1367,7 @@ describe('PayboxCoordinator', () => {
         );
 
         expect(load).toHaveBeenCalledOnce();
+        expect(clearSession).toHaveBeenCalledOnce();
         expect(authenticate).toHaveBeenCalledOnce();
         expect(coordinator.isReady()).toBe(false);
         expect(() => coordinator.get()).toThrow('not authenticated');
@@ -1062,7 +1403,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn() },
+            authenticator: testAuthenticator(vi.fn()),
         });
 
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -1107,12 +1448,12 @@ describe('PayboxCoordinator', () => {
             flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
-                listEligibleAutonomousEvmGrants: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
                 createWallet: vi.fn(() => wallet),
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         const first = coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -1170,7 +1511,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         const first = coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -1245,7 +1586,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate },
+            authenticator: testAuthenticator(authenticate),
         });
 
         const pending = await coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -1300,9 +1641,7 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: {
-                authenticate: vi.fn(() => authentication.promise),
-            },
+            authenticator: testAuthenticator(vi.fn(() => authentication.promise)),
         });
 
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -1326,4 +1665,22 @@ function controlledPromise<T>(): { promise: Promise<T>; resolve: (value: T) => v
         resolvePromise = resolve;
     });
     return { promise, resolve: resolvePromise };
+}
+
+function testAuthenticator(authenticate: PayboxSiweAuthenticator['authenticate']): PayboxSiweAuthenticator {
+    return { authenticate, clearSession: vi.fn() };
+}
+
+function selectedGrantList(credentialId: string) {
+    return {
+        grants: [
+            {
+                credentialId,
+                address: '0x0000000000000000000000000000000000000001',
+                label: null,
+                provider: null,
+            },
+        ],
+        managementUrl: null,
+    };
 }

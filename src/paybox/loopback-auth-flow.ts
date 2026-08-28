@@ -10,7 +10,7 @@ import {
     OAUTH_DISCOVERY_PATH,
     OAUTH_SCOPE,
 } from './auth-flow.constants.js';
-import { isPbxk1, oauthError, pkceChallenge, randomUrlPart } from './auth-flow.utils.js';
+import { isPbxk1, oauthError, oauthTokenError, pkceChallenge, randomUrlPart } from './auth-flow.utils.js';
 import { PayboxLoopbackUnavailableError } from './errors.js';
 import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-auth-flow.utils.js';
 import {
@@ -252,7 +252,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
                 code_verifier: this.required(this.verifier, 'verifier'),
             }).toString(),
         });
-        if (!response.ok) throw oauthError(`token exchange returned ${response.status}`);
+        if (!response.ok) throw oauthTokenError(response.status);
         return tokenResponse(await response.json());
     }
 

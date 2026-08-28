@@ -1,5 +1,6 @@
 export const OAUTH_DISCOVERY_PATH = '/.well-known/oauth-authorization-server';
 export const OAUTH_SCOPE = 'mcp offline_access';
+export const OAUTH_CONFIRMED_AUTH_HTTP_STATUSES = new Set([400, 401, 403]);
 export const LOOPBACK_HOST = '127.0.0.1';
 export const LOOPBACK_CALLBACK_PREFIX = '/oauth/callback/';
 export const LOOPBACK_KEY_PREFIX = '/oauth/key/';

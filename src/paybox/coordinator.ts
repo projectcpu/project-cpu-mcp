@@ -6,6 +6,7 @@ import {
     PAYBOX_TOKEN_REFRESH_WINDOW_MS,
 } from './constants.js';
 import {
+    PayboxAuthInvalidError,
     PayboxFullAccessWalletRequiredError,
     PayboxLoopbackUnavailableError,
     PayboxWalletSelectionError,
@@ -22,6 +23,7 @@ import {
     type PayboxContinuationFlight,
     type PayboxCoordinatorOptions,
     type PayboxRefreshFlight,
+    type PayboxRestoredAuthenticationFlight,
     PayboxSelectionPhase,
     type PayboxSelectionState,
     type PayboxWalletAuthority,
@@ -32,12 +34,14 @@ import type { WalletManager, WalletProvider } from '../wallet/types.js';
 export class PayboxCoordinator implements WalletProvider {
     private readonly options: PayboxCoordinatorOptions;
     private wallet: WalletManager | null = null;
+    private walletGeneration: number | null = null;
     private address: Address | null = null;
     private pendingUrl: string | null = null;
     private starting: Promise<string> | null = null;
     private completing: Promise<void> | null = null;
     private completionError: Error | null = null;
     private authenticating: PayboxAuthenticationFlight | null = null;
+    private restoring: PayboxRestoredAuthenticationFlight | null = null;
     private continuing: PayboxContinuationFlight | null = null;
     private material: PayboxAuthMaterial | null = null;
     private selection: PayboxSelectionState | null = null;
@@ -61,37 +65,33 @@ export class PayboxCoordinator implements WalletProvider {
             stored.address,
             this.walletAuthority(this.material, stored.credentialId, stored.address, this.generation),
         );
+        this.walletGeneration = this.generation;
     }
 
     isReady(): boolean {
-        return this.wallet !== null;
+        return this.wallet !== null && this.walletGeneration === this.generation;
     }
 
     get(): WalletManager {
-        if (this.wallet === null) throw new Error('Paybox wallet is not authenticated. Call cpu_authenticate first.');
+        if (!this.isReady() || this.wallet === null) {
+            throw new Error('Paybox wallet is not authenticated. Call cpu_authenticate first.');
+        }
         return this.wallet;
     }
 
     async authenticate(input: PayboxAuthenticateInput): Promise<PayboxAuthenticateResult> {
         const requestedCredentialId = input.payboxCredentialId ?? null;
-        if (input.force) {
-            this.generation += 1;
-            this.options.flow.cancel();
-            this.wallet = null;
-            this.address = null;
-            this.pendingUrl = null;
-            this.starting = null;
-            this.completing = null;
-            this.completionError = null;
-            this.authenticating = null;
-            this.continuing = null;
-            this.material = null;
-            this.selection = null;
-            this.credentialId = null;
-            this.refreshing = null;
-            this.refreshPersistenceError = null;
-            this.options.storage.clear();
+        if (input.force) this.resetAuthState();
+        try {
+            return await this.authenticateCurrent(requestedCredentialId);
+        } catch (error) {
+            if (!(error instanceof PayboxAuthInvalidError)) throw error;
+            this.resetAuthState();
+            return this.authenticateCurrent(null);
         }
+    }
+
+    private async authenticateCurrent(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
         if (this.completionError !== null) {
             const error = this.completionError;
             this.completionError = null;
@@ -123,16 +123,16 @@ export class PayboxCoordinator implements WalletProvider {
             }
             return this.authRequired(this.pendingUrl);
         }
-        if (this.wallet !== null && this.address !== null) {
+        if (this.isReady() && this.wallet !== null && this.address !== null) {
             if (requestedCredentialId !== null) {
                 throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
             }
             if (this.credentialId === null) throw new Error('Paybox Wallet identity is incomplete.');
             const generation = await this.refreshIfExpiring();
-            if (this.wallet === null) throw new Error('Paybox Wallet restoration failed.');
-            await this.authenticateFresh(this.wallet, generation, this.credentialId, this.address);
-            this.assertCurrent(generation);
-            return { status: PayboxAuthStatus.Authenticated, address: this.address };
+            if (!this.isReady() || this.wallet === null || this.material === null) {
+                throw new Error('Paybox Wallet restoration failed.');
+            }
+            return this.authenticateRestored(this.wallet, this.material, generation, this.credentialId, this.address);
         }
         if (this.material !== null) {
             const generation = await this.refreshIfExpiring();
@@ -167,6 +167,92 @@ export class PayboxCoordinator implements WalletProvider {
             if (this.starting === starting) this.starting = null;
         }
         return this.authRequired(this.pendingUrl);
+    }
+
+    private resetAuthState(): void {
+        this.generation += 1;
+        this.wallet = null;
+        this.walletGeneration = null;
+        this.address = null;
+        this.pendingUrl = null;
+        this.starting = null;
+        this.completing = null;
+        this.completionError = null;
+        this.authenticating = null;
+        this.restoring = null;
+        this.continuing = null;
+        this.material = null;
+        this.selection = null;
+        this.credentialId = null;
+        this.refreshing = null;
+        this.refreshPersistenceError = null;
+        let resetError: Error | null = null;
+        for (const clear of [
+            () => this.options.flow.cancel(),
+            () => this.options.storage.clear(),
+            () => this.options.authenticator.clearSession(),
+        ]) {
+            try {
+                clear();
+            } catch (error) {
+                resetError ??= error instanceof Error ? error : new Error('Paybox authentication reset failed.');
+            }
+        }
+        if (resetError !== null) throw resetError;
+    }
+
+    private authenticateRestored(
+        wallet: WalletManager,
+        material: PayboxAuthMaterial,
+        generation: number,
+        credentialId: string,
+        address: Address,
+    ): Promise<PayboxAuthenticateResult> {
+        if (this.restoring !== null) {
+            if (
+                this.restoring.generation === generation &&
+                this.restoring.credentialId === credentialId &&
+                this.restoring.address === address
+            ) {
+                return this.restoring.promise;
+            }
+            throw new Error('Paybox authentication is already in progress for another Wallet.');
+        }
+        const authentication = this.validateRestored(wallet, material, generation, credentialId, address);
+        const flight: PayboxRestoredAuthenticationFlight = {
+            credentialId,
+            address,
+            generation,
+            promise: authentication,
+        };
+        this.restoring = flight;
+        void authentication.then(
+            () => {
+                if (this.restoring === flight) this.restoring = null;
+            },
+            () => {
+                if (this.restoring === flight) this.restoring = null;
+            },
+        );
+        return authentication;
+    }
+
+    private async validateRestored(
+        wallet: WalletManager,
+        material: PayboxAuthMaterial,
+        generation: number,
+        credentialId: string,
+        address: Address,
+    ): Promise<PayboxAuthenticateResult> {
+        const discovery = await this.options.sdk.listEligibleAutonomousEvmGrants(material.tokens, material.signingKey);
+        this.assertCurrent(generation);
+        const selected = discovery.grants.find((grant) => grant.credentialId === credentialId);
+        if (selected === undefined || getAddress(selected.address) !== address) {
+            throw new PayboxAuthInvalidError('The selected Paybox Wallet grant is no longer valid.');
+        }
+        await this.authenticateFresh(wallet, generation, credentialId, address);
+        this.assertCurrent(generation);
+        return { status: PayboxAuthStatus.Authenticated, address };
     }
 
     private authRequired(authorizationUrl: string): PayboxAuthenticateResult {
@@ -318,6 +404,7 @@ export class PayboxCoordinator implements WalletProvider {
         this.assertCurrent(generation);
         this.options.storage.save(record);
         this.wallet = wallet;
+        this.walletGeneration = generation;
         this.address = address;
         this.credentialId = grant.credentialId;
         this.material = material;
@@ -366,7 +453,7 @@ export class PayboxCoordinator implements WalletProvider {
 
     private async rotateTokens(material: PayboxAuthMaterial, generation: number): Promise<void> {
         if (material.tokens.refreshToken === null) {
-            throw new Error('Paybox OAuth refresh token is unavailable.');
+            throw new PayboxAuthInvalidError('Paybox OAuth refresh token is unavailable.');
         }
         // A rotating refresh token must be unrecoverable before an exchange can consume it.
         this.options.storage.clear();
@@ -399,6 +486,8 @@ export class PayboxCoordinator implements WalletProvider {
         }
         this.assertCurrent(generation);
         this.material = refreshed;
+        this.wallet = null;
+        this.walletGeneration = null;
         this.generation += 1;
         if (this.credentialId !== null && this.address !== null) {
             this.wallet = this.options.sdk.createWallet(
@@ -408,6 +497,7 @@ export class PayboxCoordinator implements WalletProvider {
                 this.address,
                 this.walletAuthority(refreshed, this.credentialId, this.address, this.generation),
             );
+            this.walletGeneration = this.generation;
         }
     }
 
@@ -428,6 +518,9 @@ export class PayboxCoordinator implements WalletProvider {
                     return this.material;
                 }
                 return candidate;
+            },
+            invalidate: () => {
+                if (this.generation === generation) this.resetAuthState();
             },
         };
     }

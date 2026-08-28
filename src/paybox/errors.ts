@@ -8,6 +8,8 @@ import {
 
 export class PayboxLoopbackUnavailableError extends Error {}
 
+export class PayboxAuthInvalidError extends Error {}
+
 export class PayboxFullAccessWalletRequiredError extends Error {
     readonly data: PayboxFullAccessWalletRequiredErrorData;
 

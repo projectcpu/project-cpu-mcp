@@ -1,6 +1,8 @@
+import { PayboxError } from '@paybox-sh/sdk';
 import { getAddress, parseEther } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
+import { PayboxAuthInvalidError } from '../errors.js';
 import { PayboxSdkAdapter } from '../paybox-sdk.adapter.js';
 import type { PayboxSdkClientFactory, PayboxTokenRefresher, PayboxTokens, PayboxTransactionIntent } from '../types.js';
 
@@ -14,6 +16,16 @@ const tokens: PayboxTokens = {
 };
 const address = '0x59c6995e998f97a5a0044966f0945389dc9e86da';
 const checksummedAddress = getAddress(address);
+const signingIntent: PayboxTransactionIntent = {
+    to: '0x0000000000000000000000000000000000000001',
+    value: 0n,
+    data: '0x',
+    chainId: 4663,
+    gas: 21_000n,
+    maxPriorityFeePerGas: 1n,
+    maxFeePerGas: 2n,
+    nonce: 0,
+};
 
 function factory(result: unknown): {
     factory: PayboxSdkClientFactory;
@@ -29,6 +41,42 @@ function factory(result: unknown): {
 }
 
 describe('PayboxSdkAdapter', () => {
+    it.each([401, 403])('classifies authenticated Paybox HTTP %i as confirmed invalid authority', async (status) => {
+        const mock = factory([]);
+        mock.list.mockRejectedValueOnce(new PayboxError(status, 'rejected', 'GET /agent/credentials'));
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toBeInstanceOf(
+            PayboxAuthInvalidError,
+        );
+    });
+
+    it('classifies authenticated transaction-signing rejection as confirmed invalid authority', async () => {
+        const mock = factory([]);
+        mock.sign.mockRejectedValueOnce(new PayboxError(403, 'key binding rejected', 'POST /agent/wallet-sign'));
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        await expect(
+            adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
+        ).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+    });
+
+    it('classifies an invalid OAuth refresh grant without weakening ambiguous refresh handling', async () => {
+        const invalidGrant = new PayboxSdkAdapter(factory([]).factory, {
+            refresh: vi.fn(async () => {
+                throw new Error('token refresh failed (400): invalid_grant');
+            }),
+        });
+        const unavailable = new PayboxSdkAdapter(factory([]).factory, {
+            refresh: vi.fn(async () => {
+                throw new Error('token refresh failed (503): unavailable');
+            }),
+        });
+
+        await expect(invalidGrant.refreshTokens(tokens)).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        await expect(unavailable.refreshTokens(tokens)).rejects.not.toBeInstanceOf(PayboxAuthInvalidError);
+    });
+
     it('refreshes through the explicit SDK helper seam and normalizes the complete rotated token set', async () => {
         const refresh = vi.fn(async () => ({
             clientId: 'client',

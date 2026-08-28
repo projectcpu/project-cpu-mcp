@@ -127,7 +127,7 @@ describe('cpu_authenticate', () => {
                 createWallet: vi.fn(() => ({ getAddress: () => '0x1111111111111111111111111111111111111111' })),
                 signMessage: vi.fn(),
             } as unknown as IPayboxSdkAdapter,
-            authenticator: { authenticate },
+            authenticator: { authenticate, clearSession: vi.fn() },
         });
         const handler = captureAuthenticateHandler({
             config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
@@ -206,6 +206,35 @@ describe('cpu_authenticate', () => {
         );
         expect(harness.sign).toHaveBeenCalledTimes(2);
         expect(harness.verify).toHaveBeenCalledTimes(2);
+    });
+
+    it('force-clears the complete Paybox and game session before returning a fresh OAuth state', async () => {
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT);
+        client = harness.toolClient;
+
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
+        await vi.waitFor(() => expect(harness.session.getStatus()).toBe(SessionStatus.Active));
+
+        await expect(
+            harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: { force: true } }),
+        ).resolves.toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: 'paybox_auth_required',
+                        instructions:
+                            'Open the authorization URL in a local browser to continue Paybox authentication.',
+                        authorizationUrl: 'https://accounts.test/authorize?state=opaque',
+                    }),
+                },
+            ],
+        });
+
+        expect(harness.payboxClear).toHaveBeenCalledOnce();
+        expect(harness.session.getStatus()).toBe(SessionStatus.Missing);
+        expect(harness.flowStart).toHaveBeenCalledTimes(2);
     });
 
     it('returns duplicate-address choices and activates only the freshly validated credential ID', async () => {
@@ -402,7 +431,7 @@ describe('cpu_authenticate', () => {
                 cancel: vi.fn(),
             },
             sdk: {} as IPayboxSdkAdapter,
-            authenticator: { authenticate: vi.fn() },
+            authenticator: { authenticate: vi.fn(), clearSession: vi.fn() },
         });
         const server = new McpServer({ name: 'unsupported-loopback-test', version: '0.0.0' });
         registerAuthenticateTool(server, {
@@ -422,7 +451,7 @@ describe('cpu_authenticate', () => {
         ]);
     });
 
-    it('surfaces a wrong Paybox signer at the public tool boundary before game verification', async () => {
+    it('fully resets a wrong Paybox signer and restarts OAuth before game verification', async () => {
         const harness = await createPayboxPublicHarness(OTHER_ACCOUNT);
         client = harness.toolClient;
 
@@ -431,13 +460,26 @@ describe('cpu_authenticate', () => {
         await vi.waitFor(() => expect(harness.sign).toHaveBeenCalledOnce());
         await new Promise<void>((resolve) => setImmediate(resolve));
 
-        const failed = (await harness.toolClient.callTool({
+        const recovered = (await harness.toolClient.callTool({
             name: 'cpu_authenticate',
             arguments: {},
         })) as CallToolResult;
-        expect(failed.isError).toBe(true);
-        expect(failed.content).toEqual([expect.objectContaining({ text: expect.stringContaining('does not match') })]);
+        expect(recovered).toEqual({
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: 'paybox_auth_required',
+                        instructions:
+                            'Open the authorization URL in a local browser to continue Paybox authentication.',
+                        authorizationUrl: 'https://accounts.test/authorize?state=opaque',
+                    }),
+                },
+            ],
+        });
         expect(harness.verify).not.toHaveBeenCalled();
+        expect(harness.payboxClear).toHaveBeenCalledOnce();
+        expect(harness.flowStart).toHaveBeenCalledTimes(2);
         expect(harness.session.getStatus()).toBe(SessionStatus.Missing);
     });
 });
@@ -455,6 +497,7 @@ async function createPayboxPublicHarness(
     verify: ReturnType<typeof vi.fn>;
     listCredentials: ReturnType<typeof vi.fn>;
     payboxSave: ReturnType<typeof vi.fn>;
+    payboxClear: ReturnType<typeof vi.fn>;
     flowStart: ReturnType<typeof vi.fn>;
 }> {
     let sessionData: SessionData | null = null;
@@ -528,10 +571,13 @@ async function createPayboxPublicHarness(
     const payboxSave = vi.fn<IPayboxAuthStorage['save']>((record) => {
         payboxRecord = record;
     });
+    const payboxClear = vi.fn(() => {
+        payboxRecord = null;
+    });
     const storage: IPayboxAuthStorage = {
         load: () => payboxRecord,
         save: payboxSave,
-        clear: vi.fn(),
+        clear: payboxClear,
     };
     const flowStart = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=opaque' }));
     const flow: PayboxAuthFlow = {
@@ -559,6 +605,7 @@ async function createPayboxPublicHarness(
                 if (auth === null) throw new Error('auth service unavailable');
                 return auth.authenticateWithWallet(payboxWallet, isCurrent);
             },
+            clearSession: () => session.clear(),
         },
     });
     auth = new AuthService({ session, api, wallet, logger: new NoopLogger() });
@@ -574,7 +621,7 @@ async function createPayboxPublicHarness(
     await server.connect(serverTransport);
     const toolClient = new Client({ name: 'paybox-authenticate-client', version: '0.0.0' });
     await toolClient.connect(clientTransport);
-    return { toolClient, session, sign, verify, listCredentials, payboxSave, flowStart };
+    return { toolClient, session, sign, verify, listCredentials, payboxSave, payboxClear, flowStart };
 }
 
 function captureAuthenticateHandler(context: AppContext): (args: { force: boolean | null }) => Promise<CallToolResult> {
