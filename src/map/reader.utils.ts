@@ -1,5 +1,6 @@
 import { MapReadiness, type CellProjectionConfig, type ProcessOutput, type ResourceStorageCaps } from './types.js';
 import { BuildingKind } from '../api/types.js';
+import { WCPU_RESOURCE_ID } from '../config/constants.js';
 import type { AppConfig } from '../services/types.js';
 
 /** True once the startup snapshot has landed: every existing cell is held, even if the stream later degrades. */
@@ -20,8 +21,8 @@ export function storageCapsByResource(config: AppConfig): Record<number, Resourc
         config.storage.caps.map((caps): [number, ResourceStorageCaps] => [
             caps.resourceId,
             {
-                cellCap: caps.cellCap === 0 ? null : BigInt(caps.cellCap),
-                hubCap: caps.hubCap === 0 ? null : BigInt(caps.hubCap),
+                cellCap: caps.resourceId === WCPU_RESOURCE_ID && caps.cellCap === 0 ? null : BigInt(caps.cellCap),
+                hubCap: caps.resourceId === WCPU_RESOURCE_ID && caps.hubCap === 0 ? null : BigInt(caps.hubCap),
             },
         ]),
     );

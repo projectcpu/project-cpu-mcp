@@ -10,6 +10,7 @@ export const DEFAULT_API_URL = 'https://api.projectcpu.cc';
 export const PAYBOX_ISSUER_URL = 'https://api.paybox.sh';
 export const MAX_BATCHES_PER_PROCESS = 1000;
 export const BPS_DENOMINATOR = 10_000n;
+export const WCPU_RESOURCE_ID = 1;
 export const LAUNCH_CHAIN_ID = 4663;
 export const LAUNCH_NETWORK = Network.ROBINHOOD;
 export const DEFAULT_WALLET_MODE = WalletMode.PAYBOX;

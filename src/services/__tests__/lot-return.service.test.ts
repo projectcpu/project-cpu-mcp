@@ -310,12 +310,12 @@ describe('LotReturnService quote', () => {
         expect(quote.capacity).toEqual({ fits: false, required: '80', free: '79' });
     });
 
-    it('treats uncapped destination storage as room enough and reports no free figure', async () => {
+    it('never treats a null non-WCPU cap as unlimited destination room', async () => {
         const { service } = makeService({
             cell: destinationCell(makeStorage({ used: '9999', cellCap: null, hubCap: null }), '9999'),
         });
         const quote = await service.quoteReturn(input);
-        expect(quote.capacity).toEqual({ fits: true, required: '80', free: null });
+        expect(quote.capacity).toEqual({ fits: false, required: '80', free: '0' });
     });
 
     it('refuses to guess when the destination cell cannot be read at all', async () => {

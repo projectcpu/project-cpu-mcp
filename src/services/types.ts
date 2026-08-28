@@ -118,10 +118,7 @@ export interface AppConfig {
     recipes: Array<RecipeView>;
     /** Per-building catalog — on-chain id, kind, costs, and mine/craft bindings. */
     buildings: Array<CatalogBuildingView>;
-    /**
-     * The two gameplay legs every reveal is charged; `null` when the game API serves no reveal payment at
-     * all. Never the total to send — a reveal is always funded from `ICellClient.quoteReveal`.
-     */
+    /** The reveal budget and $CPU burn; `null` when the game API serves no usable reveal payment. */
     reveal: RevealPaymentView | null;
     transport: TransportRoutingView;
     /** Trade fee params, normalized to the MCP's percent surface. */
@@ -167,16 +164,15 @@ export interface RequestRevealParams {
 }
 
 /**
- * What one reveal costs right now, read from the Cell itself and the only source a reveal is funded from:
- * `totalRequiredWei` is the whole ETH the reveal is charged and `cpuBurnWei` the exact burn to approve. The
- * transaction carries headroom over the total (see `bufferedRevealValue`); the burn is approved as quoted.
- * Any leg may be zero.
+ * What one reveal costs right now, read from the Cell itself. The three ETH legs sum to `ethBudgetWei`; the
+ * transaction carries refundable headroom over that budget and approves the $CPU burn exactly as quoted.
  */
 export interface RevealQuote {
-    ethContributionWei: bigint;
+    poolContributionWei: bigint;
     randomnessFeeWei: bigint;
-    totalRequiredWei: bigint;
+    ethBudgetWei: bigint;
     cpuBurnWei: bigint;
+    metadataPublicationChargeWei: bigint;
 }
 
 export interface PlaceParams {
@@ -248,6 +244,7 @@ export interface RevealServiceOptions {
 
 export enum CellRevertName {
     INSUFFICIENT_REVEAL_PAYMENT = 'InsufficientRevealPayment',
+    REVEAL_SERVICE_FEES_EXCEED_BUDGET = 'RevealServiceFeesExceedBudget',
     REVEAL_PAYMENT_NOT_CONFIGURED = 'RevealPaymentNotConfigured',
     REVEAL_HOOK_NOT_CONFIGURED = 'RevealHookNotConfigured',
     HOOK_DELIVERY_FAILED = 'HookDeliveryFailed',
@@ -261,6 +258,10 @@ export enum CellRevertName {
     REVEAL_IN_FLIGHT = 'RevealInFlight',
     DEPOSITS_NOT_EXHAUSTED = 'DepositsNotExhausted',
     REVEAL_REQUEST_ID_IN_USE = 'RevealRequestIdInUse',
+}
+
+export enum TransportRevertName {
+    STORAGE_FULL = 'StorageFull',
 }
 
 export enum UpgradeRevertName {
@@ -307,7 +308,7 @@ export interface RevealRequestContext {
     source: Address;
     requestTxHash: Hash | null;
     approveTxHash: Hash | null;
-    /** The whole ETH the reveal cost, as the Cell quoted it; the transaction carries headroom above it. */
+    /** The ETH budget the Cell quoted; the transaction carries refundable headroom above it. */
     paidWei: bigint;
     cpuBurnWei: bigint;
     status: TxStatus | null;
@@ -353,10 +354,9 @@ export interface RevealResult {
     status: TxStatus | null;
     blockNumber: string | null;
     /**
-     * The whole ETH this reveal cost (decimal), as the cell quoted it — the liquidity contribution, randomness
-     * fee, and metadata publication charge together; "0" when the call sent no request of its own. The transaction
-     * carries headroom above it and the excess comes back in the same transaction, so this is what the wallet is
-     * left down by.
+     * The whole ETH budget this reveal was quoted (decimal): pool contribution, randomness fee, and metadata
+     * publication charge together; "0" when the call sent no request of its own. The transaction carries
+     * refundable headroom above it.
      */
     ethPaid: string;
     /** $CPU burned by this reveal (decimal); "0" when the call sent no request of its own. */

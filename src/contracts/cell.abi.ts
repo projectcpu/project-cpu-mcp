@@ -11,9 +11,9 @@ export const CELL_ABI = [
         name: 'quoteReveal',
         inputs: [],
         outputs: [
-            { name: 'ethContributionWei', type: 'uint256', internalType: 'uint256' },
+            { name: 'poolContributionWei', type: 'uint256', internalType: 'uint256' },
             { name: 'randomnessFeeWei', type: 'uint256', internalType: 'uint256' },
-            { name: 'totalRequiredWei', type: 'uint256', internalType: 'uint256' },
+            { name: 'ethBudgetWei', type: 'uint256', internalType: 'uint256' },
             { name: 'cpuBurnWei', type: 'uint256', internalType: 'uint256' },
             { name: 'metadataPublicationChargeWei', type: 'uint256', internalType: 'uint256' },
         ],
@@ -270,6 +270,14 @@ export const CELL_ABI = [
         inputs: [
             { name: 'required', type: 'uint256', internalType: 'uint256' },
             { name: 'provided', type: 'uint256', internalType: 'uint256' },
+        ],
+    },
+    {
+        type: 'error',
+        name: 'RevealServiceFeesExceedBudget',
+        inputs: [
+            { name: 'budgetWei', type: 'uint256', internalType: 'uint256' },
+            { name: 'serviceFeesWei', type: 'uint256', internalType: 'uint256' },
         ],
     },
     {
