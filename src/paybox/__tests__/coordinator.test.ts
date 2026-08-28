@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { NoopLogger } from '../../logger/noop.logger.js';
 import type { WalletManager } from '../../wallet/types.js';
 import { PayboxCoordinator } from '../coordinator.js';
 import { PayboxAuthInvalidError, PayboxLoopbackUnavailableError } from '../errors.js';
+import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import {
     PayboxAuthStatus,
     type IPayboxAuthStorage,
+    type IPayboxRpcClient,
     type IPayboxSdkAdapter,
     type PayboxAuthFlow,
     type PayboxAuthRecord,
@@ -68,6 +71,49 @@ describe('PayboxCoordinator', () => {
         expect(events).toEqual(['paybox-cleared', 'session-cleared', 'oauth-started']);
         expect(coordinator.isReady()).toBe(false);
         expect(() => coordinator.get()).toThrow('not authenticated');
+    });
+
+    it('single-flights the full reset and OAuth start for overlapping forced authentication calls', async () => {
+        const startResult = controlledPromise<{ authorizationUrl: string }>();
+        const events = new Array<string>();
+        const clear = vi.fn(() => events.push('paybox-cleared'));
+        const clearSession = vi.fn(() => events.push('session-cleared'));
+        const start = vi.fn(() => {
+            events.push('oauth-started');
+            return startResult.promise;
+        });
+        const coordinator = new PayboxCoordinator({
+            storage: { load: () => null, save: vi.fn(), clear },
+            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet: vi.fn(),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(), clearSession },
+        });
+
+        const first = coordinator.authenticate({ force: true, payboxCredentialId: null });
+        const second = coordinator.authenticate({ force: true, payboxCredentialId: null });
+        await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+        expect(clear).toHaveBeenCalledOnce();
+        expect(clearSession).toHaveBeenCalledOnce();
+        expect(events).toEqual(['paybox-cleared', 'session-cleared', 'oauth-started']);
+
+        startResult.resolve({ authorizationUrl: 'https://accounts.test/authorize?state=shared' });
+        await expect(Promise.all([first, second])).resolves.toEqual([
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=shared',
+            }),
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=shared',
+            }),
+        ]);
+        expect(start).toHaveBeenCalledOnce();
     });
 
     it('fully resets a restored selection that disappears without choosing its replacement', async () => {
@@ -898,6 +944,92 @@ describe('PayboxCoordinator', () => {
         expect(createWallet).toHaveBeenCalledTimes(2);
     });
 
+    it('fully resets refreshed authority after a retained Wallet receives a confirmed signing rejection', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'old-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const rotatedTokens = {
+            ...storedTokens,
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+            expiresAt: Date.now() + 600_000,
+        };
+        let persisted: PayboxAuthRecord | null = {
+            version: 1,
+            tokens: storedTokens,
+            signingKey: 'pbxk1.test',
+            credentialId: 'credential',
+            address: '0x0000000000000000000000000000000000000001',
+        };
+        const clear = vi.fn(() => {
+            persisted = null;
+        });
+        const clearSession = vi.fn();
+        const cancel = vi.fn();
+        const signMessage = vi.fn(async () => {
+            throw new PayboxAuthInvalidError('Paybox rejected the refreshed signing authority.');
+        });
+        const walletSdk: IPayboxSdkAdapter = {
+            refreshTokens: vi.fn(),
+            listEligibleAutonomousEvmGrants: vi.fn(),
+            createWallet: vi.fn(),
+            signMessage,
+            signTransaction: vi.fn(),
+        };
+        const createWallet = vi.fn(
+            (
+                _tokens: Parameters<IPayboxSdkAdapter['createWallet']>[0],
+                _signingKey: string,
+                credentialId: string,
+                address: string,
+                authority: PayboxWalletAuthority,
+            ) =>
+                new PayboxWalletManager({
+                    sdk: walletSdk,
+                    credentialId,
+                    address,
+                    authority,
+                    rpc: {} as IPayboxRpcClient,
+                    logger: new NoopLogger(),
+                }),
+        );
+        const sdk: IPayboxSdkAdapter = {
+            refreshTokens: vi.fn(async () => rotatedTokens),
+            listEligibleAutonomousEvmGrants: vi.fn(),
+            createWallet,
+            signMessage,
+            signTransaction: vi.fn(),
+        };
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => persisted,
+                save: vi.fn((record) => {
+                    persisted = record;
+                }),
+                clear,
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel },
+            sdk,
+            authenticator: { authenticate: vi.fn(), clearSession },
+        });
+        const retainedWallet = coordinator.get();
+
+        await expect(retainedWallet.signMessage('economic intent')).rejects.toThrow('refreshed signing authority');
+
+        expect(signMessage).toHaveBeenCalledOnce();
+        expect(clear).toHaveBeenCalledTimes(2);
+        expect(clearSession).toHaveBeenCalledOnce();
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(persisted).toBeNull();
+        expect(coordinator.isReady()).toBe(false);
+        expect(() => coordinator.get()).toThrow('not authenticated');
+    });
+
     it('requires an explicit fresh choice when multiple wallet grants are eligible', async () => {
         let saved = null as ReturnType<IPayboxAuthStorage['load']>;
         const storage: IPayboxAuthStorage = {
@@ -1324,6 +1456,75 @@ describe('PayboxCoordinator', () => {
         expect(save).not.toHaveBeenCalled();
         expect(createWallet).not.toHaveBeenCalled();
         expect(coordinator.isReady()).toBe(false);
+    });
+
+    it('rejects auth material returned by flow finish after a forced reset', async () => {
+        const completion = controlledPromise<{
+            tokens: {
+                clientId: string;
+                accessToken: string;
+                refreshToken: string | null;
+                expiresAt: number | null;
+                resource: string | null;
+                baseUrl: string;
+            };
+            signingKey: string;
+        }>();
+        const start = vi
+            .fn()
+            .mockResolvedValueOnce({ authorizationUrl: 'https://accounts.test/authorize?state=stale' })
+            .mockResolvedValueOnce({ authorizationUrl: 'https://accounts.test/authorize?state=current' });
+        const finish = vi.fn(() => completion.promise);
+        const save = vi.fn();
+        const listGrants = vi.fn();
+        const createWallet = vi.fn();
+        const coordinator = new PayboxCoordinator({
+            storage: { load: () => null, save, clear: vi.fn() },
+            flow: { start, finish, cancel: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(),
+                listEligibleAutonomousEvmGrants: listGrants,
+                createWallet,
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: testAuthenticator(vi.fn()),
+        });
+
+        await coordinator.authenticate({ force: false, payboxCredentialId: null });
+        await coordinator.authenticate({ force: false, payboxCredentialId: null });
+        await vi.waitFor(() => expect(finish).toHaveBeenCalledOnce());
+        await expect(coordinator.authenticate({ force: true, payboxCredentialId: null })).resolves.toEqual(
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=current',
+            }),
+        );
+
+        completion.resolve({
+            tokens: {
+                clientId: 'stale-client',
+                accessToken: 'stale-access',
+                refreshToken: 'stale-refresh',
+                expiresAt: null,
+                resource: null,
+                baseUrl: 'https://paybox.test',
+            },
+            signingKey: 'pbxk1.stale',
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        expect(listGrants).not.toHaveBeenCalled();
+        expect(createWallet).not.toHaveBeenCalled();
+        expect(save).not.toHaveBeenCalled();
+        expect(coordinator.isReady()).toBe(false);
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
+            expect.objectContaining({
+                status: PayboxAuthStatus.AuthRequired,
+                authorizationUrl: 'https://accounts.test/authorize?state=current',
+            }),
+        );
+        expect(start).toHaveBeenCalledTimes(2);
     });
 
     it('fails closed without reloading or retaining authority when force cannot clear storage', async () => {

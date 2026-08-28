@@ -38,6 +38,7 @@ export class PayboxCoordinator implements WalletProvider {
     private address: Address | null = null;
     private pendingUrl: string | null = null;
     private starting: Promise<string> | null = null;
+    private forcing: Promise<PayboxAuthenticateResult> | null = null;
     private completing: Promise<void> | null = null;
     private completionError: Error | null = null;
     private authenticating: PayboxAuthenticationFlight | null = null;
@@ -79,9 +80,29 @@ export class PayboxCoordinator implements WalletProvider {
         return this.wallet;
     }
 
-    async authenticate(input: PayboxAuthenticateInput): Promise<PayboxAuthenticateResult> {
+    authenticate(input: PayboxAuthenticateInput): Promise<PayboxAuthenticateResult> {
         const requestedCredentialId = input.payboxCredentialId ?? null;
-        if (input.force) this.resetAuthState();
+        if (!input.force) return this.authenticateWithRecovery(requestedCredentialId);
+        if (this.forcing !== null) return this.forcing;
+        const forcing = this.authenticateForced(requestedCredentialId);
+        this.forcing = forcing;
+        void forcing.then(
+            () => {
+                if (this.forcing === forcing) this.forcing = null;
+            },
+            () => {
+                if (this.forcing === forcing) this.forcing = null;
+            },
+        );
+        return forcing;
+    }
+
+    private async authenticateForced(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
+        this.resetAuthState();
+        return this.authenticateWithRecovery(requestedCredentialId);
+    }
+
+    private async authenticateWithRecovery(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
         try {
             return await this.authenticateCurrent(requestedCredentialId);
         } catch (error) {
@@ -507,6 +528,7 @@ export class PayboxCoordinator implements WalletProvider {
         address: Address,
         generation: number,
     ): PayboxWalletAuthority {
+        let authorityGeneration = generation;
         return {
             current: async () => {
                 this.assertCurrent(generation);
@@ -515,12 +537,13 @@ export class PayboxCoordinator implements WalletProvider {
                     if (this.credentialId !== credentialId || this.address !== address || this.material === null) {
                         throw new Error('Paybox Wallet authority was invalidated.');
                     }
+                    authorityGeneration = this.generation;
                     return this.material;
                 }
                 return candidate;
             },
             invalidate: () => {
-                if (this.generation === generation) this.resetAuthState();
+                if (this.generation === authorityGeneration) this.resetAuthState();
             },
         };
     }
