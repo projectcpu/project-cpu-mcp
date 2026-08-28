@@ -19,6 +19,8 @@ import {
 } from '../errors.js';
 import { SystemBrowserOpener } from './browser-opener.js';
 import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-flow.utils.js';
+import { connectionCompletePage, connectionFailedPage, signingKeyPage } from './loopback-page.utils.js';
+import { agentKeyProvisioningUrl } from './provisioning.utils.js';
 import { isPbxk1 } from './signing-key.utils.js';
 import { classifiedPayboxError, classifiedPayboxHttpStatus } from '../sdk/utils.js';
 import {
@@ -45,6 +47,8 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private clientId: string | null = null;
     private code: string | null = null;
     private key: string | null = null;
+    private callbackResponse: ServerResponse | null = null;
+    private provisioningUrl: string | null = null;
     private started = false;
     private operation: AbortController | null = null;
     private signal: AbortSignal | null = null;
@@ -206,13 +210,9 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             return this.respond(response, 400, 'Invalid callback');
         }
         if (this.code !== null) return this.respond(response, 409, 'Already used');
+        this.callbackResponse = response;
         this.code = url.searchParams.get('code');
         this.notifyWaiters();
-        this.respond(
-            response,
-            200,
-            `<form method="post" action="${this.keyPath}"><input name="key" type="password" autocomplete="off"><button>Continue</button></form>`,
-        );
     }
 
     private handleKey(request: IncomingMessage, response: ServerResponse): void {
@@ -223,6 +223,9 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         if (request.method !== 'POST') return this.respond(response, 405, 'Method not allowed');
         if (!String(request.headers['content-type'] ?? '').startsWith('application/x-www-form-urlencoded')) {
             return this.respond(response, 415, 'Unsupported media type');
+        }
+        if (this.provisioningUrl === null) {
+            return this.respond(response, 409, connectionFailedPage());
         }
         let body = '';
         let size = 0;
@@ -236,11 +239,19 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             try {
                 const key = formKey(body);
                 if (typeof key !== 'string' || !isPbxk1(key)) {
-                    return this.respond(response, 400, 'Invalid signing key');
+                    return this.respond(
+                        response,
+                        400,
+                        signingKeyPage(
+                            this.required(this.keyPath, 'key path'),
+                            this.required(this.provisioningUrl, 'provisioning URL'),
+                            'That is not a valid pbxk1 signing key. Copy the complete value from Paybox and try again.',
+                        ),
+                    );
                 }
                 this.key = key;
                 this.notifyWaiters();
-                this.respond(response, 200, 'Authentication complete');
+                this.respond(response, 200, connectionCompletePage());
             } catch {
                 this.respond(response, 400, 'Invalid request');
             }
@@ -251,6 +262,15 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         try {
             const code = await this.waitFor(() => this.code);
             const token = await this.exchange(code, this.required(this.signal, 'signal'));
+            const provisioningUrl = agentKeyProvisioningUrl(this.options.issuerUrl, token.accessToken);
+            if (provisioningUrl === null) throw oauthError('signing key provisioning unavailable');
+            this.provisioningUrl = provisioningUrl;
+            try {
+                this.browserOpener.open(provisioningUrl);
+            } catch {
+                // The local callback page keeps the provisioning URL available as a visible fallback.
+            }
+            this.respondCallback(200, signingKeyPage(this.required(this.keyPath, 'key path'), provisioningUrl, null));
             const signingKey = await this.waitFor(() => this.key);
             resolve({
                 tokens: {
@@ -261,6 +281,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
                 signingKey,
             });
         } catch (error) {
+            this.respondCallback(502, connectionFailedPage());
             if (this.started) {
                 this.fail(error instanceof Error ? error : oauthError('authentication failed'));
             }
@@ -371,6 +392,8 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         this.clientId = null;
         this.code = null;
         this.key = null;
+        this.callbackResponse = null;
+        this.provisioningUrl = null;
     }
 
     private notifyWaiters(): void {
@@ -380,6 +403,13 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private respond(response: ServerResponse, status: number, body: string): void {
         response.writeHead(status, HTML_HEADERS);
         response.end(body);
+    }
+
+    private respondCallback(status: number, body: string): void {
+        const response = this.callbackResponse;
+        if (response === null) return;
+        this.callbackResponse = null;
+        this.respond(response, status, body);
     }
 
     private required<T>(value: T | null, name: string): T {

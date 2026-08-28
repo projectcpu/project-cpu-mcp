@@ -15,6 +15,8 @@ vi.mock('../auth/browser-opener.js', () => ({
 const VALID_SIGNING_KEY =
     'pbxk1.eyJwIjoiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSIsInMiOiIy' +
     'MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyIn0';
+const PAYBOX_AGENT_CLIENT_ID = 'agent-client';
+const ACCESS_TOKEN = `header.${Buffer.from(JSON.stringify({ cid: PAYBOX_AGENT_CLIENT_ID })).toString('base64url')}.signature`;
 
 const controllers = new Map<LoopbackAuthFlow, AbortController>();
 
@@ -249,6 +251,7 @@ describe('LoopbackAuthFlow', () => {
 
     it('performs discovery, registration, PKCE exchange and one-shot key capture', async () => {
         const requests: Array<{ url: string; init: RequestInit }> = [];
+        const openBrowser = vi.fn();
         const client: PayboxHttpClient = {
             async fetch(url, init) {
                 requests.push({ url, init });
@@ -260,14 +263,17 @@ describe('LoopbackAuthFlow', () => {
                     });
                 }
                 if (url === 'https://issuer.example/register') return response({ client_id: 'client-1' });
-                return response({ access_token: 'access-token', refresh_token: 'refresh-token', expires_in: 60 });
+                return response({ access_token: ACCESS_TOKEN, refresh_token: 'refresh-token', expires_in: 60 });
             },
         };
-        const flow = new LoopbackAuthFlow({
-            issuerUrl: 'https://issuer.example',
-            httpClient: client,
-            timeoutMs: 1000,
-        });
+        const flow = new LoopbackAuthFlow(
+            {
+                issuerUrl: 'https://api.paybox.test',
+                httpClient: client,
+                timeoutMs: 1000,
+            },
+            { open: openBrowser },
+        );
 
         const pending = await begin(flow);
         const authorization = new URL(pending.authorizationUrl);
@@ -283,7 +289,19 @@ describe('LoopbackAuthFlow', () => {
         expect(callbackResponse.status).toBe(200);
         expect(callbackResponse.headers.get('cache-control')).toBe('no-store');
         expect(callbackResponse.headers.get('content-security-policy')).toContain("default-src 'none'");
-        const keyPath = /action="([^"]+)"/.exec(await callbackResponse.text())?.[1] ?? '';
+        const callbackHtml = await callbackResponse.text();
+        expect(callbackHtml).toContain('Paste the pbxk1 signing key');
+        expect(callbackHtml).toContain('<label');
+        expect(callbackHtml).toContain('Connect Project CPU MCP');
+        expect(callbackHtml).toContain('LOCAL ONLY');
+        expect(callbackHtml).toContain('--accent: #ccff00');
+        expect(callbackHtml).toContain("font-family: 'IBM Plex Mono'");
+        expect(callbackHtml).toContain(`https://app.paybox.test/agent-key?client_id=${PAYBOX_AGENT_CLIENT_ID}`);
+        expect(openBrowser).toHaveBeenNthCalledWith(
+            2,
+            `https://app.paybox.test/agent-key?client_id=${PAYBOX_AGENT_CLIENT_ID}`,
+        );
+        const keyPath = /action="([^"]+)"/.exec(callbackHtml)?.[1] ?? '';
         const keyResponse = await fetch(new URL(keyPath, redirect), {
             method: 'POST',
             headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -327,7 +345,7 @@ describe('LoopbackAuthFlow', () => {
 
     it('rejects invalid, oversized, and duplicate key submissions without reflecting secrets', async () => {
         const flow = new LoopbackAuthFlow({
-            issuerUrl: 'https://issuer.example',
+            issuerUrl: 'https://api.paybox.test',
             httpClient: fakeClient(),
             timeoutMs: 1000,
         });
@@ -443,7 +461,7 @@ describe('LoopbackAuthFlow', () => {
             const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '');
             callback.searchParams.set('code', 'code');
             callback.searchParams.set('state', authorization.searchParams.get('state') ?? '');
-            expect((await fetch(callback)).status).toBe(200);
+            expect((await fetch(callback)).status).toBe(502);
             await new Promise<void>((resolve) => setImmediate(resolve));
             expect(unhandled).toEqual([]);
             await expect(finish(flow)).rejects.toMatchObject({
@@ -485,7 +503,7 @@ describe('LoopbackAuthFlow', () => {
         callback.searchParams.set('code', 'secret-code');
         callback.searchParams.set('state', authorization.searchParams.get('state') ?? '');
 
-        expect((await fetch(callback)).status).toBe(200);
+        expect((await fetch(callback)).status).toBe(502);
         await new Promise<void>((resolve) => setImmediate(resolve));
 
         const failure = finish(flow);
@@ -525,7 +543,7 @@ describe('LoopbackAuthFlow', () => {
         callback.searchParams.set('code', 'secret-code');
         callback.searchParams.set('state', authorization.searchParams.get('state') ?? '');
 
-        expect((await fetch(callback)).status).toBe(200);
+        expect((await fetch(callback)).status).toBe(502);
         await new Promise<void>((resolve) => setImmediate(resolve));
 
         const failure = finish(flow);
@@ -617,7 +635,7 @@ function fakeClient(): PayboxHttpClient {
                     token_endpoint: 'https://issuer.example/token',
                 });
             if (url.endsWith('/register')) return response({ client_id: 'client' });
-            return response({ access_token: 'access' });
+            return response({ access_token: ACCESS_TOKEN });
         },
     };
 }

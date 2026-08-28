@@ -212,7 +212,7 @@ function displayField(value: unknown): string | null {
     return typeof value === 'string' ? value : null;
 }
 
-function managementUrlFromBaseUrl(baseUrl: string): string | null {
+export function managementUrlFromBaseUrl(baseUrl: string): string | null {
     let parsed: URL;
     try {
         parsed = new URL(baseUrl);
