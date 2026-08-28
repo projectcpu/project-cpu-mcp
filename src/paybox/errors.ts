@@ -10,8 +10,9 @@ import {
     PayboxRefreshFailureDisposition,
     type PayboxFailureDiagnostic,
     type PayboxFullAccessWalletRequiredErrorData,
+    type PayboxInvalidOperationArtifactErrorData,
+    type PayboxOperationIncompleteErrorData,
     type PayboxOperationDeniedErrorData,
-    type PayboxOperationResponseErrorData,
     type PayboxTemporarilyUnavailableErrorData,
     type PayboxWalletSelectionErrorData,
 } from './types.js';
@@ -76,30 +77,33 @@ export class PayboxOperationDeniedError extends Error {
 }
 
 export class PayboxOperationIncompleteError extends Error {
-    readonly data: PayboxOperationResponseErrorData = {
-        code: PayboxErrorCode.OperationIncomplete,
-        stateCleared: false,
-        retryable: false,
-    };
+    readonly data: PayboxOperationIncompleteErrorData;
     readonly diagnostic: PayboxFailureDiagnostic = {
         failureClass: PayboxFailureClass.OperationIncomplete,
         resetCause: null,
         resetDepth: PayboxResetDepth.None,
     };
 
-    constructor() {
-        const data: PayboxOperationResponseErrorData = {
+    constructor(
+        providerStatus: number | null = null,
+        providerMessage: string | null = null,
+        options: ErrorOptions | null = null,
+    ) {
+        const data: PayboxOperationIncompleteErrorData = {
             code: PayboxErrorCode.OperationIncomplete,
             stateCleared: false,
             retryable: false,
+            providerStatus,
+            providerMessage,
         };
-        super(JSON.stringify(data));
+        super(JSON.stringify(data), options ?? undefined);
         this.name = 'PayboxOperationIncompleteError';
+        this.data = data;
     }
 }
 
 export class PayboxInvalidOperationArtifactError extends Error {
-    readonly data: PayboxOperationResponseErrorData = {
+    readonly data: PayboxInvalidOperationArtifactErrorData = {
         code: PayboxErrorCode.InvalidOperationArtifact,
         stateCleared: false,
         retryable: false,
@@ -111,7 +115,7 @@ export class PayboxInvalidOperationArtifactError extends Error {
     };
 
     constructor() {
-        const data: PayboxOperationResponseErrorData = {
+        const data: PayboxInvalidOperationArtifactErrorData = {
             code: PayboxErrorCode.InvalidOperationArtifact,
             stateCleared: false,
             retryable: false,

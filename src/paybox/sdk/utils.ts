@@ -1,6 +1,7 @@
 import { PayboxError } from '@paybox-sh/sdk';
 import { getAddress, isAddress, type Hex } from 'viem';
 
+import { redactString } from '../../logger/redact.utils.js';
 import {
     PayboxAuthFlowError,
     PayboxAuthInvalidError,
@@ -15,6 +16,8 @@ import {
     PAYBOX_DENIED_STATUS,
     PAYBOX_EIP155_CHAIN_ID_PATTERN,
     PAYBOX_INVALID_GRANT_HTTP_STATUS,
+    PAYBOX_PROVIDER_ERROR_MESSAGE_FIELDS,
+    PAYBOX_PROVIDER_ERROR_MESSAGE_MAX_LENGTH,
     PAYBOX_RATE_LIMIT_HTTP_STATUS,
     PAYBOX_REFRESH_HTTP_STATUS_PATTERN,
     PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
@@ -61,7 +64,7 @@ export function classifiedPayboxError(error: unknown, context: PayboxRequestCont
                 : PayboxRefreshFailureDisposition.NotApplicable,
         );
     }
-    if (context === PayboxRequestContext.Authenticated) return new PayboxOperationIncompleteError();
+    if (context === PayboxRequestContext.Authenticated) return operationIncompleteError(error);
     if (context === PayboxRequestContext.Refresh) {
         return new PayboxTemporarilyUnavailableError(
             error instanceof Error ? { cause: error } : null,
@@ -92,7 +95,7 @@ export function classifiedPayboxHttpStatus(
                 : PayboxRefreshFailureDisposition.NotApplicable,
         );
     }
-    if (context === PayboxRequestContext.Authenticated) return new PayboxOperationIncompleteError();
+    if (context === PayboxRequestContext.Authenticated) return operationIncompleteError(cause, status);
     if (context === PayboxRequestContext.Refresh || context === PayboxRequestContext.OAuthToken) {
         return new PayboxAuthInvalidError(
             'Paybox authentication authority was rejected.',
@@ -168,6 +171,41 @@ function isNetworkOrTimeoutError(error: unknown): boolean {
     if (PAYBOX_TRANSPORT_ERROR_NAMES.has(error.name)) return true;
     const code = (error as Error & { code: unknown }).code;
     return typeof code === 'string' && PAYBOX_TRANSPORT_ERROR_CODES.has(code);
+}
+
+function operationIncompleteError(error: unknown, status: number | null = null): PayboxOperationIncompleteError {
+    return new PayboxOperationIncompleteError(
+        status,
+        providerErrorMessage(error),
+        error instanceof Error ? { cause: error } : null,
+    );
+}
+
+function providerErrorMessage(error: unknown): string | null {
+    const message = error instanceof PayboxError ? providerMessageFromBody(error.body) : errorMessage(error);
+    if (message === null) return null;
+    const normalized = redactString(message).replace(/\s+/gu, ' ').trim();
+    if (normalized.length === 0) return null;
+    return normalized.slice(0, PAYBOX_PROVIDER_ERROR_MESSAGE_MAX_LENGTH);
+}
+
+function providerMessageFromBody(body: string): string | null {
+    try {
+        const value: unknown = JSON.parse(body);
+        if (typeof value === 'string') return value;
+        if (!isRecord(value)) return null;
+        for (const field of PAYBOX_PROVIDER_ERROR_MESSAGE_FIELDS) {
+            const message = value[field];
+            if (typeof message === 'string') return message;
+        }
+        return null;
+    } catch {
+        return body;
+    }
+}
+
+function errorMessage(error: unknown): string | null {
+    return error instanceof Error ? error.message : null;
 }
 
 function grantRows(value: unknown): Array<unknown> {

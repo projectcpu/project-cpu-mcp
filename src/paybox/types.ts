@@ -96,8 +96,16 @@ export interface PayboxOperationDeniedErrorData {
     code: PayboxErrorCode.OperationDenied;
 }
 
-export interface PayboxOperationResponseErrorData {
-    code: PayboxErrorCode.InvalidOperationArtifact | PayboxErrorCode.OperationIncomplete;
+export interface PayboxOperationIncompleteErrorData {
+    code: PayboxErrorCode.OperationIncomplete;
+    stateCleared: false;
+    retryable: false;
+    providerStatus: number | null;
+    providerMessage: string | null;
+}
+
+export interface PayboxInvalidOperationArtifactErrorData {
+    code: PayboxErrorCode.InvalidOperationArtifact;
     stateCleared: false;
     retryable: false;
 }

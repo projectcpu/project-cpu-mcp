@@ -9,6 +9,8 @@ export const PAYBOX_INVALID_GRANT_HTTP_STATUS = 400;
 export const PAYBOX_RATE_LIMIT_HTTP_STATUS = 429;
 export const PAYBOX_SERVER_ERROR_STATUS_MINIMUM = 500;
 export const PAYBOX_REFRESH_HTTP_STATUS_PATTERN = /^token refresh failed \(([0-9]{3})\):/u;
+export const PAYBOX_PROVIDER_ERROR_MESSAGE_FIELDS = ['error', 'message', 'detail'] as const;
+export const PAYBOX_PROVIDER_ERROR_MESSAGE_MAX_LENGTH = 512;
 export const PAYBOX_TRANSPORT_ERROR_NAMES = new Set(['AbortError', 'TimeoutError']);
 export const PAYBOX_TRANSPORT_ERROR_CODES = new Set([
     'ECONNREFUSED',

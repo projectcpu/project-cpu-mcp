@@ -65,16 +65,30 @@ describe('PayboxSdkAdapter', () => {
         const mock = factory([]);
         const diagnostics = recordingLogger();
         mock.list.mockRejectedValueOnce(
-            new PayboxError(422, 'access_token=secret raw response body', 'GET /agent/credentials'),
+            new PayboxError(
+                422,
+                JSON.stringify({ error: 'The signing key is not registered for this client.', access_token: 'secret' }),
+                'GET /agent/credentials',
+            ),
         );
         const adapter = new PayboxSdkAdapter(mock.factory, defaultPayboxTokenRefresher, {
             rpcUrl: null,
             logger: diagnostics.logger,
         });
 
-        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toBeInstanceOf(
-            PayboxOperationIncompleteError,
-        );
+        const failure = adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key');
+
+        await expect(failure).rejects.toBeInstanceOf(PayboxOperationIncompleteError);
+        await expect(failure).rejects.toMatchObject({
+            data: {
+                code: 'PAYBOX_OPERATION_INCOMPLETE',
+                stateCleared: false,
+                retryable: false,
+                providerStatus: 422,
+                providerMessage: 'The signing key is not registered for this client.',
+            },
+        });
+        await expect(failure).rejects.not.toThrow('secret');
         expect(diagnostics.warn).toHaveBeenCalledOnce();
         expect(diagnostics.warn).toHaveBeenCalledWith('Paybox SDK operation failed', {
             operation: 'list_eligible_autonomous_evm_grants',
@@ -120,7 +134,13 @@ describe('PayboxSdkAdapter', () => {
 
         await expect(failure).rejects.toBeInstanceOf(PayboxOperationIncompleteError);
         await expect(failure).rejects.toMatchObject({
-            data: { code: 'PAYBOX_OPERATION_INCOMPLETE', stateCleared: false, retryable: false },
+            data: {
+                code: 'PAYBOX_OPERATION_INCOMPLETE',
+                stateCleared: false,
+                retryable: false,
+                providerStatus: null,
+                providerMessage: 'unknown SDK failure with [REDACTED]',
+            },
         });
         await expect(failure).rejects.not.toThrow('secret');
         expect(mock.sign).toHaveBeenCalledOnce();
