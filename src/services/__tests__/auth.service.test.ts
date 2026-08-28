@@ -51,6 +51,7 @@ describe('AuthService', () => {
 
         session = new SessionManager(null as never);
         api = new ApiClient(null as never);
+        vi.mocked(session.getWalletMode).mockReturnValue(WalletMode.EVM);
 
         walletManager = {
             getAddress: vi.fn(() => ADDRESS),

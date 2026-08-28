@@ -113,7 +113,7 @@ export class AuthService implements IAuthenticator {
     }
 
     private persistToken(address: string, jwt: string): void {
-        const walletMode = this.session.getWalletMode() ?? WalletMode.EVM;
+        const walletMode = this.session.getWalletMode();
         const current = this.session.getStatus() === SessionStatus.Active ? this.session.getSession() : null;
         if (
             current !== null &&
