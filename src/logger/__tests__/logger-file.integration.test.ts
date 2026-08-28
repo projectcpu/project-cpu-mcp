@@ -32,10 +32,19 @@ describe('Logger file sink', () => {
         });
 
         const contents = fs.readFileSync(filePath, 'utf8');
-        expect(contents).toContain('[WARN]');
-        expect(contents).toContain('credential discovery failed');
-        expect(contents).toContain('"providerStatus":422');
-        expect(contents).toContain(REDACTED);
+        const entry = JSON.parse(contents) as Record<string, unknown>;
+        expect(entry).toMatchObject({
+            level: 'WARN',
+            context: 'test',
+            message: 'credential discovery failed',
+            meta: {
+                signingKey: REDACTED,
+                accessToken: REDACTED,
+                providerStatus: 422,
+            },
+        });
+        expect(entry.timestamp).toEqual(expect.any(String));
+        expect(contents.endsWith('\n')).toBe(true);
         expect(contents).not.toContain('secret-signing-key');
         expect(contents).not.toContain('secret-access-token');
         expect(fs.statSync(directory).mode & 0o777).toBe(0o700);

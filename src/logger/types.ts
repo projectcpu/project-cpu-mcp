@@ -13,6 +13,14 @@ export interface LoggerOptions {
 
 export type LogMeta = Record<string, unknown>;
 
+export interface FileLogEntry {
+    timestamp: string;
+    level: LogLevel;
+    context: string;
+    message: string;
+    meta: LogMeta | null;
+}
+
 export interface ILogger {
     info(message: string, meta?: LogMeta): void;
     warn(message: string, meta?: LogMeta): void;

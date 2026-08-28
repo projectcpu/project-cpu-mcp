@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { LOG_DIR_MODE, LOG_FILE_MODE } from './constants.js';
+import { LOG_DIR_MODE, LOG_FILE_MAX_BYTES, LOG_FILE_MODE } from './constants.js';
+import { newestCompleteJsonLines, serializeFileLogEntry } from './file-log.utils.js';
 import { redactString, redactValue } from './redact.utils.js';
-import { type ILogger, type LogMeta, LogLevel, type LoggerOptions } from './types.js';
+import { type FileLogEntry, type ILogger, type LogMeta, LogLevel, type LoggerOptions } from './types.js';
 
 export class Logger implements ILogger {
     private readonly context: string;
@@ -47,11 +48,19 @@ export class Logger implements ILogger {
     private write(level: LogLevel, message: string, meta: LogMeta | undefined): void {
         const timestamp = new Date().toISOString();
         const safeMessage = redactString(message);
-        const metaPart = meta === undefined ? '' : ` ${JSON.stringify(redactValue(meta))}`;
+        const safeMeta = meta === undefined ? null : (redactValue(meta) as LogMeta);
+        const metaPart = safeMeta === null ? '' : ` ${JSON.stringify(safeMeta)}`;
         const line = `[${timestamp}] [${level}] [${this.context}] ${safeMessage}${metaPart}\n`;
         // stdout belongs to MCP JSON-RPC; stderr remains useful when the host exposes it.
         process.stderr.write(line);
-        this.appendToFile(line, timestamp);
+        const fileEntry: FileLogEntry = {
+            timestamp,
+            level,
+            context: this.context,
+            message: safeMessage,
+            meta: safeMeta,
+        };
+        this.appendToFile(serializeFileLogEntry(fileEntry, LOG_FILE_MAX_BYTES), timestamp);
     }
 
     private appendToFile(line: string, timestamp: string): void {
@@ -61,6 +70,7 @@ export class Logger implements ILogger {
             fs.mkdirSync(directory, { recursive: true, mode: LOG_DIR_MODE });
             fs.chmodSync(directory, LOG_DIR_MODE);
             fs.appendFileSync(this.filePath, line, { encoding: 'utf8', mode: LOG_FILE_MODE });
+            this.compactFile();
             fs.chmodSync(this.filePath, LOG_FILE_MODE);
         } catch (error) {
             if (this.fileFailureReported) return;
@@ -70,5 +80,13 @@ export class Logger implements ILogger {
                 `[${timestamp}] [WARN] [${this.context}] persistent log unavailable ${JSON.stringify({ errorName })}\n`,
             );
         }
+    }
+
+    private compactFile(): void {
+        if (this.filePath === null || fs.statSync(this.filePath).size <= LOG_FILE_MAX_BYTES) return;
+        const contents = fs.readFileSync(this.filePath);
+        fs.writeFileSync(this.filePath, newestCompleteJsonLines(contents, LOG_FILE_MAX_BYTES), {
+            mode: LOG_FILE_MODE,
+        });
     }
 }

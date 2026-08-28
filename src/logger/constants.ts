@@ -1,6 +1,8 @@
 export const REDACTED = '[REDACTED]';
 export const LOG_DIR_MODE = 0o700;
 export const LOG_FILE_MODE = 0o600;
+export const LOG_FILE_MAX_BYTES = 5 * 1024 * 1024;
+export const OVERSIZED_LOG_MESSAGE = 'Log entry exceeded the file size limit and was truncated.';
 
 /**
  * Object keys whose values are redacted recursively. Matched case-insensitively
