@@ -10,6 +10,7 @@ import {
     type RawCellResourceStorage,
     type UnderivedCell,
 } from './types.js';
+import { WCPU_RESOURCE_ID } from '../config/constants.js';
 
 function cellReady(cell: RawCell, serverTime: number): boolean | null {
     const building = cell.building;
@@ -19,12 +20,17 @@ function cellReady(cell: RawCell, serverTime: number): boolean | null {
     return building.buildFinishAt === null || serverTime >= building.buildFinishAt;
 }
 
-function deriveStorage(storage: RawCellResourceStorage | null, useHubShelf: boolean): CellResourceStorage | null {
+function deriveStorage(
+    resourceId: number,
+    storage: RawCellResourceStorage | null,
+    useHubShelf: boolean,
+): CellResourceStorage | null {
     if (storage === null) {
         return null;
     }
     const { cellCap, hubCap, ...occupancy } = storage;
-    const cap = useHubShelf ? hubCap : cellCap;
+    const rawCap = useHubShelf ? hubCap : cellCap;
+    const cap = rawCap === null && resourceId !== WCPU_RESOURCE_ID ? '0' : rawCap;
     if (cap === null) {
         return { ...occupancy, cap: null, full: false };
     }
@@ -32,7 +38,7 @@ function deriveStorage(storage: RawCellResourceStorage | null, useHubShelf: bool
 }
 
 function deriveResource(resource: RawCellResource, useHubShelf: boolean): CellResource {
-    return { ...resource, storage: deriveStorage(resource.storage, useHubShelf) };
+    return { ...resource, storage: deriveStorage(resource.resourceId, resource.storage, useHubShelf) };
 }
 
 export function toCell(raw: UnderivedCell, serverTime: number, config: CellProjectionConfig): Cell {

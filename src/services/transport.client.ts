@@ -1,5 +1,6 @@
 import { encodeFunctionData, type Hash } from 'viem';
 
+import { withTransportQuotePhrase } from './transport-revert.utils.js';
 import type {
     FinalizeParams,
     ITransportClient,
@@ -22,14 +23,18 @@ export class TransportClient implements ITransportClient {
     }
 
     async quoteRoute(params: QuoteRouteParams): Promise<RouteQuote> {
-        const [totalFee, discount, totalDistance, arrivalAt] = await this.contracts.read<
-            readonly [bigint, bigint, bigint, bigint]
-        >({
-            address: params.transport,
-            abi: TRANSPORT_ABI,
-            functionName: 'quoteRoute',
-            args: [params.from, params.tokenIds, params.res, params.amount],
-        });
+        let quote: readonly [bigint, bigint, bigint, bigint];
+        try {
+            quote = await this.contracts.read({
+                address: params.transport,
+                abi: TRANSPORT_ABI,
+                functionName: 'quoteRoute',
+                args: [params.from, params.tokenIds, params.res, params.amount],
+            });
+        } catch (error) {
+            throw withTransportQuotePhrase(error, params);
+        }
+        const [totalFee, discount, totalDistance, arrivalAt] = quote;
         return { totalFee, discount, totalDistance, arrivalAt };
     }
 

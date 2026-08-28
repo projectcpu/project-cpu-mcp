@@ -75,7 +75,7 @@ export const EMPTY_CATALOG_NOTE = 'No buildings in the catalog of this network.'
 
 export const REVEAL_PAYMENT_UNKNOWN_SUMMARY = [
     'every reveal is charged, the first reveal of a cell included, but this network serves no price for it, so',
-    'the amounts are unknown here — `cpu_reveal` reads the exact total off the chain and pays that.',
+    'the amounts are unknown here — `cpu_reveal` reads the current budget and burn from the Cell before paying.',
 ].join(' ');
 
 export const SELF_SERVICE_RANDOMNESS_SUMMARY = [
@@ -90,7 +90,8 @@ export const PUSH_RANDOMNESS_SUMMARY = [
 ].join(' ');
 
 export const STORAGE_SHELVES_SUMMARY = [
-    'storage caps are explicit per-resource cell/hub shelf pairs (`0` means unlimited); map reads label the',
+    'storage caps are explicit per-resource cell/hub shelf pairs (`0` means unlimited for WCPU alone and no',
+    'room for every other resource); map reads label the',
     'shelf currently in force as each resource storage `cap`, and the machine block below carries every pair',
 ].join(' ');
 

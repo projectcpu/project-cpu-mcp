@@ -73,7 +73,7 @@ function makeResponse(overrides: Partial<AppConfigFixture> = {}): AppConfigFixtu
                 branch: null,
             },
         ],
-        reveal: { ethContribution: '1000', cpuBurn: '2000' },
+        reveal: { ethBudget: '1000', cpuBurn: '2000' },
         transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
         trade: { saleBurnPercent: 1, maxSaleFeeBp: 5000 },
         storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
@@ -335,22 +335,31 @@ describe('AppConfigService', () => {
         expect((await makeService(api).load()).reveal).toBeNull();
     });
 
-    it('reads the fractional reveal legs a live stand serves, rather than dropping them as unpriceable', async () => {
+    it('reads the fractional reveal budget and burn the game API serves', async () => {
+        const api = new FakeApi({
+            status: 200,
+            data: makeResponse({ reveal: { ethBudget: '0.0001', cpuBurn: '1' } }),
+        });
+
+        expect((await makeService(api).load()).reveal).toEqual({ ethBudget: '0.0001', cpuBurn: '1' });
+    });
+
+    it('keeps both reveal values as served, including a zero budget', async () => {
+        const api = new FakeApi({
+            status: 200,
+            data: makeResponse({ reveal: { ethBudget: '0', cpuBurn: '7' } }),
+        });
+
+        expect((await makeService(api).load()).reveal).toEqual({ ethBudget: '0', cpuBurn: '7' });
+    });
+
+    it('does not silently reinterpret the retired contribution field as the whole reveal budget', async () => {
         const api = new FakeApi({
             status: 200,
             data: makeResponse({ reveal: { ethContribution: '0.0001', cpuBurn: '1' } }),
         });
 
-        expect((await makeService(api).load()).reveal).toEqual({ ethContribution: '0.0001', cpuBurn: '1' });
-    });
-
-    it('keeps both reveal legs as served, including a leg priced at zero', async () => {
-        const api = new FakeApi({
-            status: 200,
-            data: makeResponse({ reveal: { ethContribution: '0', cpuBurn: '7' } }),
-        });
-
-        expect((await makeService(api).load()).reveal).toEqual({ ethContribution: '0', cpuBurn: '7' });
+        expect((await makeService(api).load()).reveal).toBeNull();
     });
 
     it('throws on a non-200 config response', async () => {

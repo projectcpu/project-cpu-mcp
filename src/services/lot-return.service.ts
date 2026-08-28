@@ -32,6 +32,8 @@ import {
 import { assessDestinationCapacity } from './warehouse.utils.js';
 import type { LotState } from '../api/types.js';
 import type { ILogger } from '../logger/types.js';
+import { toProjectionConfig } from '../map/reader.utils.js';
+import { configuredStorageCap, usesHubShelf } from '../map/storage.utils.js';
 import type { RevealCellReader } from '../map/types.js';
 import { cpuFromWei } from '../utils/format.utils.js';
 import type { IContractClient, WalletProvider } from '../wallet/types.js';
@@ -190,7 +192,13 @@ export class LotReturnService implements ILotReturnService {
                     `revealed cell of your own.`,
             );
         }
-        return assessDestinationCapacity(cell, prepared.lot.resource, required);
+        const projection = toProjectionConfig(prepared.action.config);
+        const emptyStorageCap = configuredStorageCap(
+            prepared.lot.resource,
+            usesHubShelf(cell.building, cell.ready, projection),
+            projection,
+        );
+        return assessDestinationCapacity(cell, prepared.lot.resource, required, emptyStorageCap);
     }
 
     private toQuoteView(

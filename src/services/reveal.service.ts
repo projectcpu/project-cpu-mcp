@@ -144,7 +144,7 @@ export class RevealService {
             deposits: null,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
-            ethPaid: ethFromWei(quote.totalRequiredWei.toString()),
+            ethPaid: ethFromWei(quote.ethBudgetWei.toString()),
             cpuBurn: cpuFromWei(quote.cpuBurnWei.toString()),
             approveTxHash,
             fulfilled,
@@ -189,7 +189,7 @@ export class RevealService {
             source: requested?.source ?? randomness.source,
             requestTxHash: confirmed.txHash,
             approveTxHash,
-            paidWei: quote.totalRequiredWei,
+            paidWei: quote.ethBudgetWei,
             cpuBurnWei: quote.cpuBurnWei,
             status: confirmed.status,
             blockNumber: confirmed.blockNumber,
@@ -536,8 +536,8 @@ export class RevealService {
 
     /**
      * Every reveal is paid for, first one included, and only the Cell knows the price: the served config omits
-     * the live randomness fee and metadata publication charge, so a value rebuilt from it underpays. Either
-     * gameplay leg may be zero — a zero burn needs no approval, and a zero contribution is not a free reveal.
+     * live service-fee split and validates that it fits inside the configured ETH budget. A zero burn needs no
+     * approval; service fees can consume the whole ETH budget without making the reveal free.
      */
     private async fundReveal(
         config: AppConfig,
@@ -558,14 +558,14 @@ export class RevealService {
     private async prepareRevealRequest(input: PushRevealInput | SelfServiceRevealInput): Promise<FundedRevealRequest> {
         const { randomness, config, cell, tokenId, genesis } = input;
         const { approveTxHash, quote } = await this.fundReveal(config, cell);
-        const value = bufferedRevealValue(quote.totalRequiredWei);
+        const value = bufferedRevealValue(quote.ethBudgetWei);
 
         this.logger.info('requesting on-chain reveal', {
             tokenId,
             cell,
             genesis,
             source: randomness.source,
-            quotedWei: quote.totalRequiredWei.toString(),
+            quotedWei: quote.ethBudgetWei.toString(),
             valueWei: value.toString(),
             cpuBurnWei: quote.cpuBurnWei.toString(),
             network: config.network,

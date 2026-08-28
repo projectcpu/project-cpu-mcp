@@ -24,8 +24,9 @@ them.
 - **Active hub** — a hub-kind building (any hub kind, including an upgrade) that is Ready. The mere
   presence of a hub grants no routing or fee activity by itself: only an active hub extends routing
   reach and charges transit and sale fees.
-- **Cell shelf** — a resource's ordinary per-cell storage ceiling. In config, numeric `0` means unlimited;
-  on the map the corresponding shelf is `null`, meaning uncapped.
+- **Cell shelf** — a resource's ordinary per-cell storage ceiling. WCPU alone is uncapped: its configured
+  numeric `0` becomes `null` on the map. For every other resource, `0` — including a missing cap row — means
+  no room, never unlimited.
 - **Hub shelf** — the separate storage ceiling for the same resource at a qualifying hub. It applies to
   a Ready hub and remains in force while one hub kind is upgrading into another hub kind. A first hub
   still under construction uses the Cell shelf. Storage shelf eligibility is therefore deliberately
@@ -84,7 +85,7 @@ Process and across an Upgrade; only a demolish clears it.
   nothing has been picked yet.
   *Avoid*: specialization.
 - **Switch cost** — the $CPU burned to point a building at a different output than its current Mode; 25% of
-  that building's own build cost, floored, so an upgraded building costs more to re-tool. Restarting the
+  the building family's base-row build cost, floored and identical on every upgrade rung. Restarting the
   same output stays free, and a drained deposit does not make switching away from it free. Absent — **not
   zero** — for a building with one possible output or none: it can never switch. There is no cooldown; the
   fee is the only thing between you and a different output.
@@ -115,8 +116,11 @@ A building has three independent plans, and these four terms never cross between
 different commitment of a resource, and a building can appear in more than one at once without the
 terms themselves ever blurring together.
 
-- **Build input** — a resource spent once to erect a building, at construction time only. Never called
-  a recipe, and never consumed again afterwards.
+- **Stored unit** — the integer unit shared by warehouse balances, storage caps, Build inputs and demolition
+  inputs. Authored catalog quantities are not a second player-facing unit: config has already converted them.
+  *Avoid*: table quantity.
+- **Build input** — Stored units of a resource spent once to erect a building, at construction time only.
+  Never called a recipe, and never consumed again afterwards.
 - **Recipe input** — a resource a crafter consumes on every production cycle it runs, for as long as it
   keeps running that recipe. Distinct from a Build input even when it is the same resource: one is paid
   once, the other every cycle.
@@ -181,6 +185,10 @@ move.
   AND have at least one completed reveal. A foreign Active hub is never a valid endpoint — it is an
   Intermediate waypoint only. A Virgin cell is never a valid endpoint either.
   *Avoid*: intermediate waypoint, foreign Active hub.
+- **Transport quote** — the on-chain read that prices a route and validates its amount, waypoints, and the
+  destination's room at that block. Room counts liquid, reserved, and matured-but-unclaimed production; a
+  full destination is a business refusal (`StorageFull`), not an RPC failure. A quote reserves no space, so
+  another action can still make it stale before the move.
 
 ## Fees
 
@@ -335,19 +343,18 @@ itself or has to be delivered. These terms govern that split and what an undeliv
   places nothing until the request is settled.
   *Avoid*: re-reveal (that is a fresh request on a cell already mined dry — it needs every deposit exhausted;
   it is not a differently-priced reveal, since every reveal pays the same Reveal payment).
-- **Reveal payment** — what a reveal costs, the first reveal of a cell and every later one alike: an ETH
-  contribution to the $CPU liquidity pool, the randomness source's ETH fee, an ETH metadata publication
-  charge paid to the Land collection's metadata publisher, and a $CPU burn. `cpu_get_game_config`'s `reveal`
-  view carries only the contribution and burn, never a complete breakdown. Either of those gameplay legs may
-  be priced at zero, and a zero leg is skipped rather than charged; both at zero is a cell with no gameplay
-  price set at all, which refuses every reveal (`RevealPaymentNotConfigured`). There is no free reveal.
+- **Reveal payment** — what every reveal costs: one configured ETH budget and a $CPU burn. The budget is an
+  envelope split at request time between the $CPU liquidity-pool contribution, the live randomness fee, and
+  the Land metadata publication charge; those three ETH legs sum to the budget rather than being added on top.
+  `cpu_get_game_config` carries the budget and burn. A zero leg is skipped; both configured values at zero mean
+  no reveal payment is configured (`RevealPaymentNotConfigured`). There is no free reveal. If the two service
+  fees exceed the budget, no quote or request is possible until the budget or fees change.
   *Avoid*: first reveal free, re-reveal price.
-- **Reveal quote** — the Cell's own price for one reveal, read immediately before the request and the only
-  thing a reveal is ever funded from: it carries the whole ETH the transaction must send and the exact $CPU
-  to approve. The served payment view names two gameplay legs but never the total, so a value rebuilt from it
-  underpays and the request reverts (`InsufficientRevealPayment`). Surfaced on a `cpu_reveal` result as
-  `ethPaid` — the whole ETH paid, contribution, randomness fee, and metadata publication charge together —
-  and `cpuBurn`, both `0` when the call settled an open request instead of opening one.
+- **Reveal quote** — the Cell's current split of one Reveal payment, read immediately before the request. It
+  validates that the service fees fit, supplies the ETH budget the request must cover, and names the exact $CPU
+  to approve. `cpu_reveal` sends the quoted budget plus 10% refundable headroom for a budget change between the
+  read and send; `ethPaid` reports the quoted budget, not that temporary ceiling. The result also reports
+  `cpuBurn`; both fields are `0` when the call settled an open request instead of opening one.
 - **Target round** — the beacon round whose signature closes one particular request. The source stores it
   with the request and hands it back when the request is read, and no signature for it exists until the beacon
   publishes that round — so a fulfilment attempted earlier has nothing to carry and the request just stays

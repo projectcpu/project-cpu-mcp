@@ -219,7 +219,7 @@ function catalogScaleConfig(): AppConfig {
         resources: catalogResources(),
         recipes,
         buildings: catalogBuildings(recipes),
-        reveal: { ethContribution: '0.001', cpuBurn: '2' },
+        reveal: { ethBudget: '0.001', cpuBurn: '2' },
         transport: {
             moveRadius: 1,
             hubRadius: 3,
