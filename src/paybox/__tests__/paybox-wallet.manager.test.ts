@@ -233,7 +233,10 @@ describe('PayboxWalletManager', () => {
         expect(logger.warnings).toEqual([
             {
                 message: 'Paybox signing request failed',
-                meta: signingError.diagnostic,
+                meta:
+                    signingError instanceof PayboxInvalidOperationArtifactError
+                        ? { ...signingError.diagnostic, artifact: signingError.artifact }
+                        : signingError.diagnostic,
             },
         ]);
     });

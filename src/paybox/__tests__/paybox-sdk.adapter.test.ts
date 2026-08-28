@@ -794,6 +794,38 @@ describe('PayboxSdkAdapter', () => {
         );
     });
 
+    it('reads the live artifact envelope the in-process signer returns', async () => {
+        const signature = `0x${'a'.repeat(130)}`;
+        const mock = factory([]);
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        mock.sign.mockResolvedValueOnce({
+            status: 'success',
+            output: { output_type: 'signature', credential_id: 'credential-a', value: { signature } },
+        });
+        await expect(adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')).resolves.toBe(signature);
+
+        mock.sign.mockResolvedValueOnce({
+            status: 'success',
+            output: { output_type: 'signature', credential_id: 'credential-a', value: { signature: 'not-hex' } },
+        });
+        await expect(adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')).rejects.toBeInstanceOf(
+            PayboxInvalidOperationArtifactError,
+        );
+
+        mock.sign.mockResolvedValueOnce({
+            status: 'success',
+            output: {
+                output_type: 'signature',
+                credential_id: 'credential-a',
+                value: { serializedTransaction: '0x02ab' },
+            },
+        });
+        await expect(adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent)).resolves.toBe(
+            '0x02ab',
+        );
+    });
+
     it('sends the exact decimal-string EIP-1559 intent with the persisted credential ID', async () => {
         const mock = factory([]);
         const adapter = new PayboxSdkAdapter(mock.factory);

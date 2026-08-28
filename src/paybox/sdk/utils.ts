@@ -21,7 +21,9 @@ import {
     PAYBOX_RATE_LIMIT_HTTP_STATUS,
     PAYBOX_REFRESH_HTTP_STATUS_PATTERN,
     PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
+    PAYBOX_SIGNATURE_ARTIFACT_FIELD,
     PAYBOX_SIGNATURE_OUTPUT,
+    PAYBOX_TRANSACTION_ARTIFACT_FIELD,
     PAYBOX_SERVER_ERROR_STATUS_MINIMUM,
     PAYBOX_SUCCESS_STATUS,
     PAYBOX_TRANSPORT_ERROR_CODES,
@@ -114,14 +116,11 @@ export function signatureFromResponse(value: unknown, credentialId: string): Hex
         throw new PayboxOperationIncompleteError();
     }
     const output = value.output;
-    if (
-        output.output_type !== PAYBOX_SIGNATURE_OUTPUT ||
-        output.credential_id !== credentialId ||
-        !isHex(output.value)
-    ) {
-        throw new PayboxInvalidOperationArtifactError();
+    const signature = artifactValue(output.value, PAYBOX_SIGNATURE_ARTIFACT_FIELD);
+    if (output.output_type !== PAYBOX_SIGNATURE_OUTPUT || output.credential_id !== credentialId || !isHex(signature)) {
+        throw new PayboxInvalidOperationArtifactError(value);
     }
-    return output.value;
+    return signature;
 }
 
 export function serializedTransactionFromResponse(value: unknown, credentialId: string): Hex {
@@ -132,14 +131,19 @@ export function serializedTransactionFromResponse(value: unknown, credentialId: 
         throw new PayboxOperationIncompleteError();
     }
     const output = value.output;
+    const serializedTransaction = artifactValue(output.value, PAYBOX_TRANSACTION_ARTIFACT_FIELD);
     if (
         output.output_type !== PAYBOX_SIGNATURE_OUTPUT ||
         output.credential_id !== credentialId ||
-        !isSerializedTransaction(output.value)
+        !isSerializedTransaction(serializedTransaction)
     ) {
-        throw new PayboxInvalidOperationArtifactError();
+        throw new PayboxInvalidOperationArtifactError(value);
     }
-    return output.value;
+    return serializedTransaction;
+}
+
+function artifactValue(value: unknown, field: string): unknown {
+    return isRecord(value) ? value[field] : value;
 }
 
 function payboxHttpStatus(error: unknown, context: PayboxRequestContext): number | null {

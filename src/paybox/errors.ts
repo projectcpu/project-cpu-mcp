@@ -114,7 +114,9 @@ export class PayboxInvalidOperationArtifactError extends Error {
         resetDepth: PayboxResetDepth.None,
     };
 
-    constructor() {
+    readonly artifact: unknown;
+
+    constructor(artifact: unknown = null) {
         const data: PayboxInvalidOperationArtifactErrorData = {
             code: PayboxErrorCode.InvalidOperationArtifact,
             stateCleared: false,
@@ -122,6 +124,7 @@ export class PayboxInvalidOperationArtifactError extends Error {
         };
         super(JSON.stringify(data));
         this.name = 'PayboxInvalidOperationArtifactError';
+        this.artifact = artifact;
     }
 }
 

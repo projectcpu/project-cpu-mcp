@@ -133,7 +133,10 @@ export class PayboxWalletManager implements WalletManager {
             error instanceof PayboxOperationIncompleteError ||
             error instanceof PayboxInvalidOperationArtifactError
         ) {
-            this.options.logger.warn('Paybox signing request failed', { ...error.diagnostic });
+            this.options.logger.warn('Paybox signing request failed', {
+                ...error.diagnostic,
+                ...(error instanceof PayboxInvalidOperationArtifactError ? { artifact: error.artifact } : {}),
+            });
         }
         throw error;
     }
