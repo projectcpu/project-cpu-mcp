@@ -50,7 +50,6 @@ describe('PayboxCoordinator', () => {
                 flow: {
                     start: vi.fn(async () => Promise.reject(new PayboxAuthFlowError())),
                     finish: vi.fn(),
-                    cancel: vi.fn(),
                 },
                 sdk: {} as IPayboxSdkAdapter,
                 authenticator: testAuthenticator(vi.fn()),
@@ -96,7 +95,6 @@ describe('PayboxCoordinator', () => {
                     return { authorizationUrl: 'https://accounts.test/authorize?state=fresh' };
                 }),
                 finish: vi.fn(),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens: vi.fn(),
@@ -134,7 +132,7 @@ describe('PayboxCoordinator', () => {
         });
         const coordinator = new PayboxCoordinator({
             storage: { load: () => null, save: vi.fn(), clear },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            flow: { start, finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: vi.fn(),
@@ -192,7 +190,7 @@ describe('PayboxCoordinator', () => {
                     save: vi.fn(),
                     clear,
                 },
-                flow: { start, finish: vi.fn(), cancel: vi.fn() },
+                flow: { start, finish: vi.fn() },
                 sdk: {
                     refreshTokens: vi.fn(),
                     listEligibleAutonomousEvmGrants: vi.fn(async () => ({
@@ -266,7 +264,7 @@ describe('PayboxCoordinator', () => {
                 save: vi.fn(),
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: listGrants,
@@ -329,7 +327,7 @@ describe('PayboxCoordinator', () => {
                     save: vi.fn(),
                     clear,
                 },
-                flow: { start, finish: vi.fn(), cancel: vi.fn() },
+                flow: { start, finish: vi.fn() },
                 sdk: {
                     refreshTokens: vi.fn(),
                     listEligibleAutonomousEvmGrants: vi.fn(async () => {
@@ -395,7 +393,7 @@ describe('PayboxCoordinator', () => {
                 save: vi.fn(),
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(async () => ({
                     ...storedTokens,
@@ -443,7 +441,7 @@ describe('PayboxCoordinator', () => {
                 save: vi.fn(),
                 clear,
             },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            flow: { start, finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
@@ -490,7 +488,7 @@ describe('PayboxCoordinator', () => {
                 save: vi.fn(),
                 clear: vi.fn(),
             },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            flow: { start, finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
@@ -559,7 +557,7 @@ describe('PayboxCoordinator', () => {
                 save,
                 clear: vi.fn(),
             },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            flow: { start, finish: vi.fn() },
             sdk: {
                 refreshTokens,
                 listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
@@ -608,7 +606,7 @@ describe('PayboxCoordinator', () => {
         );
         expect(coordinator.get()).toBe(newWallet);
         expect(authenticate).toHaveBeenCalledOnce();
-        expect(authenticate).toHaveBeenCalledWith(newWallet, expect.any(Function));
+        expect(authenticate).toHaveBeenCalledWith(newWallet, expect.any(AbortSignal));
         expect(start).not.toHaveBeenCalled();
     });
 
@@ -652,7 +650,7 @@ describe('PayboxCoordinator', () => {
                 save: vi.fn(),
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(async () => rotatedTokens),
                 listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
@@ -704,7 +702,7 @@ describe('PayboxCoordinator', () => {
                 save,
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens,
                 listEligibleAutonomousEvmGrants: vi.fn(),
@@ -758,7 +756,7 @@ describe('PayboxCoordinator', () => {
                 save,
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens,
                 listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
@@ -829,7 +827,7 @@ describe('PayboxCoordinator', () => {
         const createWallet = vi.fn(() => wallet);
         const options = {
             storage: { load: vi.fn(() => persistedRecord), save, clear },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens,
                 listEligibleAutonomousEvmGrants: vi.fn(),
@@ -895,7 +893,7 @@ describe('PayboxCoordinator', () => {
         const start = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=fresh' }));
         const options = {
             storage: { load: vi.fn(() => persistedRecord), save, clear },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            flow: { start, finish: vi.fn() },
             sdk: {
                 refreshTokens,
                 listEligibleAutonomousEvmGrants: vi.fn(),
@@ -964,7 +962,6 @@ describe('PayboxCoordinator', () => {
             flow: {
                 start: vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=fresh' })),
                 finish: vi.fn(),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens,
@@ -1030,7 +1027,7 @@ describe('PayboxCoordinator', () => {
                 save,
                 clear: vi.fn(),
             },
-            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            flow: { start, finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(async () => rotatedTokens),
                 listEligibleAutonomousEvmGrants: listGrants,
@@ -1111,7 +1108,7 @@ describe('PayboxCoordinator', () => {
                 save,
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(async () => rotatedTokens),
                 listEligibleAutonomousEvmGrants: vi.fn(),
@@ -1157,7 +1154,6 @@ describe('PayboxCoordinator', () => {
             persisted = null;
         });
         const clearSession = vi.fn();
-        const cancel = vi.fn();
         const signMessage = vi.fn(async () => {
             throw new PayboxAuthInvalidError('Paybox rejected the refreshed signing authority.');
         });
@@ -1200,7 +1196,7 @@ describe('PayboxCoordinator', () => {
                 }),
                 clear,
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk,
             authenticator: { authenticate: vi.fn(), clearSession },
         });
@@ -1211,7 +1207,6 @@ describe('PayboxCoordinator', () => {
         expect(signMessage).toHaveBeenCalledOnce();
         expect(clear).toHaveBeenCalledOnce();
         expect(clearSession).toHaveBeenCalledOnce();
-        expect(cancel).toHaveBeenCalledOnce();
         expect(persisted).toBeNull();
         expect(coordinator.isReady()).toBe(false);
         expect(() => coordinator.get()).toThrow('not authenticated');
@@ -1259,7 +1254,6 @@ describe('PayboxCoordinator', () => {
                     },
                     signingKey: 'pbxk1.test',
                 })),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens: vi.fn(),
@@ -1338,7 +1332,7 @@ describe('PayboxCoordinator', () => {
         const authenticate = vi.fn(async () => 'game-jwt');
         const coordinator = new PayboxCoordinator({
             storage: { load: () => saved, save, clear: vi.fn() },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: listGrants,
@@ -1405,7 +1399,7 @@ describe('PayboxCoordinator', () => {
                 (credentialId === 'credential-a' ? walletA : walletB) as WalletManager,
         );
         const authentication = controlledPromise<string>();
-        const authenticate = vi.fn((_wallet: WalletManager, _isCurrent: () => boolean) => authentication.promise);
+        const authenticate = vi.fn((_wallet: WalletManager, _signal: AbortSignal) => authentication.promise);
         const coordinator = new PayboxCoordinator({
             storage: {
                 load: () => ({
@@ -1418,7 +1412,7 @@ describe('PayboxCoordinator', () => {
                 save,
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: listGrants,
@@ -1457,7 +1451,6 @@ describe('PayboxCoordinator', () => {
             flow: {
                 start: vi.fn(async () => Promise.reject(new PayboxLoopbackUnavailableError('loopback unavailable'))),
                 finish: vi.fn(),
-                cancel: vi.fn(),
             },
             sdk: {} as IPayboxSdkAdapter,
             authenticator: testAuthenticator(vi.fn()),
@@ -1492,7 +1485,6 @@ describe('PayboxCoordinator', () => {
                 },
                 signingKey: 'pbxk1.test',
             })),
-            cancel: vi.fn(),
         };
         const sdk: IPayboxSdkAdapter = {
             refreshTokens: vi.fn(),
@@ -1547,7 +1539,6 @@ describe('PayboxCoordinator', () => {
             flow: {
                 start: vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=opaque' })),
                 finish: vi.fn(() => finish),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens: vi.fn(),
@@ -1573,7 +1564,6 @@ describe('PayboxCoordinator', () => {
             flow: {
                 start: vi.fn(async () => Promise.reject(new Error('PAYBOX_AUTH_FAILED: malformed discovery response'))),
                 finish: vi.fn(),
-                cancel: vi.fn(),
             },
             sdk: {} as IPayboxSdkAdapter,
             authenticator: testAuthenticator(vi.fn()),
@@ -1611,7 +1601,6 @@ describe('PayboxCoordinator', () => {
                     },
                     signingKey: 'pbxk1.test',
                 })),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens: vi.fn(),
@@ -1667,7 +1656,7 @@ describe('PayboxCoordinator', () => {
         const createWallet = vi.fn();
         const coordinator = new PayboxCoordinator({
             storage: { load: () => null, save, clear: vi.fn() },
-            flow: { start, finish, cancel: vi.fn() },
+            flow: { start, finish },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: listGrants,
@@ -1736,7 +1725,7 @@ describe('PayboxCoordinator', () => {
         const authenticate = vi.fn(async () => 'game-jwt');
         const coordinator = new PayboxCoordinator({
             storage: { load, save: vi.fn(), clear },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
@@ -1786,7 +1775,6 @@ describe('PayboxCoordinator', () => {
                     },
                     signingKey: 'pbxk1.test',
                 })),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens: vi.fn(),
@@ -1837,7 +1825,7 @@ describe('PayboxCoordinator', () => {
                 save: vi.fn(),
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
@@ -1895,7 +1883,7 @@ describe('PayboxCoordinator', () => {
                 save,
                 clear: vi.fn(),
             },
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens: vi.fn(),
                 listEligibleAutonomousEvmGrants: listGrants,
@@ -1959,7 +1947,6 @@ describe('PayboxCoordinator', () => {
                     },
                     signingKey: 'pbxk1.test',
                 })),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens: vi.fn(),
@@ -1998,6 +1985,7 @@ describe('PayboxCoordinator', () => {
 
     it('does not persist or publish candidate authority before current SIWE succeeds', async () => {
         const authentication = controlledPromise<string>();
+        const siweSignals = new Array<AbortSignal>();
         const save = vi.fn();
         const coordinator = new PayboxCoordinator({
             storage: { load: () => null, save, clear: vi.fn() },
@@ -2014,7 +2002,6 @@ describe('PayboxCoordinator', () => {
                     },
                     signingKey: 'pbxk1.test',
                 })),
-                cancel: vi.fn(),
             },
             sdk: {
                 refreshTokens: vi.fn(),
@@ -2033,7 +2020,12 @@ describe('PayboxCoordinator', () => {
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: testAuthenticator(vi.fn(() => authentication.promise)),
+            authenticator: testAuthenticator(
+                vi.fn((_wallet, signal) => {
+                    siweSignals.push(signal);
+                    return authentication.promise;
+                }),
+            ),
         });
 
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
@@ -2043,6 +2035,7 @@ describe('PayboxCoordinator', () => {
         expect(coordinator.isReady()).toBe(false);
 
         await coordinator.authenticate({ force: true, payboxCredentialId: null });
+        expect(siweSignals[0]?.aborted).toBe(true);
         authentication.resolve('stale-game-jwt');
         await new Promise<void>((resolve) => setImmediate(resolve));
 

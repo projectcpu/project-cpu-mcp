@@ -6,6 +6,8 @@ import {
     PAYBOX_TOKEN_REFRESH_WINDOW_MS,
 } from '../constants.js';
 import { payboxRefreshState, withPayboxRefreshState } from './coordinator.utils.js';
+import { PayboxAuthFlowSession } from './flow-session.js';
+import { PayboxAuthenticationStage } from './types.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import type { ILogger } from '../../logger/types.js';
 import type { WalletManager, WalletProvider } from '../../wallet/types.js';
@@ -13,7 +15,6 @@ import {
     PayboxAuthFlowError,
     PayboxAuthInvalidError,
     PayboxFullAccessWalletRequiredError,
-    PayboxLoopbackUnavailableError,
     PayboxTemporarilyUnavailableError,
     PayboxWalletSelectionError,
 } from '../errors.js';
@@ -41,14 +42,11 @@ import {
 /** The sole lifecycle owner: auth transport returns material, this module decides persistence and selection. */
 export class PayboxCoordinator implements WalletProvider {
     private readonly options: PayboxCoordinatorOptions;
+    private readonly authFlow: PayboxAuthFlowSession;
     private wallet: WalletManager | null = null;
     private walletGeneration: number | null = null;
     private address: Address | null = null;
-    private pendingUrl: string | null = null;
-    private starting: Promise<string> | null = null;
     private forcing: Promise<PayboxAuthenticateResult> | null = null;
-    private completing: Promise<void> | null = null;
-    private completionError: Error | null = null;
     private authenticating: PayboxAuthenticationFlight | null = null;
     private restoring: PayboxRestoredAuthenticationFlight | null = null;
     private continuing: PayboxContinuationFlight | null = null;
@@ -64,6 +62,7 @@ export class PayboxCoordinator implements WalletProvider {
         private readonly logger: ILogger = new NoopLogger(),
     ) {
         this.options = options;
+        this.authFlow = new PayboxAuthFlowSession(options.flow);
         const stored = options.storage.load();
         if (stored?.tokens === null || stored?.signingKey === null || stored === null) return;
         if (payboxRefreshState(stored) === PayboxRefreshState.ExchangePending) {
@@ -120,12 +119,12 @@ export class PayboxCoordinator implements WalletProvider {
 
     private async authenticateWithRecovery(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
         try {
-            return await this.authenticateCurrent(requestedCredentialId);
+            return await this.advanceAuthentication(requestedCredentialId);
         } catch (error) {
             if (error instanceof PayboxAuthInvalidError) {
                 this.logger.warn('Paybox authentication authority invalidated', { ...error.diagnostic });
                 this.resetAuthState();
-                return this.authenticateCurrent(null);
+                return this.advanceAuthentication(null);
             }
             if (error instanceof PayboxAuthFlowError || error instanceof PayboxTemporarilyUnavailableError) {
                 this.logger.warn('Paybox authentication request failed', { ...error.diagnostic });
@@ -134,93 +133,68 @@ export class PayboxCoordinator implements WalletProvider {
         }
     }
 
-    private async authenticateCurrent(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
-        if (this.completionError !== null) {
-            const error = this.completionError;
-            this.completionError = null;
-            throw error;
+    private advanceAuthentication(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
+        switch (this.authenticationStage()) {
+            case PayboxAuthenticationStage.ActiveFlow:
+            case PayboxAuthenticationStage.SignedOut:
+                return this.pollAuthFlow(requestedCredentialId);
+            case PayboxAuthenticationStage.ReadyWallet:
+                return this.authenticateReadyWallet(requestedCredentialId);
+            case PayboxAuthenticationStage.StoredMaterial:
+                return this.authenticateStoredMaterial(requestedCredentialId);
         }
-        if (this.pendingUrl !== null) {
-            if (requestedCredentialId !== null) {
-                throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
-            }
-            if (this.completing === null) {
-                const generation = this.generation;
-                const completion = this.completePending(generation);
-                this.completing = completion;
-                void completion.then(
-                    () => {
-                        if (this.generation === generation && this.completing === completion) {
-                            this.completing = null;
-                        }
-                    },
-                    (error: unknown) => {
-                        if (this.generation !== generation || this.completing !== completion) return;
-                        this.options.flow.cancel();
-                        this.pendingUrl = null;
-                        this.completing = null;
-                        this.completionError =
-                            error instanceof Error ? error : new Error('Paybox authentication failed.');
-                    },
-                );
-            }
-            return this.authRequired(this.pendingUrl);
+    }
+
+    private authenticationStage(): PayboxAuthenticationStage {
+        if (this.authFlow.hasFailed()) return PayboxAuthenticationStage.ActiveFlow;
+        if (this.isReady()) return PayboxAuthenticationStage.ReadyWallet;
+        if (this.material !== null) return PayboxAuthenticationStage.StoredMaterial;
+        if (this.authFlow.isActive()) return PayboxAuthenticationStage.ActiveFlow;
+        return PayboxAuthenticationStage.SignedOut;
+    }
+
+    private async pollAuthFlow(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
+        this.assertNoWalletSelection(requestedCredentialId);
+        const generation = this.generation;
+        const result = await this.authFlow.poll(async (material) => {
+            this.assertCurrent(generation);
+            await this.continueAuthentication(material, null, generation);
+        });
+        this.assertCurrent(generation);
+        return this.authRequired(result.authorizationUrl);
+    }
+
+    private async authenticateReadyWallet(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
+        this.assertNoWalletSelection(requestedCredentialId);
+        if (this.wallet === null || this.address === null || this.credentialId === null) {
+            throw new Error('Paybox Wallet identity is incomplete.');
         }
-        if (this.isReady() && this.wallet !== null && this.address !== null) {
-            if (requestedCredentialId !== null) {
-                throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
-            }
-            if (this.credentialId === null) throw new Error('Paybox Wallet identity is incomplete.');
-            const generation = await this.refreshIfExpiring();
-            if (!this.isReady() || this.wallet === null || this.material === null) {
-                throw new Error('Paybox Wallet restoration failed.');
-            }
-            return this.authenticateRestored(this.wallet, this.material, generation, this.credentialId, this.address);
+        const generation = await this.refreshIfExpiring();
+        if (!this.isReady() || this.wallet === null || this.material === null) {
+            throw new Error('Paybox Wallet restoration failed.');
         }
-        if (this.material !== null) {
-            const generation = await this.refreshIfExpiring();
-            if (this.material === null) throw new Error('Paybox auth material is unavailable.');
-            return this.continueAuthentication(this.material, requestedCredentialId, generation);
-        }
+        return this.authenticateRestored(this.wallet, this.material, generation, this.credentialId, this.address);
+    }
+
+    private async authenticateStoredMaterial(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
+        const generation = await this.refreshIfExpiring();
+        if (this.material === null) throw new Error('Paybox auth material is unavailable.');
+        return this.continueAuthentication(this.material, requestedCredentialId, generation);
+    }
+
+    private assertNoWalletSelection(requestedCredentialId: string | null): void {
         if (requestedCredentialId !== null) {
             throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
         }
-        if (this.starting === null) {
-            const generation = this.generation;
-            this.starting = this.options.flow
-                .start()
-                .then((result) => {
-                    this.assertCurrent(generation);
-                    return result.authorizationUrl;
-                })
-                .catch((error: unknown) => {
-                    if (error instanceof PayboxLoopbackUnavailableError) {
-                        throw new Error('PAYBOX_AUTH_ENVIRONMENT_UNSUPPORTED', { cause: error });
-                    }
-                    throw error;
-                });
-        }
-        const generation = this.generation;
-        const starting = this.starting;
-        try {
-            const authorizationUrl = await starting;
-            this.assertCurrent(generation);
-            this.pendingUrl = authorizationUrl;
-        } finally {
-            if (this.starting === starting) this.starting = null;
-        }
-        return this.authRequired(this.pendingUrl);
     }
 
     private resetAuthState(): void {
+        const authentication = this.authenticating;
         this.generation += 1;
         this.wallet = null;
         this.walletGeneration = null;
         this.address = null;
-        this.pendingUrl = null;
-        this.starting = null;
-        this.completing = null;
-        this.completionError = null;
+        this.authFlow.reset();
         this.authenticating = null;
         this.restoring = null;
         this.continuing = null;
@@ -229,12 +203,9 @@ export class PayboxCoordinator implements WalletProvider {
         this.credentialId = null;
         this.refreshing = null;
         this.refreshPersistenceError = null;
+        authentication?.controller.abort(new Error('Paybox authentication was invalidated.'));
         let resetError: Error | null = null;
-        for (const clear of [
-            () => this.options.flow.cancel(),
-            () => this.options.storage.clear(),
-            () => this.options.authenticator.clearSession(),
-        ]) {
+        for (const clear of [() => this.options.storage.clear(), () => this.options.authenticator.clearSession()]) {
             try {
                 clear();
             } catch (error) {
@@ -321,13 +292,6 @@ export class PayboxCoordinator implements WalletProvider {
         };
     }
 
-    private async completePending(generation: number): Promise<void> {
-        if (this.pendingUrl === null) throw new Error('No Paybox authentication is pending.');
-        const material = await this.options.flow.finish();
-        this.assertCurrent(generation);
-        await this.continueAuthentication(material, null, generation);
-    }
-
     private continueAuthentication(
         material: PayboxAuthMaterial,
         requestedCredentialId: string | null,
@@ -404,13 +368,11 @@ export class PayboxCoordinator implements WalletProvider {
         this.assertCurrent(generation);
         if (discovery.grants.length === 0) {
             this.rememberMaterial(material);
-            this.pendingUrl = null;
             throw new PayboxFullAccessWalletRequiredError(discovery.managementUrl);
         }
         if (discovery.grants.length > 1) {
             this.rememberMaterial(material);
             this.selection = { phase: PayboxSelectionPhase.AwaitingChoice, choices: discovery.grants };
-            this.pendingUrl = null;
             return { status: PayboxAuthStatus.WalletSelectionRequired, choices: discovery.grants };
         }
         return this.activateGrant(material, discovery.grants[0] as EligiblePayboxGrant, generation);
@@ -477,7 +439,6 @@ export class PayboxCoordinator implements WalletProvider {
         this.credentialId = grant.credentialId;
         this.material = material;
         this.selection = null;
-        this.pendingUrl = null;
         return { status: PayboxAuthStatus.Authenticated, address };
     }
 
@@ -634,8 +595,15 @@ export class PayboxCoordinator implements WalletProvider {
             }
             throw new Error('Paybox authentication is already in progress for another Wallet.');
         }
-        const authentication = this.options.authenticator.authenticate(wallet, () => this.generation === generation);
-        const flight: PayboxAuthenticationFlight = { credentialId, address, generation, promise: authentication };
+        const controller = new AbortController();
+        const authentication = this.options.authenticator.authenticate(wallet, controller.signal);
+        const flight: PayboxAuthenticationFlight = {
+            credentialId,
+            address,
+            generation,
+            controller,
+            promise: authentication,
+        };
         this.authenticating = flight;
         try {
             return await authentication;

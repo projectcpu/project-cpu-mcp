@@ -10,12 +10,26 @@ const VALID_SIGNING_KEY =
     'pbxk1.eyJwIjoiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSIsInMiOiIy' +
     'MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyIn0';
 
-const flows: Array<LoopbackAuthFlow> = [];
+const controllers = new Map<LoopbackAuthFlow, AbortController>();
 
 afterEach(() => {
-    for (const flow of flows) flow.cancel();
-    flows.length = 0;
+    for (const controller of controllers.values()) controller.abort();
+    controllers.clear();
 });
+
+function begin(flow: LoopbackAuthFlow) {
+    const controller = new AbortController();
+    controllers.set(flow, controller);
+    return flow.start(controller.signal);
+}
+
+function finish(flow: LoopbackAuthFlow) {
+    return flow.finish();
+}
+
+function abort(flow: LoopbackAuthFlow): void {
+    controllers.get(flow)?.abort();
+}
 
 describe('LoopbackAuthFlow', () => {
     it.each([
@@ -39,12 +53,10 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: { fetch: fetchRequest },
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
 
-        const failure = flow.start();
+        const failure = begin(flow);
 
         await expect(failure).rejects.toBeInstanceOf(PayboxAuthFlowError);
         await expect(failure).rejects.toMatchObject({
@@ -83,12 +95,10 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: { fetch: fetchRequest },
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
 
-        const failure = flow.start();
+        const failure = begin(flow);
 
         await expect(failure).rejects.toBeInstanceOf(PayboxAuthFlowError);
         await expect(failure).rejects.toMatchObject({
@@ -114,12 +124,10 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: { fetch: fetchRequest },
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
 
-        const failure = flow.start();
+        const failure = begin(flow);
 
         await expectParserFailure(failure, /raw|secret|private_stage|discovery|parser|SyntaxError/u);
         expect(fetchRequest).toHaveBeenCalledOnce();
@@ -145,12 +153,10 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: { fetch: fetchRequest },
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
 
-        const failure = flow.start();
+        const failure = begin(flow);
 
         await expectParserFailure(failure, /raw|secret|private_stage|registration|parser|SyntaxError/u);
         expect(fetchRequest).toHaveBeenCalledTimes(2);
@@ -169,12 +175,10 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: { fetch: fetchRequest },
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
 
-        const failure = flow.start();
+        const failure = begin(flow);
 
         await expect(failure).rejects.toMatchObject({
             data: { code: 'PAYBOX_TEMPORARILY_UNAVAILABLE', stateCleared: false, retryable: true },
@@ -202,12 +206,10 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: client,
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
 
-        const pending = await flow.start();
+        const pending = await begin(flow);
         const authorization = new URL(pending.authorizationUrl);
         const redirect = new URL(authorization.searchParams.get('redirect_uri') ?? '');
         expect(redirect.hostname).toBe('127.0.0.1');
@@ -229,7 +231,7 @@ describe('LoopbackAuthFlow', () => {
         });
         expect(keyResponse.status).toBe(200);
 
-        await expect(flow.finish()).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
+        await expect(finish(flow)).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
         const registration = JSON.parse(String(requests[1]?.init.body));
         expect(registration.redirect_uris).toEqual([redirect.toString()]);
         const exchanged = new URLSearchParams(String(requests[2]?.init.body));
@@ -248,11 +250,9 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: client,
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
-        const start = await flow.start();
+        const start = await begin(flow);
         const authorization = new URL(start.authorizationUrl);
         const redirect = new URL(authorization.searchParams.get('redirect_uri') ?? '');
         const wrong = new URL(redirect);
@@ -261,19 +261,17 @@ describe('LoopbackAuthFlow', () => {
         redirect.searchParams.set('code', 'code');
         redirect.searchParams.set('state', 'wrong');
         expect((await fetch(redirect)).status).toBe(400);
-        flow.cancel();
-        await expect(flow.finish()).rejects.toBeInstanceOf(PayboxAuthFlowError);
+        abort(flow);
+        await expect(finish(flow)).rejects.toBeInstanceOf(PayboxAuthFlowError);
     });
 
     it('rejects invalid, oversized, and duplicate key submissions without reflecting secrets', async () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: fakeClient(),
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
-        const start = await flow.start();
+        const start = await begin(flow);
         const authorization = new URL(start.authorizationUrl);
         const redirect = new URL(authorization.searchParams.get('redirect_uri') ?? '');
         redirect.searchParams.set('code', 'code');
@@ -323,37 +321,26 @@ describe('LoopbackAuthFlow', () => {
                 })
             ).status,
         ).toBe(409);
-        await expect(flow.finish()).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
+        await expect(finish(flow)).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
     });
 
     it('observes an unpolled timeout while preserving finish rejection and retry', async () => {
-        let expire = (): void => undefined;
-        const timeoutClock = {
-            setTimeout: vi.fn((callback: () => void) => {
-                expire = callback;
-                return {} as NodeJS.Timeout;
-            }),
-            clearTimeout: vi.fn(),
-        };
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: fakeClient(),
-            clock: timeoutClock,
             timeoutMs: 10,
         });
-        flows.push(flow);
         const unhandled: Array<unknown> = [];
         const observe = (reason: unknown): void => {
             unhandled.push(reason);
         };
         process.on('unhandledRejection', observe);
         try {
-            await flow.start();
-            expire();
-            await new Promise<void>((resolve) => setImmediate(resolve));
+            await begin(flow);
+            await new Promise<void>((resolve) => setTimeout(resolve, 20));
             expect(unhandled).toEqual([]);
-            await expect(flow.finish()).rejects.toBeInstanceOf(PayboxAuthFlowError);
-            await expect(flow.start()).resolves.toEqual(
+            await expect(finish(flow)).rejects.toBeInstanceOf(PayboxAuthFlowError);
+            await expect(begin(flow)).resolves.toEqual(
                 expect.objectContaining({ authorizationUrl: expect.any(String) }),
             );
         } finally {
@@ -383,17 +370,15 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: client,
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
         const unhandled: Array<unknown> = [];
         const observe = (reason: unknown): void => {
             unhandled.push(reason);
         };
         process.on('unhandledRejection', observe);
         try {
-            const start = await flow.start();
+            const start = await begin(flow);
             const authorization = new URL(start.authorizationUrl);
             const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '');
             callback.searchParams.set('code', 'code');
@@ -401,10 +386,10 @@ describe('LoopbackAuthFlow', () => {
             expect((await fetch(callback)).status).toBe(200);
             await new Promise<void>((resolve) => setImmediate(resolve));
             expect(unhandled).toEqual([]);
-            await expect(flow.finish()).rejects.toMatchObject({
+            await expect(finish(flow)).rejects.toMatchObject({
                 data: { code: 'PAYBOX_TEMPORARILY_UNAVAILABLE', stateCleared: false, retryable: true },
             });
-            await expect(flow.start()).resolves.toEqual(
+            await expect(begin(flow)).resolves.toEqual(
                 expect.objectContaining({ authorizationUrl: expect.any(String) }),
             );
         } finally {
@@ -432,11 +417,9 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: { fetch: fetchRequest },
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
-        const start = await flow.start();
+        const start = await begin(flow);
         const authorization = new URL(start.authorizationUrl);
         const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '');
         callback.searchParams.set('code', 'secret-code');
@@ -445,7 +428,7 @@ describe('LoopbackAuthFlow', () => {
         expect((await fetch(callback)).status).toBe(200);
         await new Promise<void>((resolve) => setImmediate(resolve));
 
-        const failure = flow.finish();
+        const failure = finish(flow);
         await expect(failure).rejects.toMatchObject({
             data: { code: 'PAYBOX_TEMPORARILY_UNAVAILABLE', stateCleared: false, retryable: true },
         });
@@ -474,11 +457,9 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: { fetch: fetchRequest },
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
-        const start = await flow.start();
+        const start = await begin(flow);
         const authorization = new URL(start.authorizationUrl);
         const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '');
         callback.searchParams.set('code', 'secret-code');
@@ -487,7 +468,7 @@ describe('LoopbackAuthFlow', () => {
         expect((await fetch(callback)).status).toBe(200);
         await new Promise<void>((resolve) => setImmediate(resolve));
 
-        const failure = flow.finish();
+        const failure = finish(flow);
         await expectParserFailure(failure, /raw|secret-code|private_stage|exchange|parser|SyntaxError/u);
         expect(fetchRequest).toHaveBeenCalledTimes(3);
         expect(fetchRequest.mock.calls.filter(([url]) => String(url).includes('/token')).length).toBe(1);
@@ -497,24 +478,24 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: fakeClient(),
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
-        await flow.start();
-        flow.cancel();
-        await expect(flow.finish()).rejects.toBeInstanceOf(PayboxAuthFlowError);
-        await expect(flow.start()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
+        await begin(flow);
+        abort(flow);
+        await expect(finish(flow)).rejects.toBeInstanceOf(PayboxAuthFlowError);
+        await expect(begin(flow)).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
     });
 
     it('invalidates a start cancelled while discovery is unresolved', async () => {
         const discovery = controlledPromise<ReturnType<typeof response>>();
+        const discoverySignals = new Array<AbortSignal>();
         let discoveryPending = true;
         let registrationCalls = 0;
         const client: PayboxHttpClient = {
-            async fetch(url) {
+            async fetch(url, init) {
                 if (url.endsWith('/.well-known/oauth-authorization-server') && discoveryPending) {
                     discoveryPending = false;
+                    discoverySignals.push(init.signal as AbortSignal);
                     return discovery.promise;
                 }
                 if (url.endsWith('/.well-known/oauth-authorization-server')) {
@@ -534,14 +515,13 @@ describe('LoopbackAuthFlow', () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
             httpClient: client,
-            clock,
             timeoutMs: 1000,
         });
-        flows.push(flow);
 
-        const cancelledStart = flow.start();
+        const cancelledStart = begin(flow);
         await new Promise<void>((resolve) => setImmediate(resolve));
-        flow.cancel();
+        abort(flow);
+        expect(discoverySignals[0]?.aborted).toBe(true);
         discovery.resolve(
             response({
                 authorization_endpoint: 'https://issuer.example/authorize',
@@ -552,12 +532,10 @@ describe('LoopbackAuthFlow', () => {
 
         await expect(cancelledStart).rejects.toBeInstanceOf(PayboxAuthFlowError);
         expect(registrationCalls).toBe(0);
-        await expect(flow.start()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
+        await expect(begin(flow)).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
         expect(registrationCalls).toBe(1);
     });
 });
-
-const clock = { setTimeout, clearTimeout };
 
 function response(value: unknown) {
     return {

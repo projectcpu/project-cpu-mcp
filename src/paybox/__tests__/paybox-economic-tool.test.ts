@@ -362,7 +362,6 @@ async function failedEconomicScenario(
                 return { authorizationUrl: 'https://accounts.test/authorize' };
             }),
             finish: vi.fn(),
-            cancel: vi.fn(),
         },
         sdk,
         authenticator: {

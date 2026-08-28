@@ -207,10 +207,14 @@ describe('AuthService', () => {
                 const token = await service.authenticateSiwe();
 
                 expect(token).toBe('jwt-token');
-                expect(api.request).toHaveBeenCalledWith('/api/v1/auth/siwe/nonce', {
-                    method: 'POST',
-                    body: { address: ADDRESS },
-                });
+                expect(api.request).toHaveBeenCalledWith(
+                    '/api/v1/auth/siwe/nonce',
+                    {
+                        method: 'POST',
+                        body: { address: ADDRESS },
+                    },
+                    expect.any(AbortSignal),
+                );
                 expect(walletManager.signMessage).toHaveBeenCalledOnce();
                 expect(api.request).toHaveBeenCalledWith(
                     '/api/v1/auth/siwe/verify',
@@ -218,6 +222,7 @@ describe('AuthService', () => {
                         method: 'POST',
                         body: expect.objectContaining({ signature: '0xsignature' }),
                     }),
+                    expect.any(AbortSignal),
                 );
                 expect(session.setSession).toHaveBeenCalledWith(
                     expect.objectContaining({
@@ -231,16 +236,16 @@ describe('AuthService', () => {
             });
 
             it('does not persist a SIWE result invalidated while verification is pending', async () => {
-                let current = true;
+                const controller = new AbortController();
                 const verification = controlledPromise<ReturnType<typeof verifyResponse>>();
                 vi.mocked(session.getStatus).mockReturnValue(SessionStatus.Missing);
                 vi.mocked(api.getBaseUrl).mockReturnValue('https://api.test.com');
                 vi.mocked(api.request).mockResolvedValueOnce(nonceResponse());
                 vi.mocked(api.request).mockImplementationOnce(() => verification.promise);
 
-                const authentication = service.authenticateWithWallet(walletManager, () => current);
+                const authentication = service.authenticateWithWallet(walletManager, controller.signal);
                 await vi.waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
-                current = false;
+                controller.abort(new Error('Authentication was invalidated.'));
                 verification.resolve(verifyResponse());
 
                 await expect(authentication).rejects.toThrow('invalidated');

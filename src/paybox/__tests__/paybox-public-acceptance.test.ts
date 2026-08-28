@@ -143,7 +143,7 @@ describe('Paybox public acceptance', () => {
         expect(scenario.persistedPaybox()).toBeNull();
         expect(scenario.persistedSession()).toBeNull();
         expect(scenario.requestCount('browser', 'open_authorization')).toBe(2);
-        expect(scenario.requestCount('auth_flow', 'cancel')).toBe(1);
+        expect(scenario.requestCount('auth_flow', 'cancel')).toBe(0);
     });
 
     it('fully resets a disappeared selected grant without substituting another Wallet', async () => {

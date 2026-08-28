@@ -10,7 +10,7 @@ it('composes the production coordinator with its named child logger', () => {
     const rootLogger = { child } as unknown as ILogger;
     const options = {
         storage: { load: () => null, save: vi.fn(), clear: vi.fn() },
-        flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+        flow: { start: vi.fn(), finish: vi.fn() },
         sdk: {},
         authenticator: { authenticate: vi.fn(), clearSession: vi.fn() },
     } as unknown as PayboxCoordinatorOptions;

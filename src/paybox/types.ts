@@ -208,9 +208,8 @@ export interface EligiblePayboxGrantList {
 }
 
 export interface PayboxAuthFlow {
-    start(): Promise<PayboxAuthStart>;
+    start(signal: AbortSignal): Promise<PayboxAuthStart>;
     finish(): Promise<PayboxAuthMaterial>;
-    cancel(): void;
 }
 
 export interface PayboxHttpResponse {
@@ -223,15 +222,9 @@ export interface PayboxHttpClient {
     fetch(url: string, init: RequestInit): Promise<PayboxHttpResponse>;
 }
 
-export interface PayboxClock {
-    setTimeout(callback: () => void, delayMs: number): NodeJS.Timeout;
-    clearTimeout(timeout: NodeJS.Timeout): void;
-}
-
 export interface LoopbackAuthFlowOptions {
     issuerUrl: string;
     httpClient: PayboxHttpClient;
-    clock: PayboxClock;
     timeoutMs: number | null;
 }
 
@@ -266,6 +259,7 @@ export interface PayboxAuthenticationFlight {
     credentialId: string;
     address: string;
     generation: number;
+    controller: AbortController;
     promise: Promise<string>;
 }
 
@@ -321,7 +315,7 @@ export interface PayboxCoordinatorOptions {
 }
 
 export interface PayboxSiweAuthenticator {
-    authenticate(wallet: WalletManager, isCurrent: () => boolean): Promise<string>;
+    authenticate(wallet: WalletManager, signal: AbortSignal): Promise<string>;
     clearSession(): void;
 }
 

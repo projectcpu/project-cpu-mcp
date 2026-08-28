@@ -11,7 +11,12 @@ import {
     OAUTH_SCOPE,
 } from './constants.js';
 import { oauthError, oauthTokenError, pkceChallenge, randomUrlPart } from './utils.js';
-import { PayboxLoopbackUnavailableError } from '../errors.js';
+import {
+    PayboxAuthFlowError,
+    PayboxAuthInvalidError,
+    PayboxLoopbackUnavailableError,
+    PayboxTemporarilyUnavailableError,
+} from '../errors.js';
 import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-flow.utils.js';
 import { isPbxk1 } from './signing-key.utils.js';
 import { classifiedPayboxError, classifiedPayboxHttpStatus } from '../sdk/utils.js';
@@ -30,7 +35,6 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private server: Server | null = null;
     private completion: Promise<PayboxAuthMaterial> | null = null;
     private rejectCompletion: ((error: Error) => void) | null = null;
-    private timeout: NodeJS.Timeout | null = null;
     private callbackPath: string | null = null;
     private keyPath: string | null = null;
     private state: string | null = null;
@@ -40,31 +44,40 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private code: string | null = null;
     private key: string | null = null;
     private started = false;
-    private generation = 0;
+    private operation: AbortController | null = null;
+    private signal: AbortSignal | null = null;
+    private abortListener: (() => void) | null = null;
     private readonly waiters = new Set<() => void>();
     private readonly waiterRejectors = new Set<(error: Error) => void>();
 
     public constructor(private readonly options: LoopbackAuthFlowOptions) {}
 
-    public async start(): Promise<PayboxAuthStart> {
+    public async start(parentSignal: AbortSignal): Promise<PayboxAuthStart> {
         if (this.started) {
             throw oauthError('flow already started');
         }
         this.started = true;
-        const generation = this.generation;
+        const operation = new AbortController();
+        const timeout = AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_LOOPBACK_TIMEOUT_MS);
+        const signal = AbortSignal.any([parentSignal, operation.signal, timeout]);
+        this.operation = operation;
+        this.signal = signal;
+        this.abortListener = () => this.abort(signal.reason);
+        signal.addEventListener('abort', this.abortListener, { once: true });
         try {
-            const metadata = await this.discover();
-            this.assertGeneration(generation);
+            signal.throwIfAborted();
+            const metadata = await this.discover(signal);
+            signal.throwIfAborted();
             this.metadata = metadata;
             this.state = randomUrlPart();
             this.verifier = randomUrlPart();
             this.callbackPath = `${LOOPBACK_CALLBACK_PREFIX}${randomUrlPart()}`;
             this.keyPath = `${LOOPBACK_KEY_PREFIX}${randomUrlPart()}`;
-            await this.listen();
-            this.assertGeneration(generation);
+            await this.listen(signal);
+            signal.throwIfAborted();
             const redirectUri = this.redirectUri();
-            const clientId = await this.register(redirectUri);
-            this.assertGeneration(generation);
+            const clientId = await this.register(redirectUri, signal);
+            signal.throwIfAborted();
             this.clientId = clientId;
             const completion = new Promise<PayboxAuthMaterial>((resolve, reject) => {
                 this.rejectCompletion = reject;
@@ -72,7 +85,6 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             });
             void completion.catch(() => undefined);
             this.completion = completion;
-            this.armTimeout();
             const authorizationUrl = new URL(this.metadata.authorizationEndpoint);
             authorizationUrl.searchParams.set('response_type', 'code');
             authorizationUrl.searchParams.set('client_id', this.clientId);
@@ -83,8 +95,8 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             authorizationUrl.searchParams.set('code_challenge_method', 'S256');
             return { authorizationUrl: authorizationUrl.toString() };
         } catch (error) {
-            if (this.generation === generation) this.reset();
-            else throw oauthError('cancelled');
+            if (signal.aborted) throw this.abortError(signal.reason);
+            if (this.signal === signal) this.reset();
             throw error;
         }
     }
@@ -96,16 +108,13 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         return this.completion.finally(() => this.close());
     }
 
-    public cancel(): void {
-        void this.completion?.catch(() => undefined);
-        this.stop(oauthError('cancelled'));
-    }
-
-    private async discover(): Promise<OAuthMetadata> {
+    private async discover(signal: AbortSignal): Promise<OAuthMetadata> {
         const issuer = new URL(this.options.issuerUrl);
-        const response = await this.payboxRequest(new URL(OAUTH_DISCOVERY_PATH, issuer).toString(), {
-            method: 'GET',
-        });
+        const response = await this.payboxRequest(
+            new URL(OAUTH_DISCOVERY_PATH, issuer).toString(),
+            { method: 'GET' },
+            signal,
+        );
         if (!response.ok) {
             throw classifiedPayboxHttpStatus(response.status, PayboxRequestContext.Unauthenticated);
         }
@@ -117,13 +126,17 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         return { authorizationEndpoint, registrationEndpoint, tokenEndpoint };
     }
 
-    private async register(redirectUri: string): Promise<string> {
+    private async register(redirectUri: string, signal: AbortSignal): Promise<string> {
         const metadata = this.required(this.metadata, 'metadata');
-        const response = await this.payboxRequest(metadata.registrationEndpoint, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' }),
-        });
+        const response = await this.payboxRequest(
+            metadata.registrationEndpoint,
+            {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' }),
+            },
+            signal,
+        );
         if (!response.ok) {
             throw classifiedPayboxHttpStatus(response.status, PayboxRequestContext.Unauthenticated);
         }
@@ -132,15 +145,26 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         return nonEmptyString(value, 'client_id');
     }
 
-    private async listen(): Promise<void> {
+    private async listen(signal: AbortSignal): Promise<void> {
         this.server = createServer((request, response) => this.handle(request, response));
         await new Promise<void>((resolve, reject) => {
             const server = this.required(this.server, 'server');
-            server.once('error', (error) =>
-                reject(new PayboxLoopbackUnavailableError('loopback unavailable', { cause: error })),
-            );
+            const onAbort = () => {
+                cleanup();
+                reject(this.abortError(signal.reason));
+            };
+            const onError = (error: Error) => {
+                cleanup();
+                reject(new PayboxLoopbackUnavailableError('loopback unavailable', { cause: error }));
+            };
+            const cleanup = () => {
+                signal.removeEventListener('abort', onAbort);
+                server.off('error', onError);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            server.once('error', onError);
             server.listen(0, LOOPBACK_HOST, () => {
-                server.off('error', reject);
+                cleanup();
                 resolve();
             });
         });
@@ -215,7 +239,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private async waitForResult(resolve: (material: PayboxAuthMaterial) => void): Promise<void> {
         try {
             const code = await this.waitFor(() => this.code);
-            const token = await this.exchange(code);
+            const token = await this.exchange(code, this.required(this.signal, 'signal'));
             const signingKey = await this.waitFor(() => this.key);
             resolve({
                 tokens: {
@@ -227,7 +251,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             });
         } catch (error) {
             if (this.started) {
-                this.stop(error instanceof Error ? error : oauthError('authentication failed'));
+                this.fail(error instanceof Error ? error : oauthError('authentication failed'));
             }
         }
     }
@@ -248,31 +272,31 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         });
     }
 
-    private async exchange(code: string): Promise<OAuthTokenResponse> {
-        const response = await this.payboxRequest(this.required(this.metadata, 'metadata').tokenEndpoint, {
-            method: 'POST',
-            headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-                grant_type: 'authorization_code',
-                code,
-                redirect_uri: this.redirectUri(),
-                client_id: this.required(this.clientId, 'client id'),
-                code_verifier: this.required(this.verifier, 'verifier'),
-            }).toString(),
-        });
+    private async exchange(code: string, signal: AbortSignal): Promise<OAuthTokenResponse> {
+        const response = await this.payboxRequest(
+            this.required(this.metadata, 'metadata').tokenEndpoint,
+            {
+                method: 'POST',
+                headers: { 'content-type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    code,
+                    redirect_uri: this.redirectUri(),
+                    client_id: this.required(this.clientId, 'client id'),
+                    code_verifier: this.required(this.verifier, 'verifier'),
+                }).toString(),
+            },
+            signal,
+        );
         if (!response.ok) throw oauthTokenError(response.status);
         return tokenResponse(await this.responseJson(response));
     }
 
-    private armTimeout(): void {
-        const delay = this.options.timeoutMs ?? DEFAULT_LOOPBACK_TIMEOUT_MS;
-        this.timeout = this.options.clock.setTimeout(() => this.stop(oauthError('timed out')), delay);
-    }
-
-    private async payboxRequest(url: string, init: RequestInit): Promise<PayboxHttpResponse> {
+    private async payboxRequest(url: string, init: RequestInit, signal: AbortSignal): Promise<PayboxHttpResponse> {
         try {
-            return await this.options.httpClient.fetch(url, init);
+            return await this.options.httpClient.fetch(url, { ...init, signal });
         } catch (error) {
+            if (signal.aborted) throw this.abortError(signal.reason);
             throw classifiedPayboxError(error, PayboxRequestContext.Unauthenticated);
         }
     }
@@ -286,14 +310,20 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     }
 
     private close(): void {
-        if (this.timeout !== null) this.options.clock.clearTimeout(this.timeout);
-        this.timeout = null;
         this.server?.close();
+        this.server?.closeAllConnections();
         this.server = null;
     }
 
-    private stop(error: Error): void {
-        this.generation += 1;
+    private fail(error: Error): void {
+        const operation = this.operation;
+        this.abort(error);
+        operation?.abort(error);
+    }
+
+    private abort(reason: unknown): void {
+        const error = this.abortError(reason);
+        void this.completion?.catch(() => undefined);
         this.rejectCompletion?.(error);
         for (const reject of this.waiterRejectors) reject(error);
         this.waiters.clear();
@@ -302,13 +332,26 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         this.rejectCompletion = null;
     }
 
-    private assertGeneration(generation: number): void {
-        if (this.generation !== generation) throw oauthError('cancelled');
+    private abortError(reason: unknown): Error {
+        if (
+            reason instanceof PayboxAuthFlowError ||
+            reason instanceof PayboxAuthInvalidError ||
+            reason instanceof PayboxTemporarilyUnavailableError
+        ) {
+            return reason;
+        }
+        return oauthError('cancelled');
     }
 
     private reset(): void {
+        if (this.signal !== null && this.abortListener !== null) {
+            this.signal.removeEventListener('abort', this.abortListener);
+        }
         this.close();
         this.started = false;
+        this.operation = null;
+        this.signal = null;
+        this.abortListener = null;
         this.callbackPath = null;
         this.keyPath = null;
         this.state = null;

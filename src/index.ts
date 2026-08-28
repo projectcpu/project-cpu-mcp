@@ -79,7 +79,6 @@ async function main(): Promise<void> {
                       flow: new LoopbackAuthFlow({
                           issuerUrl: PAYBOX_ISSUER_URL,
                           httpClient: { fetch: (url, init) => fetch(url, init) },
-                          clock: { setTimeout, clearTimeout },
                           timeoutMs: null,
                       }),
                       sdk: new PayboxSdkAdapter(defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher, {
@@ -87,10 +86,10 @@ async function main(): Promise<void> {
                           logger: logger.child('paybox:wallet'),
                       }),
                       authenticator: {
-                          authenticate: async (payboxWallet, isCurrent) => {
+                          authenticate: async (payboxWallet, signal) => {
                               if (auth === null)
                                   throw new Error('Paybox authentication is unavailable during startup.');
-                              return auth.authenticateWithWallet(payboxWallet, isCurrent);
+                              return auth.authenticateWithWallet(payboxWallet, signal);
                           },
                           clearSession: () => session.clear(),
                       },

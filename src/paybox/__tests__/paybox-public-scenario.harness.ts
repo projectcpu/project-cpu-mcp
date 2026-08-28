@@ -228,7 +228,12 @@ export class PayboxPublicScenario {
         const wallet = new PayboxCoordinator({
             storage,
             flow: {
-                start: async () => {
+                start: async (signal) => {
+                    signal.addEventListener(
+                        'abort',
+                        () => this.externalRequests.push({ boundary: 'auth_flow', operation: 'cancel' }),
+                        { once: true },
+                    );
                     const barrier = this.browserStartBarrier;
                     this.externalRequests.push({
                         boundary: 'browser',
@@ -255,15 +260,12 @@ export class PayboxPublicScenario {
                         signingKey: 'pbxk1.abcdefghijklmnop',
                     };
                 },
-                cancel: () => {
-                    this.externalRequests.push({ boundary: 'auth_flow', operation: 'cancel' });
-                },
             },
             sdk,
             authenticator: {
-                authenticate: (manager, isCurrent) => {
+                authenticate: (manager, signal) => {
                     if (auth === null) throw new Error('Auth service is not ready.');
-                    return auth.authenticateWithWallet(manager, isCurrent);
+                    return auth.authenticateWithWallet(manager, signal);
                 },
                 clearSession: () => session.clear(),
             },

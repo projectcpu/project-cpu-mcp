@@ -39,8 +39,12 @@ export class ApiClient {
     /**
      * Low-level request without auth. Use for public endpoints (SIWE nonce/verify, device flow).
      */
-    async request<T>(path: string, options: RequestOptions | null = null): Promise<ApiResponse<T>> {
-        return this.send<T>(path, options?.method ?? 'GET', options?.body ?? null, null);
+    async request<T>(
+        path: string,
+        options: RequestOptions | null = null,
+        signal: AbortSignal | null = null,
+    ): Promise<ApiResponse<T>> {
+        return this.send<T>(path, options?.method ?? 'GET', options?.body ?? null, null, null, true, signal);
     }
 
     /**
@@ -85,8 +89,9 @@ export class ApiClient {
         extraHeaders: Record<string, string> | null,
         timeoutMs: number | null = null,
         trackHealth = true,
+        signal: AbortSignal | null = null,
     ): Promise<ApiResponse<T>> {
-        const response = await this.fetchResponse(path, method, body, extraHeaders, timeoutMs, trackHealth);
+        const response = await this.fetchResponse(path, method, body, extraHeaders, timeoutMs, trackHealth, signal);
 
         return this.parseResponse<T>(response, method, path, trackHealth);
     }
@@ -98,6 +103,7 @@ export class ApiClient {
         extraHeaders: Record<string, string> | null,
         timeoutMs: number | null = null,
         trackHealth = true,
+        signal: AbortSignal | null = null,
     ): Promise<Response> {
         const url = `${this.baseUrl}${path}`;
         const headers: Record<string, string> = {
@@ -107,9 +113,12 @@ export class ApiClient {
 
         const init: RequestInit = { method, headers };
 
-        if (timeoutMs !== null) {
-            init.signal = AbortSignal.timeout(timeoutMs);
-        }
+        const timeoutSignal = timeoutMs === null ? null : AbortSignal.timeout(timeoutMs);
+        const requestSignal =
+            signal !== null && timeoutSignal !== null
+                ? AbortSignal.any([signal, timeoutSignal])
+                : (signal ?? timeoutSignal);
+        if (requestSignal !== null) init.signal = requestSignal;
 
         if (body !== undefined && body !== null) {
             init.body = JSON.stringify(body);
@@ -121,6 +130,7 @@ export class ApiClient {
         try {
             response = await fetch(url, init);
         } catch (error) {
+            if (signal?.aborted === true) signal.throwIfAborted();
             if (trackHealth) {
                 this.setReachable(false, errorMessage(error));
             }

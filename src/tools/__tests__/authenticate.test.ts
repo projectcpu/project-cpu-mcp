@@ -105,7 +105,6 @@ describe('cpu_authenticate', () => {
                 },
                 signingKey: 'pbxk1.secret',
             })),
-            cancel: vi.fn(),
         };
         const authenticate = vi.fn(async () => 'jwt');
         const wallet = new PayboxCoordinator({
@@ -431,7 +430,6 @@ describe('cpu_authenticate', () => {
             flow: {
                 start: vi.fn(async () => Promise.reject(new PayboxLoopbackUnavailableError('unavailable'))),
                 finish: vi.fn(),
-                cancel: vi.fn(),
             },
             sdk: {} as IPayboxSdkAdapter,
             authenticator: { authenticate: vi.fn(), clearSession: vi.fn() },
@@ -596,7 +594,6 @@ async function createPayboxPublicHarness(
             },
             signingKey: 'pbxk1.abcdefghijklmnop',
         })),
-        cancel: vi.fn(),
     };
     let auth: AuthService | null = null;
     const wallet = new PayboxCoordinator({
@@ -604,9 +601,9 @@ async function createPayboxPublicHarness(
         flow,
         sdk: new PayboxSdkAdapter(sdkFactory),
         authenticator: {
-            authenticate: (payboxWallet, isCurrent) => {
+            authenticate: (payboxWallet, signal) => {
                 if (auth === null) throw new Error('auth service unavailable');
-                return auth.authenticateWithWallet(payboxWallet, isCurrent);
+                return auth.authenticateWithWallet(payboxWallet, signal);
             },
             clearSession: () => session.clear(),
         },

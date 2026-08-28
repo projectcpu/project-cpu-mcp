@@ -58,7 +58,7 @@ it.each([
         let gameJwt: string | null = 'game-jwt';
         const options = {
             storage,
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens,
                 listEligibleAutonomousEvmGrants: vi.fn(),
@@ -130,7 +130,7 @@ it.each(['network failure', 'timeout'])(
         refreshTokens.mockRejectedValueOnce(refreshError);
         const options = {
             storage,
-            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            flow: { start: vi.fn(), finish: vi.fn() },
             sdk: {
                 refreshTokens,
                 listEligibleAutonomousEvmGrants: vi.fn(async () => ({

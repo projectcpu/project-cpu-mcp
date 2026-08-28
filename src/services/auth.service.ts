@@ -45,36 +45,40 @@ export class AuthService implements IAuthenticator {
             this.logger.info('stored JWT missing or expired — re-running SIWE login');
         }
 
-        return this.login(this.wallet.get(), () => true);
+        return this.login(this.wallet.get(), new AbortController().signal);
     }
 
     async reauthenticate(): Promise<string> {
         this.logger.info('forcing SIWE re-login');
-        return this.login(this.wallet.get(), () => true);
+        return this.login(this.wallet.get(), new AbortController().signal);
     }
 
     // ---- SIWE (EVM mode) ----
 
     async authenticateSiwe(): Promise<string> {
-        return this.login(this.wallet.get(), () => true);
+        return this.login(this.wallet.get(), new AbortController().signal);
     }
 
-    async authenticateWithWallet(wallet: WalletManager, isCurrent: () => boolean): Promise<string> {
-        return this.login(wallet, isCurrent);
+    async authenticateWithWallet(wallet: WalletManager, signal: AbortSignal): Promise<string> {
+        return this.login(wallet, signal);
     }
 
-    private async login(wallet: WalletManager, isCurrent: () => boolean): Promise<string> {
-        if (!isCurrent()) throw new Error('Authentication was invalidated.');
+    private async login(wallet: WalletManager, signal: AbortSignal): Promise<string> {
+        signal.throwIfAborted();
         const address = wallet.getAddress();
         const chainId = wallet.getChainId();
 
         this.logger.info('starting SIWE login', { address, chainId });
 
-        const { data: nonce } = await this.api.request<SiweNonceResponse>('/api/v1/auth/siwe/nonce', {
-            method: 'POST',
-            body: { address },
-        });
-        if (!isCurrent()) throw new Error('Authentication was invalidated.');
+        const { data: nonce } = await this.api.request<SiweNonceResponse>(
+            '/api/v1/auth/siwe/nonce',
+            {
+                method: 'POST',
+                body: { address },
+            },
+            signal,
+        );
+        signal.throwIfAborted();
 
         const message = buildSiweMessage({
             address,
@@ -86,17 +90,21 @@ export class AuthService implements IAuthenticator {
         });
 
         const signature = await wallet.signMessage(message);
-        if (!isCurrent()) throw new Error('Authentication was invalidated.');
+        signal.throwIfAborted();
 
-        const { status, data: verified } = await this.api.request<SiweVerifyResponse>('/api/v1/auth/siwe/verify', {
-            method: 'POST',
-            body: { message, signature },
-        });
+        const { status, data: verified } = await this.api.request<SiweVerifyResponse>(
+            '/api/v1/auth/siwe/verify',
+            {
+                method: 'POST',
+                body: { message, signature },
+            },
+            signal,
+        );
 
         if (status !== HttpStatus.Ok || !verified.accessToken) {
             throw new Error(`SIWE verification failed (status ${status})`);
         }
-        if (!isCurrent()) throw new Error('Authentication was invalidated.');
+        signal.throwIfAborted();
 
         this.persistToken(address, verified.accessToken);
 

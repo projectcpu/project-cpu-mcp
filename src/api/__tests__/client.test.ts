@@ -112,6 +112,26 @@ describe('ApiClient', () => {
             const client = createClient();
             await expect(client.request('/test')).rejects.toThrow(/down or unreachable/i);
         });
+
+        it('propagates caller cancellation without rewriting the abort reason', async () => {
+            const controller = new AbortController();
+            mockFetch.mockImplementationOnce(
+                async (_url: string, init: RequestInit) =>
+                    new Promise<Response>((_resolve, reject) => {
+                        init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+                    }),
+            );
+            const client = createClient();
+
+            const request = client.request('/test', null, controller.signal);
+            controller.abort(new Error('authentication invalidated'));
+
+            await expect(request).rejects.toThrow('authentication invalidated');
+            expect(mockFetch).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ signal: controller.signal }),
+            );
+        });
     });
 
     describe('requestWithTimeout', () => {
