@@ -97,6 +97,17 @@ Add to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf:
 
 Every command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
 
+## Wallet modes
+
+The server uses one wallet mode to sign actions for the Operator:
+
+- **Paybox (default)** — You do not configure a private key. Call `cpu_authenticate`. The server opens
+  Paybox in your browser, where you select a wallet and approve access. Paybox signs wallet actions.
+- **EVM** — Set `WALLET_MODE=evm` and `PRIVATE_KEY=0x...` in the MCP server environment. The server uses
+  that local EVM wallet and signs actions on your machine. Call `cpu_authenticate` to sign in to the game.
+
+Keep `PRIVATE_KEY` secret. Use it only in the MCP server environment. Do not put it in chat messages.
+
 ## Environment variables
 
 **Optional** — has a sensible default; normal users can omit it.
