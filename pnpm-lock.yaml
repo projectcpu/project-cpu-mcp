@@ -12,8 +12,8 @@ importers:
         specifier: ^1.0.0
         version: 1.29.0(zod@3.25.76)
       '@paybox-sh/sdk':
-        specifier: 0.7.0
-        version: 0.7.0(bn.js@5.2.3)(bufferutil@4.1.0)(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+        specifier: 0.8.0
+        version: 0.8.0(bn.js@5.2.3)(bufferutil@4.1.0)(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
       '@uniswap/sdk-core':
         specifier: ^7.17.0
         version: 7.17.0
@@ -402,6 +402,32 @@ packages:
       viem:
         optional: true
 
+  '@moon-x/core@0.17.0':
+    resolution: {integrity: sha512-U217ggDkt/iV7QXEBD7CAAGDY5gdhH0JA8DxbrBQ6nbtj881KArDw+igL5CQ13uU3cCqBPvxSYBSKsMvRdnYpg==}
+    peerDependencies:
+      '@solana/web3.js': ^1.98.4
+      bn.js: ^5.2.2
+      bs58: 6.0.0
+      react: ^18.2.0 || ^19.0.0
+      siwe: ^3.0.0
+      tweetnacl: ^1.0.3
+      viem: 2.40.3
+    peerDependenciesMeta:
+      '@solana/web3.js':
+        optional: true
+      bn.js:
+        optional: true
+      bs58:
+        optional: true
+      react:
+        optional: true
+      siwe:
+        optional: true
+      tweetnacl:
+        optional: true
+      viem:
+        optional: true
+
   '@moon-x/evm-adapter@0.3.0':
     resolution: {integrity: sha512-wTPI5MdzCMAmJcJAdjZMQMn+NSOjNDktlEveK+s+GH7MwR7YXihLQb7NToJSsWAlvRCr/4HH+qUWLewX9qXkRg==}
     engines: {node: '>=18'}
@@ -543,8 +569,8 @@ packages:
   '@openzeppelin/contracts@5.0.2':
     resolution: {integrity: sha512-ytPc6eLGcHHnapAZ9S+5qsdomhjo6QBHTDRRBFfTxXIpsicMhVPouPgmUPebZZZGX7vt9USA+Z+0M0dSVtSUEA==}
 
-  '@paybox-sh/sdk@0.7.0':
-    resolution: {integrity: sha512-qV03kS7UKPKQ9iUeSzI0pvUUYIhE54ntxzu60Ig8pkmEezj2gY3gNVrkorBbDEEUJiP6+evR+kT/ihb/zRdTwQ==}
+  '@paybox-sh/sdk@0.8.0':
+    resolution: {integrity: sha512-tZ6xKfzh+j6ZVpjuCg5FuJaFiuruIfaMfnHo+Qq4zEjfT/qbmQb0bVrJPwl2QfbmeXdtnRgfqZJyC9ArZRgwiA==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -3450,6 +3476,19 @@ snapshots:
       tweetnacl: 1.0.3
       viem: 2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
 
+  '@moon-x/core@0.17.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.3)(bs58@6.0.0)(siwe@3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(tweetnacl@1.0.3)(viem@2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))':
+    dependencies:
+      '@noble/curves': 1.8.0
+      '@noble/hashes': 1.8.0
+      '@simplewebauthn/browser': 13.3.0
+    optionalDependencies:
+      '@solana/web3.js': 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      bn.js: 5.2.3
+      bs58: 6.0.0
+      siwe: 3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      tweetnacl: 1.0.3
+      viem: 2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+
   '@moon-x/evm-adapter@0.3.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.3)(bs58@6.0.0)(siwe@3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(tweetnacl@1.0.3)(viem@2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))':
     dependencies:
       '@moon-x/core': 0.10.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.3)(bs58@6.0.0)(siwe@3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(tweetnacl@1.0.3)(viem@2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
@@ -3579,9 +3618,9 @@ snapshots:
 
   '@openzeppelin/contracts@5.0.2': {}
 
-  '@paybox-sh/sdk@0.7.0(bn.js@5.2.3)(bufferutil@4.1.0)(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)':
+  '@paybox-sh/sdk@0.8.0(bn.js@5.2.3)(bufferutil@4.1.0)(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)':
     dependencies:
-      '@moon-x/core': 0.10.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.3)(bs58@6.0.0)(siwe@3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(tweetnacl@1.0.3)(viem@2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
+      '@moon-x/core': 0.17.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.3)(bs58@6.0.0)(siwe@3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(tweetnacl@1.0.3)(viem@2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
       '@moon-x/evm-adapter': 0.3.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.3)(bs58@6.0.0)(siwe@3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(tweetnacl@1.0.3)(viem@2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
       '@moon-x/solana-adapter': 0.3.0(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6))(bn.js@5.2.3)(bs58@6.0.0)(siwe@3.0.0(ethers@5.8.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)))(tweetnacl@1.0.3)(viem@2.40.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
       '@solana/web3.js': 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)

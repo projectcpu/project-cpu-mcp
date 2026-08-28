@@ -211,10 +211,7 @@ function errorMessage(error: unknown): string | null {
 function grantRows(value: unknown): Array<unknown> {
     if (Array.isArray(value)) return value;
     if (!isRecord(value)) throw new Error('Paybox returned an invalid grant list.');
-    const keys = Object.keys(value);
-    if (keys.length === 1 && keys[0] === 'credentials' && Array.isArray(value.credentials)) {
-        return value.credentials;
-    }
+    if (Array.isArray(value.credentials)) return value.credentials;
     throw new Error('Paybox returned an invalid grant list.');
 }
 
@@ -278,7 +275,12 @@ function addressField(metadata: Record<string, unknown>): string | null {
 }
 
 function isEvm(metadata: Record<string, unknown>): boolean {
-    const chain = metadata.chain ?? metadata.chain_type ?? metadata.network;
+    if (isEvmChain(metadata.chain ?? metadata.chain_type ?? metadata.network)) return true;
+    const chains = metadata.chains;
+    return Array.isArray(chains) && chains.some(isEvmChain);
+}
+
+function isEvmChain(chain: unknown): boolean {
     return (
         chain === 'evm' ||
         chain === 'ethereum' ||

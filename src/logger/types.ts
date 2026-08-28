@@ -8,6 +8,7 @@ export enum LogLevel {
 export interface LoggerOptions {
     context: string;
     debugEnabled: boolean;
+    filePath: string | null;
 }
 
 export type LogMeta = Record<string, unknown>;

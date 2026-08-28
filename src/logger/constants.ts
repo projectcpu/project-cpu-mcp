@@ -1,4 +1,6 @@
 export const REDACTED = '[REDACTED]';
+export const LOG_DIR_MODE = 0o700;
+export const LOG_FILE_MODE = 0o600;
 
 /**
  * Object keys whose values are redacted recursively. Matched case-insensitively

@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
     PAYBOX_SDK_COMPATIBILITY_VERSION,
     payboxSdkDeniedOperation,
-    payboxSdkDirectGrantList,
     payboxSdkEnvelopeGrantList,
+    payboxLegacyDirectGrantList,
     payboxSdkSuccessfulSignature,
-} from './paybox-sdk-0.7.fixtures.js';
+} from './paybox-sdk-0.8.fixtures.js';
 import pkg from '../../../package.json' with { type: 'json' };
 import { PayboxOperationDeniedError } from '../errors.js';
 import { autonomousEvmGrants, signatureFromResponse } from '../sdk/utils.js';
@@ -17,9 +17,9 @@ describe('Paybox SDK compatibility fixtures', () => {
     });
 
     it.each([
-        ['observed envelope', payboxSdkEnvelopeGrantList],
-        ['declared direct array', payboxSdkDirectGrantList],
-    ])('normalizes the SDK 0.7 %s response shape', (_shape, fixture) => {
+        ['declared envelope', payboxSdkEnvelopeGrantList],
+        ['legacy direct array', payboxLegacyDirectGrantList],
+    ])('normalizes the SDK 0.8 %s response shape', (_shape, fixture) => {
         expect(autonomousEvmGrants(fixture, 'https://api.paybox.sh')).toEqual({
             grants: [
                 {

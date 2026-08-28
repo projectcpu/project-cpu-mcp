@@ -7,7 +7,7 @@ import { getAddress, type Hash, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { vi } from 'vitest';
 
-import { payboxSdkEnvelopeGrantList } from './paybox-sdk-0.7.fixtures.js';
+import { payboxSdkEnvelopeGrantList } from './paybox-sdk-0.8.fixtures.js';
 import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import type { ApiClient } from '../../api/client.js';
 import { Network } from '../../config/network.types.js';

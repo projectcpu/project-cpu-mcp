@@ -1,4 +1,4 @@
-export const PAYBOX_SDK_COMPATIBILITY_VERSION = '0.7.0';
+export const PAYBOX_SDK_COMPATIBILITY_VERSION = '0.8.0';
 
 const autonomousWalletGrant = {
     credential: {
@@ -8,15 +8,18 @@ const autonomousWalletGrant = {
         credential_type: 'wallet',
         disabled_at: null,
         metadata: {
-            chain: 'eip155:4663',
+            chains: ['evm'],
             address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
         },
     },
     grant: { credential_id: 'wallet-a', approval_mode: 'autonomous' },
 };
 
-export const payboxSdkEnvelopeGrantList: unknown = { credentials: [autonomousWalletGrant] };
-export const payboxSdkDirectGrantList: unknown = [autonomousWalletGrant];
+export const payboxSdkEnvelopeGrantList: unknown = {
+    credentials: [autonomousWalletGrant],
+    ungranted: [],
+};
+export const payboxLegacyDirectGrantList: unknown = [autonomousWalletGrant];
 
 export const payboxSdkSuccessfulSignature: unknown = {
     status: 'success',

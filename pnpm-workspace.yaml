@@ -3,3 +3,5 @@ allowBuilds:
   esbuild: true
   keccak: true
   utf-8-validate: false
+minimumReleaseAgeExclude:
+  - '@paybox-sh/sdk@0.8.0'
