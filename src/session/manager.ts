@@ -74,6 +74,23 @@ export class SessionManager {
         this.storage.save(updated);
     }
 
+    clearJwt(): void {
+        this.assertInitialized();
+
+        if (!this.session) {
+            return;
+        }
+
+        const updated: SessionData = {
+            ...this.session,
+            jwt: null,
+            updatedAt: new Date().toISOString(),
+        };
+
+        this.session = updated;
+        this.storage.save(updated);
+    }
+
     setSession(data: SessionData): void {
         this.assertInitialized();
 

@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NoopLogger } from '../../logger/noop.logger.js';
-import type { SessionManager } from '../../session/manager.js';
+import type { IJwtSession } from '../../session/types.js';
+import { AuthenticationRequiredError } from '../authentication-required.error.js';
 import { ApiClient } from '../client.js';
 
 const logger = new NoopLogger();
 
-const mockSession = {} as SessionManager;
+const mockSession: IJwtSession = { clearJwt: vi.fn() };
 
 function createClient(): ApiClient {
     return new ApiClient({ baseUrl: 'https://api.test.com', session: mockSession, logger });
@@ -16,6 +17,7 @@ describe('ApiClient', () => {
     const mockFetch = vi.fn();
 
     beforeEach(() => {
+        vi.clearAllMocks();
         vi.stubGlobal('fetch', mockFetch);
     });
 
@@ -110,6 +112,26 @@ describe('ApiClient', () => {
             const client = createClient();
             await expect(client.request('/test')).rejects.toThrow(/down or unreachable/i);
         });
+
+        it('propagates caller cancellation without rewriting the abort reason', async () => {
+            const controller = new AbortController();
+            mockFetch.mockImplementationOnce(
+                async (_url: string, init: RequestInit) =>
+                    new Promise<Response>((_resolve, reject) => {
+                        init.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+                    }),
+            );
+            const client = createClient();
+
+            const request = client.request('/test', null, controller.signal);
+            controller.abort(new Error('authentication invalidated'));
+
+            await expect(request).rejects.toThrow('authentication invalidated');
+            expect(mockFetch).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ signal: controller.signal }),
+            );
+        });
     });
 
     describe('requestWithTimeout', () => {
@@ -183,39 +205,67 @@ describe('ApiClient', () => {
             );
         });
 
-        it('re-authenticates and retries once with the fresh token on 401', async () => {
-            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }));
-            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        it('clears only the game JWT and fails a read without replaying it after 401', async () => {
+            const rejectedToken = 'rejected-token';
+            const rejectedBody = { error: 'rejected-body' };
+            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(rejectedBody), { status: 401 }));
 
             const client = createClient();
-            const authenticator = fakeAuthenticator('stale', 'fresh');
+            const authenticator = fakeAuthenticator(rejectedToken, 'fresh');
             client.setAuthenticator(authenticator);
 
-            const result = await client.authenticatedRequest('/protected');
+            const failure = client.authenticatedRequest('/protected');
 
-            expect(result.status).toBe(200);
-            expect(authenticator.reauthenticate).toHaveBeenCalledOnce();
-            expect(mockFetch).toHaveBeenCalledTimes(2);
-            expect(mockFetch).toHaveBeenLastCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    headers: expect.objectContaining({ Authorization: 'Bearer fresh' }),
-                }),
-            );
+            await expect(failure).rejects.toMatchObject({
+                data: { code: 'AUTHENTICATION_REQUIRED', stateCleared: true, nextTool: 'cpu_authenticate' },
+            });
+            await expect(failure).rejects.toBeInstanceOf(AuthenticationRequiredError);
+            expect(authenticator.reauthenticate).not.toHaveBeenCalled();
+            expect(mockSession.clearJwt).toHaveBeenCalledOnce();
+            expect(mockFetch).toHaveBeenCalledTimes(1);
+            await expect(failure).rejects.not.toThrow(rejectedToken);
+            await expect(failure).rejects.not.toThrow('rejected-body');
         });
 
-        it('retries at most once — returns the second response even if it is also 401', async () => {
-            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 401 }));
-            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 401 }));
+        it.each([
+            ['an empty body', ''],
+            ['a text body', 'rejected non-json body'],
+        ])('clears the JWT before parsing a 401 with %s', async (_description, rejectedBody) => {
+            const rejectedToken = 'rejected-token';
+            mockFetch.mockResolvedValueOnce(
+                new Response(rejectedBody, { status: 401, headers: { 'content-type': 'text/plain' } }),
+            );
+
+            const client = createClient();
+            const authenticator = fakeAuthenticator(rejectedToken, 'fresh');
+            client.setAuthenticator(authenticator);
+
+            const failure = client.authenticatedRequest('/protected');
+
+            await expect(failure).rejects.toMatchObject({
+                data: { code: 'AUTHENTICATION_REQUIRED', stateCleared: true, nextTool: 'cpu_authenticate' },
+            });
+            await expect(failure).rejects.toBeInstanceOf(AuthenticationRequiredError);
+            expect(mockSession.clearJwt).toHaveBeenCalledOnce();
+            expect(mockFetch).toHaveBeenCalledOnce();
+            await expect(failure).rejects.not.toThrow(rejectedToken);
+            await expect(failure).rejects.not.toThrow(rejectedBody);
+        });
+
+        it('fails a write without replaying its body after 401', async () => {
+            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }));
 
             const client = createClient();
             const authenticator = fakeAuthenticator('stale', 'fresh');
             client.setAuthenticator(authenticator);
 
-            const result = await client.authenticatedRequest('/protected');
+            await expect(
+                client.authenticatedRequest('/protected', { method: 'POST', body: { amount: 1 } }),
+            ).rejects.toBeInstanceOf(AuthenticationRequiredError);
 
-            expect(result.status).toBe(401);
-            expect(mockFetch).toHaveBeenCalledTimes(2);
+            expect(authenticator.reauthenticate).not.toHaveBeenCalled();
+            expect(mockSession.clearJwt).toHaveBeenCalledOnce();
+            expect(mockFetch).toHaveBeenCalledTimes(1);
         });
     });
 });

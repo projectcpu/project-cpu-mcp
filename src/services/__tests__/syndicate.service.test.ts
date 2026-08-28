@@ -17,7 +17,6 @@ import { ApiClient } from '../../api/client.js';
 import type { ApiSyndicateCard, ApiSyndicateMemberView } from '../../api/types.js';
 import { SyndicateSort } from '../../api/types.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
-import type { SessionManager } from '../../session/manager.js';
 import type { WalletProvider } from '../../wallet/types.js';
 import { SyndicateService } from '../syndicate.service.js';
 import type { SyndicateRatesView, AppConfig } from '../types.js';
@@ -210,7 +209,7 @@ describe('SyndicateService.getMembership', () => {
 
         const api = new ApiClient({
             baseUrl: 'https://api.test',
-            session: {} as SessionManager,
+            session: { clearJwt: () => undefined },
             logger: new NoopLogger(),
         });
         const service = new SyndicateService({

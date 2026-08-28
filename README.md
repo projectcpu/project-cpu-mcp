@@ -7,17 +7,17 @@ you start it with a single `npx` command from any MCP client.
 
 ## Installation
 
-Pick your client below and add the server. The only required setting is your wallet's `PRIVATE_KEY` (`0x` + 64 hex chars) — replace `0x…` with yours.
+Pick your client below and add the server. No environment variables are required: the default Paybox mode automatically opens browser authorization when you first call `cpu_authenticate`. The tool also returns the authorization URL as a fallback for headless environments or systems where the browser cannot be opened.
 
 <details>
 <summary><strong>Claude Code</strong></summary>
 
 ```bash
-claude mcp add project-cpu -s user -e PRIVATE_KEY=0x… -- npx -y project-cpu-mcp@latest
+claude mcp add project-cpu -s user -- npx -y project-cpu-mcp@latest
 ```
 
 - `-s user` installs it across all your projects; omit it (or use `-s local`) for the current project only.
-- `-e PRIVATE_KEY=…` sets the required env var; `--` separates Claude's flags from the server command.
+- `--` separates Claude's flags from the server command.
 
 </details>
 
@@ -31,8 +31,7 @@ Edit `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/
   "mcpServers": {
     "project-cpu": {
       "command": "npx",
-      "args": ["-y", "project-cpu-mcp@latest"],
-      "env": { "PRIVATE_KEY": "0x…" }
+      "args": ["-y", "project-cpu-mcp@latest"]
     }
   }
 }
@@ -50,8 +49,7 @@ Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (this project):
   "mcpServers": {
     "project-cpu": {
       "command": "npx",
-      "args": ["-y", "project-cpu-mcp@latest"],
-      "env": { "PRIVATE_KEY": "0x…" }
+      "args": ["-y", "project-cpu-mcp@latest"]
     }
   }
 }
@@ -62,18 +60,14 @@ Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (this project):
 <details>
 <summary><strong>VS Code (Copilot agent mode)</strong></summary>
 
-Create `.vscode/mcp.json` — VS Code prompts for the key at startup instead of storing it:
+Create `.vscode/mcp.json`:
 
 ```json
 {
-  "inputs": [
-    { "type": "promptString", "id": "privateKey", "description": "Project CPU private key", "password": true }
-  ],
   "servers": {
     "project-cpu": {
       "command": "npx",
-      "args": ["-y", "project-cpu-mcp@latest"],
-      "env": { "PRIVATE_KEY": "${input:privateKey}" }
+      "args": ["-y", "project-cpu-mcp@latest"]
     }
   }
 }
@@ -93,8 +87,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf:
   "mcpServers": {
     "project-cpu": {
       "command": "npx",
-      "args": ["-y", "project-cpu-mcp@latest"],
-      "env": { "PRIVATE_KEY": "0x…" }
+      "args": ["-y", "project-cpu-mcp@latest"]
     }
   }
 }
@@ -104,26 +97,32 @@ Add to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf:
 
 Every command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
 
+## Wallet modes
+
+The server uses one wallet mode to sign actions for the Operator:
+
+- **Paybox (default)** — You do not configure a private key. Call `cpu_authenticate`. The server opens
+  Paybox in your browser, where you select a wallet and approve access. Paybox signs wallet actions.
+- **EVM** — Set `WALLET_MODE=evm` and `PRIVATE_KEY=0x...` in the MCP server environment. The server uses
+  that local EVM wallet and signs actions on your machine. Call `cpu_authenticate` to sign in to the game.
+
+Keep `PRIVATE_KEY` secret. Use it only in the MCP server environment. Do not put it in chat messages.
+
 ## Environment variables
-
-**Required** — for the default `WALLET_MODE=evm`; not needed in `agw` mode, see below.
-
-| Variable | Description |
-| --- | --- |
-| `PRIVATE_KEY` | Your wallet private key — `0x` followed by 64 hex chars (32 bytes). |
 
 **Optional** — has a sensible default; normal users can omit it.
 
 | Variable | Default | When you need it |
 | --- | --- | --- |
-| `WALLET_MODE` | `evm` | Switch to `agw` to authenticate via a Device Authorization flow instead of a `PRIVATE_KEY` in env. |
+| `WALLET_MODE` | `paybox` | Set to `evm` for a local private-key wallet. |
+| `PRIVATE_KEY` | — | Required only when `WALLET_MODE=evm`; `0x` followed by 64 hex chars (32 bytes). |
 | `API_URL` | `https://api.projectcpu.cc` | Point the client at a different game API deployment. |
 | `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
 | `RPC_URL` | Robinhood public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
 | `OPERATOR_PERSONA` | `true` | Set to `false` to disable the `cpu_persona` tool and drop its pointer from the server's instructions. |
 | `DEBUG` | `false` | Set to `true` for debug-level logging on stderr. |
 
-Session state (JWT / session keys) is persisted to `~/.project-cpu/`.
+Session state is persisted to `~/.project-cpu/`.
 
 ## What the agent can do
 

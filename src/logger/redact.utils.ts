@@ -1,4 +1,12 @@
-import { JWT_PATTERN, PRIVATE_KEY_PATTERN, REDACTED, SENSITIVE_KEYS } from './constants.js';
+import {
+    AUTHORIZATION_BEARER_PATTERN,
+    JWT_PATTERN,
+    PAYBOX_SECRET_PATTERN,
+    PRIVATE_KEY_PATTERN,
+    REDACTED,
+    SENSITIVE_KEYS,
+    SENSITIVE_URL_QUERY_PATTERN,
+} from './constants.js';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -14,7 +22,12 @@ function normalizeKey(key: string): string {
  * Redacts raw private-key-shaped and JWT-shaped substrings inside a log message.
  */
 export function redactString(input: string): string {
-    return input.replace(PRIVATE_KEY_PATTERN, REDACTED).replace(JWT_PATTERN, REDACTED);
+    return input
+        .replace(AUTHORIZATION_BEARER_PATTERN, `$1${REDACTED}`)
+        .replace(SENSITIVE_URL_QUERY_PATTERN, '$1')
+        .replace(PRIVATE_KEY_PATTERN, REDACTED)
+        .replace(JWT_PATTERN, REDACTED)
+        .replace(PAYBOX_SECRET_PATTERN, REDACTED);
 }
 
 /**

@@ -25,7 +25,7 @@ import type { WalletProvider } from './wallet/types.js';
 
 export enum WalletMode {
     EVM = 'evm',
-    AGW = 'agw',
+    PAYBOX = 'paybox',
 }
 
 export interface AppContext {

@@ -18,21 +18,6 @@ const logger = new NoopLogger();
 const TEST_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const ADDRESS = privateKeyToAccount(TEST_KEY).address;
 
-const DEVICE_AUTH_RESPONSE = {
-    deviceCode: 'abc123',
-    userCode: 'XXXX-YYYY',
-    verificationUri: 'https://game.example/auth/device',
-    expiresIn: 300,
-    interval: 2,
-};
-
-const SESSION_CONFIG = {
-    accountAddress: '0xWALLET',
-    sessionHash: '0xHASH',
-    policies: {},
-    expiresAt: Math.floor(Date.now() / 1000) + 86400,
-};
-
 /** Builds a JWT whose payload carries `exp` (unix seconds) — only the payload is decoded. */
 function buildJwt(expSeconds: number): string {
     const payload = Buffer.from(JSON.stringify({ exp: expSeconds })).toString('base64url');
@@ -51,6 +36,7 @@ describe('AuthService', () => {
 
         session = new SessionManager(null as never);
         api = new ApiClient(null as never);
+        vi.mocked(session.getWalletMode).mockReturnValue(WalletMode.EVM);
 
         walletManager = {
             getAddress: vi.fn(() => ADDRESS),
@@ -68,61 +54,6 @@ describe('AuthService', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
-    });
-
-    describe('authenticateDevice', () => {
-        it('should call /auth/device/start and return verification URL', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 202, data: {} });
-
-            const result = await service.authenticateDevice();
-
-            expect(result.userCode).toBe('XXXX-YYYY');
-            expect(result.verificationUrl).toBe('https://game.example/auth/device?code=XXXX-YYYY');
-            expect(api.request).toHaveBeenCalledWith('/api/v1/auth/device/start', {
-                method: 'POST',
-                body: expect.objectContaining({ signerAddress: expect.any(String) }),
-            });
-        });
-
-        it('should set pendingAuth during polling', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 202, data: {} });
-
-            await service.authenticateDevice();
-
-            expect(service.getPendingAuth()).not.toBeNull();
-            expect(service.getPendingAuth()?.userCode).toBe('XXXX-YYYY');
-        });
-
-        it('should call setSession when polling returns 200', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: { sessionConfig: SESSION_CONFIG } });
-
-            await service.authenticateDevice();
-            await vi.advanceTimersByTimeAsync(2000);
-
-            expect(session.setSession).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    walletMode: WalletMode.AGW,
-                    sessionConfig: SESSION_CONFIG,
-                    sessionPrivateKey: expect.stringMatching(/^0x[0-9a-fA-F]{64}$/),
-                    jwt: null,
-                }),
-            );
-        });
-
-        it('should clear pendingAuth after polling completes', async () => {
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: DEVICE_AUTH_RESPONSE });
-            vi.mocked(api.request).mockResolvedValueOnce({ status: 200, data: { sessionConfig: SESSION_CONFIG } });
-
-            await service.authenticateDevice();
-            expect(service.getPendingAuth()).not.toBeNull();
-
-            await vi.advanceTimersByTimeAsync(2000);
-
-            expect(service.getPendingAuth()).toBeNull();
-        });
     });
 
     describe('SIWE', () => {
@@ -207,10 +138,14 @@ describe('AuthService', () => {
                 const token = await service.authenticateSiwe();
 
                 expect(token).toBe('jwt-token');
-                expect(api.request).toHaveBeenCalledWith('/api/v1/auth/siwe/nonce', {
-                    method: 'POST',
-                    body: { address: ADDRESS },
-                });
+                expect(api.request).toHaveBeenCalledWith(
+                    '/api/v1/auth/siwe/nonce',
+                    {
+                        method: 'POST',
+                        body: { address: ADDRESS },
+                    },
+                    expect.any(AbortSignal),
+                );
                 expect(walletManager.signMessage).toHaveBeenCalledOnce();
                 expect(api.request).toHaveBeenCalledWith(
                     '/api/v1/auth/siwe/verify',
@@ -218,17 +153,42 @@ describe('AuthService', () => {
                         method: 'POST',
                         body: expect.objectContaining({ signature: '0xsignature' }),
                     }),
+                    expect.any(AbortSignal),
                 );
                 expect(session.setSession).toHaveBeenCalledWith(
                     expect.objectContaining({
                         walletMode: WalletMode.EVM,
                         address: ADDRESS,
-                        sessionPrivateKey: null,
                         jwt: 'jwt-token',
-                        sessionConfig: null,
                     }),
                 );
+            });
+
+            it('does not persist a SIWE result invalidated while verification is pending', async () => {
+                const controller = new AbortController();
+                const verification = controlledPromise<ReturnType<typeof verifyResponse>>();
+                vi.mocked(session.getStatus).mockReturnValue(SessionStatus.Missing);
+                vi.mocked(api.getBaseUrl).mockReturnValue('https://api.test.com');
+                vi.mocked(api.request).mockResolvedValueOnce(nonceResponse());
+                vi.mocked(api.request).mockImplementationOnce(() => verification.promise);
+
+                const authentication = service.authenticateWithWallet(walletManager, controller.signal);
+                await vi.waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+                controller.abort(new Error('Authentication was invalidated.'));
+                verification.resolve(verifyResponse());
+
+                await expect(authentication).rejects.toThrow('invalidated');
+                expect(session.setSession).not.toHaveBeenCalled();
+                expect(session.setJwt).not.toHaveBeenCalled();
             });
         });
     });
 });
+
+function controlledPromise<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolvePromise = (_value: T): void => undefined;
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+    return { promise, resolve: resolvePromise };
+}

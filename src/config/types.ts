@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-import { LAUNCH_NETWORK } from './constants.js';
+import { DEFAULT_WALLET_MODE, LAUNCH_NETWORK } from './constants.js';
 import { WalletMode } from '../types.js';
 
 export { Network } from './network.types.js';
 
 export const envSchema = z
     .object({
-        WALLET_MODE: z.nativeEnum(WalletMode).default(WalletMode.EVM),
+        WALLET_MODE: z.nativeEnum(WalletMode).default(DEFAULT_WALLET_MODE),
         PRIVATE_KEY: z
             .string()
             .startsWith('0x')

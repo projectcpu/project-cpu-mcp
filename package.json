@@ -43,8 +43,8 @@
         "format": "prettier --write 'src/**/*.ts'"
     },
     "dependencies": {
-        "@abstract-foundation/agw-client": "^1.12.3",
         "@modelcontextprotocol/sdk": "^1.0.0",
+        "@paybox-sh/sdk": "0.8.0",
         "@uniswap/sdk-core": "^7.17.0",
         "@uniswap/universal-router-sdk": "^5.7.0",
         "@uniswap/v4-sdk": "^2.2.2",

@@ -2,12 +2,11 @@ import { z } from 'zod';
 
 import { LAUNCH_CHAIN_ID, LAUNCH_NETWORK } from '../config/constants.js';
 import type { ILogger } from '../logger/types.js';
-import type { SessionManager } from '../session/manager.js';
+import type { IJwtSession } from '../session/types.js';
 
 /** HTTP status codes the client and services branch on. */
 export enum HttpStatus {
     Ok = 200,
-    Accepted = 202,
     Unauthorized = 401,
     NotFound = 404,
     Conflict = 409,
@@ -15,15 +14,27 @@ export enum HttpStatus {
 
 export interface ApiClientOptions {
     baseUrl: string;
-    session: SessionManager;
+    session: IJwtSession;
     logger: ILogger;
 }
 
 export interface IAuthenticator {
     /** Returns a valid bearer token, performing a (re-)login if missing or expired. */
     getAccessToken(): Promise<string>;
-    /** Forces a fresh login (used after a 401) and returns the new token. */
-    reauthenticate(): Promise<string>;
+}
+
+export enum ApiAuthenticationErrorCode {
+    AuthenticationRequired = 'AUTHENTICATION_REQUIRED',
+}
+
+export enum AuthenticationNextTool {
+    Authenticate = 'cpu_authenticate',
+}
+
+export interface AuthenticationRequiredErrorData {
+    code: ApiAuthenticationErrorCode.AuthenticationRequired;
+    stateCleared: true;
+    nextTool: AuthenticationNextTool.Authenticate;
 }
 
 export interface SiweNonceResponse {
@@ -37,23 +48,6 @@ export interface SiweVerifyResponse {
     user: {
         id: string;
         address: string;
-    };
-}
-
-export interface DeviceAuthResponse {
-    deviceCode: string;
-    userCode: string;
-    verificationUri: string;
-    expiresIn: number;
-    interval: number;
-}
-
-export interface DeviceTokenCompleteResponse {
-    sessionConfig: {
-        accountAddress: string;
-        sessionHash: string;
-        policies: unknown;
-        expiresAt: number;
     };
 }
 
