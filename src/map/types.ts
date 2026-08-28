@@ -14,11 +14,16 @@ export enum CellProcessKind {
 }
 
 export const rawCellResourceStorageSchema = z.object({
+    /** Total occupied space: liquid balance + incoming transport + hosted lots. */
     used: z.string(),
+    /** Shelf of an ordinary cell; `null` means uncapped. */
     cellCap: z.string().nullable(),
+    /** Shelf of a hub cell; `null` means uncapped. */
     hubCap: z.string().nullable(),
     reserved: z.object({
+        /** Space reserved by in-flight deliveries into this cell. */
         incomingTransport: z.string(),
+        /** Space reserved by open lots hosted on this cell. */
         lots: z.string(),
     }),
 });
