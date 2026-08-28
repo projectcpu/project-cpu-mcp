@@ -368,7 +368,19 @@ export class PayboxCoordinator implements WalletProvider {
         if (material.tokens.refreshToken === null) {
             throw new Error('Paybox OAuth refresh token is unavailable.');
         }
-        const tokens = await this.options.sdk.refreshTokens(material.tokens);
+        // A rotating refresh token must be unrecoverable before an exchange can consume it.
+        this.options.storage.clear();
+        let tokens: PayboxAuthMaterial['tokens'];
+        try {
+            tokens = await this.options.sdk.refreshTokens(material.tokens);
+        } catch (error) {
+            const refreshError =
+                error instanceof Error ? error : new Error('Paybox OAuth tokens could not be refreshed safely.');
+            if (this.generation === generation) {
+                this.refreshPersistenceError = refreshError;
+            }
+            throw refreshError;
+        }
         this.assertCurrent(generation);
         const refreshed: PayboxAuthMaterial = { tokens, signingKey: material.signingKey };
         const record: PayboxAuthRecord = {

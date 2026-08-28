@@ -8,6 +8,7 @@ import {
     type IPayboxAuthStorage,
     type IPayboxSdkAdapter,
     type PayboxAuthFlow,
+    type PayboxAuthRecord,
     type PayboxWalletAuthority,
 } from '../types.js';
 
@@ -260,6 +261,115 @@ describe('PayboxCoordinator', () => {
         expect(refreshTokens).toHaveBeenCalledWith(storedTokens);
         expect(save).toHaveBeenCalledOnce();
         expect(authenticate).not.toHaveBeenCalled();
+    });
+
+    it('does not retry an ambiguous refresh failure after persisted authority was invalidated', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'single-use-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const refreshTokens = vi.fn(async () => {
+            throw new Error('refresh result unknown');
+        });
+        const clear = vi.fn();
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: storedTokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'stored-credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear,
+            },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens,
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+        });
+
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
+            'refresh result unknown',
+        );
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
+            'refresh result unknown',
+        );
+
+        expect(clear).toHaveBeenCalledOnce();
+        expect(refreshTokens).toHaveBeenCalledOnce();
+    });
+
+    it('invalidates persisted refresh authority before exchange so restart cannot replay it', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'single-use-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const rotatedTokens = {
+            ...storedTokens,
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+            expiresAt: Date.now() + 600_000,
+        };
+        let persistedRecord: PayboxAuthRecord | null = {
+            version: 1,
+            tokens: storedTokens,
+            signingKey: 'pbxk1.test',
+            credentialId: 'stored-credential',
+            address: '0x0000000000000000000000000000000000000001',
+        };
+        const refreshTokens = vi.fn(async () => rotatedTokens);
+        const save = vi.fn<IPayboxAuthStorage['save']>(() => {
+            throw new Error('disk full');
+        });
+        const clear = vi.fn(() => {
+            persistedRecord = null;
+        });
+        const start = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=fresh' }));
+        const options = {
+            storage: { load: vi.fn(() => persistedRecord), save, clear },
+            flow: { start, finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens,
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet: vi.fn(() => wallet),
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(async () => 'game-jwt') },
+        };
+
+        const firstProcess = new PayboxCoordinator(options);
+        await expect(firstProcess.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
+            'disk full',
+        );
+
+        const restartedProcess = new PayboxCoordinator(options);
+        await expect(restartedProcess.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
+            status: PayboxAuthStatus.AuthRequired,
+            instructions: expect.any(String),
+            authorizationUrl: 'https://accounts.test/authorize?state=fresh',
+        });
+
+        expect(clear).toHaveBeenCalledOnce();
+        expect(refreshTokens).toHaveBeenCalledOnce();
+        expect(refreshTokens).toHaveBeenCalledWith(storedTokens);
+        expect(clear.mock.invocationCallOrder[0]).toBeLessThan(refreshTokens.mock.invocationCallOrder[0] as number);
+        expect(persistedRecord).toBeNull();
     });
 
     it('rejects a refresh result invalidated while the SDK helper is unresolved', async () => {
