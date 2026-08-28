@@ -6,18 +6,18 @@ import {
     PayboxOperationDeniedError,
     PayboxOperationIncompleteError,
     PayboxTemporarilyUnavailableError,
-} from './errors.js';
-import { verifiedPayboxMessageSignature, verifiedPayboxTransaction } from './paybox-wallet.utils.js';
-import type { PayboxAuthMaterial, PayboxTransactionIntent, PayboxWalletManagerOptions } from './types.js';
-import { AuthenticationRequiredError } from '../api/authentication-required.error.js';
-import { LAUNCH_CHAIN_ID } from '../config/constants.js';
+} from '../errors.js';
+import { verifiedPayboxMessageSignature, verifiedPayboxTransaction } from './utils.js';
+import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
+import { LAUNCH_CHAIN_ID } from '../../config/constants.js';
 import type {
     GasEstimateRequest,
     ReadContractParams,
     TransactionRequest,
     TxReceipt,
     WalletManager,
-} from '../wallet/types.js';
+} from '../../wallet/types.js';
+import type { PayboxAuthMaterial, PayboxTransactionIntent, PayboxWalletManagerOptions } from '../types.js';
 
 export class PayboxWalletManager implements WalletManager {
     private readonly address: Address;

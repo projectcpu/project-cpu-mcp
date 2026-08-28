@@ -9,12 +9,12 @@ import {
     LOOPBACK_KEY_PREFIX,
     OAUTH_DISCOVERY_PATH,
     OAUTH_SCOPE,
-} from './auth-flow.constants.js';
-import { oauthError, oauthTokenError, pkceChallenge, randomUrlPart } from './auth-flow.utils.js';
-import { PayboxLoopbackUnavailableError } from './errors.js';
-import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-auth-flow.utils.js';
-import { classifiedPayboxError, classifiedPayboxHttpStatus } from './sdk.utils.js';
+} from './constants.js';
+import { oauthError, oauthTokenError, pkceChallenge, randomUrlPart } from './utils.js';
+import { PayboxLoopbackUnavailableError } from '../errors.js';
+import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-flow.utils.js';
 import { isPbxk1 } from './signing-key.utils.js';
+import { classifiedPayboxError, classifiedPayboxHttpStatus } from '../sdk/utils.js';
 import {
     type LoopbackAuthFlowOptions,
     type OAuthMetadata,
@@ -24,7 +24,7 @@ import {
     type PayboxAuthStart,
     type PayboxHttpResponse,
     PayboxRequestContext,
-} from './types.js';
+} from '../types.js';
 
 export class LoopbackAuthFlow implements PayboxAuthFlow {
     private server: Server | null = null;

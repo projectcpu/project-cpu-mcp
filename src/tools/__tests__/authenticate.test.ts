@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../../api/client.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
-import { PayboxCoordinator } from '../../paybox/coordinator.js';
+import { PayboxCoordinator } from '../../paybox/auth/coordinator.js';
 import { PayboxLoopbackUnavailableError } from '../../paybox/errors.js';
-import { PayboxSdkAdapter } from '../../paybox/paybox-sdk.adapter.js';
+import { PayboxSdkAdapter } from '../../paybox/sdk/adapter.js';
 import {
     PayboxAuthStatus,
     type IPayboxAuthStorage,

@@ -7,9 +7,7 @@ you start it with a single `npx` command from any MCP client.
 
 ## Installation
 
-Pick your client below and add the server. The examples use the default `evm` wallet mode, where the required
-setting is your wallet's `PRIVATE_KEY` (`0x` + 64 hex chars) — replace `0x…` with yours. To use an existing
-autonomous Paybox Wallet grant without giving this process a private key, see [Paybox wallet mode](#paybox-wallet-mode).
+Pick your client below and add the server. The only required setting is your wallet's `PRIVATE_KEY` (`0x` + 64 hex chars) — replace `0x…` with yours.
 
 <details>
 <summary><strong>Claude Code</strong></summary>
@@ -108,7 +106,7 @@ Every command above pins `@latest`, so restarting the server is how you update �
 
 ## Environment variables
 
-**Required** — for the default `WALLET_MODE=evm`; not needed in `agw` or `paybox` mode.
+**Required** — for the default `WALLET_MODE=evm`; not needed in `agw` mode, see below.
 
 | Variable | Description |
 | --- | --- |
@@ -118,7 +116,7 @@ Every command above pins `@latest`, so restarting the server is how you update �
 
 | Variable | Default | When you need it |
 | --- | --- | --- |
-| `WALLET_MODE` | `evm` | Switch to `agw` for Device Authorization or `paybox` for a local autonomous Paybox Wallet grant. |
+| `WALLET_MODE` | `evm` | Switch to `agw` to authenticate via a Device Authorization flow instead of a `PRIVATE_KEY` in env. |
 | `API_URL` | `https://api.projectcpu.cc` | Point the client at a different game API deployment. |
 | `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
 | `RPC_URL` | Robinhood public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
@@ -126,27 +124,6 @@ Every command above pins `@latest`, so restarting the server is how you update �
 | `DEBUG` | `false` | Set to `true` for debug-level logging on stderr. |
 
 Session state (JWT / session keys) is persisted to `~/.project-cpu/`.
-
-## Paybox wallet mode
-
-Paybox mode uses an autonomous EVM Wallet grant and does not require `PRIVATE_KEY`:
-
-```bash
-WALLET_MODE=paybox npx -y project-cpu-mcp@latest
-```
-
-Call `cpu_authenticate` after the server starts. Initial setup and explicit recovery open a local browser flow and
-use loopback listeners bound to `127.0.0.1`; the browser and MCP server therefore need to run for the same local
-operator. Project CPU stores its own Paybox OAuth material, signing key, and selected credential in
-`~/.project-cpu/paybox.json`. It neither imports nor changes Paybox CLI credentials.
-
-One eligible autonomous grant is selected automatically. Multiple grants make `cpu_authenticate` return choices;
-call it again with the chosen `payboxCredentialId`. Ordinary tools never open the browser or resume a failed
-operation. Recover explicitly with `cpu_authenticate`, or use `force=true` to discard Project CPU's Paybox and game
-session state and restart setup. `RPC_URL` remains an optional override for Robinhood reads and transaction delivery.
-
-See [the Paybox operator guide](./docs/paybox.md) for the security boundary and v1 exclusions. Maintainers must also
-complete [the Paybox release checklist](./docs/paybox-release-checklist.md).
 
 ## What the agent can do
 

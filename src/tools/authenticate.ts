@@ -1,4 +1,4 @@
-import { PayboxCoordinator } from '../paybox/coordinator.js';
+import { PayboxCoordinator } from '../paybox/auth/coordinator.js';
 import { PayboxWalletSelectionError } from '../paybox/errors.js';
 import { PayboxErrorCode } from '../paybox/types.js';
 import type { AppContext } from '../types.js';

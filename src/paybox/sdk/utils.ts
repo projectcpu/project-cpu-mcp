@@ -8,7 +8,7 @@ import {
     PayboxOperationDeniedError,
     PayboxOperationIncompleteError,
     PayboxTemporarilyUnavailableError,
-} from './errors.js';
+} from '../errors.js';
 import {
     PAYBOX_AUTONOMOUS_MODE,
     PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES,
@@ -24,14 +24,14 @@ import {
     PAYBOX_TRANSPORT_ERROR_CODES,
     PAYBOX_TRANSPORT_ERROR_NAMES,
     PAYBOX_WALLET_TYPE,
-} from './sdk.constants.js';
+} from './constants.js';
 import {
     PayboxRequestContext,
     PayboxRefreshFailureDisposition,
     PayboxResetCause,
     type EligiblePayboxGrant,
     type EligiblePayboxGrantList,
-} from './types.js';
+} from '../types.js';
 
 export function autonomousEvmGrants(value: unknown, baseUrl: string): EligiblePayboxGrantList {
     return {

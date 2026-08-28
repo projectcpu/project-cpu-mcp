@@ -1,13 +1,13 @@
-import { PayboxRpcClient } from './paybox-rpc.client.js';
-import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './paybox-sdk.factory.js';
-import { PayboxWalletManager } from './paybox-wallet.manager.js';
+import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './factory.js';
 import {
     autonomousEvmGrants,
     classifiedPayboxError,
     serializedTransactionFromResponse,
     signatureFromResponse,
-} from './sdk.utils.js';
-import { PayboxRequestContext, payboxTokensSchema } from './types.js';
+} from './utils.js';
+import { NoopLogger } from '../../logger/noop.logger.js';
+import type { WalletManager } from '../../wallet/types.js';
+import { PayboxRequestContext, payboxTokensSchema } from '../types.js';
 import type {
     EligiblePayboxGrantList,
     IPayboxSdkAdapter,
@@ -18,9 +18,9 @@ import type {
     PayboxTokenRefresher,
     PayboxTokens,
     PayboxWalletAuthority,
-} from './types.js';
-import { NoopLogger } from '../logger/noop.logger.js';
-import type { WalletManager } from '../wallet/types.js';
+} from '../types.js';
+import { PayboxWalletManager } from '../wallet/manager.js';
+import { PayboxRpcClient } from '../wallet/rpc.client.js';
 
 export class PayboxSdkAdapter implements IPayboxSdkAdapter {
     public constructor(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { oauthTokenError } from '../auth-flow.utils.js';
+import { oauthTokenError } from '../auth/utils.js';
 import { PayboxAuthInvalidError, PayboxTemporarilyUnavailableError } from '../errors.js';
 
 describe('OAuth failure classification', () => {

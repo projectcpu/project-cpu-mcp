@@ -4,14 +4,13 @@ import { AuthenticationRequiredError } from '../../api/authentication-required.e
 import { NoopLogger } from '../../logger/noop.logger.js';
 import type { ILogger } from '../../logger/types.js';
 import type { WalletManager } from '../../wallet/types.js';
-import { PayboxCoordinator } from '../coordinator.js';
+import { PayboxCoordinator } from '../auth/coordinator.js';
 import {
     PayboxAuthInvalidError,
     PayboxAuthFlowError,
     PayboxLoopbackUnavailableError,
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
-import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import {
     PayboxAuthStatus,
     PayboxRefreshFailureDisposition,
@@ -24,6 +23,7 @@ import {
     type PayboxSiweAuthenticator,
     type PayboxWalletAuthority,
 } from '../types.js';
+import { PayboxWalletManager } from '../wallet/manager.js';
 
 const wallet = { getAddress: () => '0x0000000000000000000000000000000000000001' } as unknown as WalletManager;
 

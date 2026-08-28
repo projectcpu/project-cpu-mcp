@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import { PayboxAuthFlowError } from './errors.js';
-import { classifiedPayboxHttpStatus } from './sdk.utils.js';
-import { PayboxRequestContext } from './types.js';
+import { PayboxAuthFlowError } from '../errors.js';
+import { classifiedPayboxHttpStatus } from '../sdk/utils.js';
+import { PayboxRequestContext } from '../types.js';
 
 export function randomUrlPart(): string {
     return randomBytes(32).toString('base64url');

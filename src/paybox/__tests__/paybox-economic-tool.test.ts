@@ -19,10 +19,9 @@ import { registerWithdrawTool } from '../../tools/withdraw/withdraw.js';
 import type { AppContext } from '../../types.js';
 import { ContractClient } from '../../wallet/contract-client.js';
 import { TxStatus, type WalletProvider } from '../../wallet/types.js';
-import { PayboxCoordinator } from '../coordinator.js';
+import { PayboxCoordinator } from '../auth/coordinator.js';
 import { PayboxOperationDeniedError } from '../errors.js';
-import { PayboxSdkAdapter } from '../paybox-sdk.adapter.js';
-import { PayboxWalletManager } from '../paybox-wallet.manager.js';
+import { PayboxSdkAdapter } from '../sdk/adapter.js';
 import type {
     IPayboxAuthStorage,
     IPayboxRpcClient,
@@ -31,6 +30,7 @@ import type {
     PayboxSdkClientFactory,
     PayboxTokens,
 } from '../types.js';
+import { PayboxWalletManager } from '../wallet/manager.js';
 
 const key = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const account = privateKeyToAccount(key);

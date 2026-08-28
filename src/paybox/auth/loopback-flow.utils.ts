@@ -1,5 +1,5 @@
-import { oauthError } from './auth-flow.utils.js';
-import type { OAuthTokenResponse } from './types.js';
+import { oauthError } from './utils.js';
+import type { OAuthTokenResponse } from '../types.js';
 
 export function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

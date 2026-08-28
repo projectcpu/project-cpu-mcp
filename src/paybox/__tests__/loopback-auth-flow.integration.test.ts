@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { LoopbackAuthFlow } from '../auth/loopback-flow.js';
 import { PayboxAuthFlowError } from '../errors.js';
-import { LoopbackAuthFlow } from '../loopback-auth-flow.js';
 import type { PayboxHttpClient } from '../types.js';
 
 const VALID_SIGNING_KEY =

@@ -9,7 +9,7 @@ import {
 } from './paybox-sdk-0.7.fixtures.js';
 import pkg from '../../../package.json' with { type: 'json' };
 import { PayboxOperationDeniedError } from '../errors.js';
-import { autonomousEvmGrants, signatureFromResponse } from '../sdk.utils.js';
+import { autonomousEvmGrants, signatureFromResponse } from '../sdk/utils.js';
 
 describe('Paybox SDK compatibility fixtures', () => {
     it('keeps the installed SDK pinned to the fixture version', () => {

@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 
 import type { ILogger } from '../../logger/types.js';
-import { createPayboxCoordinator } from '../coordinator.factory.js';
+import { createPayboxCoordinator } from '../auth/coordinator.factory.js';
 import type { PayboxCoordinatorOptions } from '../types.js';
 
 it('composes the production coordinator with its named child logger', () => {

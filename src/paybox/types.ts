@@ -1,7 +1,7 @@
 import { isAddress, type Address, type Hash, type Hex } from 'viem';
 import { z } from 'zod';
 
-import { isPbxk1 } from './signing-key.utils.js';
+import { isPbxk1 } from './auth/signing-key.utils.js';
 import type { ILogger } from '../logger/types.js';
 import type { GasEstimateRequest, ReadContractParams, TxReceipt, WalletManager } from '../wallet/types.js';
 
@@ -166,10 +166,6 @@ export interface IPayboxAuthStorage {
     load(): PayboxAuthRecord | null;
     save(record: PayboxAuthRecord): void;
     clear(): void;
-}
-
-export interface PayboxAuthRecordRemover {
-    remove(filePath: string): void;
 }
 
 export interface PayboxAuthStart {

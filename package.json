@@ -28,7 +28,6 @@
     "types": "dist/index.d.ts",
     "files": [
         "dist",
-        "docs",
         "README.md",
         "LICENSE"
     ],

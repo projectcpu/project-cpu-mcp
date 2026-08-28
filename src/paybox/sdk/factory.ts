@@ -1,6 +1,6 @@
 import { mcpResource, PayboxClient, refreshTokens } from '@paybox-sh/sdk';
 
-import type { PayboxSdkClient, PayboxSdkClientFactory, PayboxSdkOAuthTokens, PayboxTokenRefresher } from './types.js';
+import type { PayboxSdkClient, PayboxSdkClientFactory, PayboxSdkOAuthTokens, PayboxTokenRefresher } from '../types.js';
 
 export const defaultPayboxSdkClientFactory: PayboxSdkClientFactory = {
     create: (options) => new PayboxClient(options) as PayboxSdkClient,

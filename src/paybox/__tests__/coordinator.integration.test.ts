@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { NoopLogger } from '../../logger/noop.logger.js';
 import type { WalletManager } from '../../wallet/types.js';
-import { PayboxCoordinator } from '../coordinator.js';
+import { PayboxCoordinator } from '../auth/coordinator.js';
 import { PayboxTemporarilyUnavailableError } from '../errors.js';
 import { PayboxAuthStorage } from '../storage.js';
 import {

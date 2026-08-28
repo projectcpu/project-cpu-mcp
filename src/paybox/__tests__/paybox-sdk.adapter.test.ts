@@ -9,7 +9,7 @@ import {
     PayboxOperationIncompleteError,
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
-import { PayboxSdkAdapter } from '../paybox-sdk.adapter.js';
+import { PayboxSdkAdapter } from '../sdk/adapter.js';
 import type { PayboxSdkClientFactory, PayboxTokenRefresher, PayboxTokens, PayboxTransactionIntent } from '../types.js';
 
 const tokens: PayboxTokens = {

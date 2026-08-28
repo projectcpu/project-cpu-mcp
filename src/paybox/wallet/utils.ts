@@ -8,8 +8,8 @@ import {
     type TransactionSerialized,
 } from 'viem';
 
-import { PayboxAuthInvalidError, PayboxInvalidOperationArtifactError } from './errors.js';
-import { PayboxResetCause, type PayboxTransactionIntent } from './types.js';
+import { PayboxAuthInvalidError, PayboxInvalidOperationArtifactError } from '../errors.js';
+import { PayboxResetCause, type PayboxTransactionIntent } from '../types.js';
 
 export async function verifiedPayboxMessageSignature(message: string, signature: Hex, address: Address): Promise<Hex> {
     let signer: Address;

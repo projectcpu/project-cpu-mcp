@@ -106,17 +106,15 @@ describe('PayboxAuthStorage', () => {
     it('fails closed and makes stale authority unrestorable when deletion fails', () => {
         const { storage, home } = fixture();
         storage.save(record);
-        const remover = {
-            remove: vi.fn(() => {
-                const error = new Error('permission denied') as NodeJS.ErrnoException;
-                error.code = 'EACCES';
-                throw error;
-            }),
-        };
-        const failingStorage = new PayboxAuthStorage(home, logger, remover);
+        const removeFile = vi.fn(() => {
+            const error = new Error('permission denied') as NodeJS.ErrnoException;
+            error.code = 'EACCES';
+            throw error;
+        });
+        const failingStorage = new PayboxAuthStorage(home, logger, removeFile);
 
         expect(() => failingStorage.clear()).toThrow();
-        expect(() => new PayboxAuthStorage(home, logger, remover).load()).toThrow();
+        expect(() => new PayboxAuthStorage(home, logger, removeFile).load()).toThrow();
 
         expect(new PayboxAuthStorage(home, logger).load()).toBeNull();
     });

@@ -4,8 +4,11 @@ import {
     PAYBOX_AUTH_REQUIRED_INSTRUCTIONS,
     PAYBOX_SCHEMA_VERSION,
     PAYBOX_TOKEN_REFRESH_WINDOW_MS,
-} from './constants.js';
+} from '../constants.js';
 import { payboxRefreshState, withPayboxRefreshState } from './coordinator.utils.js';
+import { NoopLogger } from '../../logger/noop.logger.js';
+import type { ILogger } from '../../logger/types.js';
+import type { WalletManager, WalletProvider } from '../../wallet/types.js';
 import {
     PayboxAuthFlowError,
     PayboxAuthInvalidError,
@@ -13,7 +16,7 @@ import {
     PayboxLoopbackUnavailableError,
     PayboxTemporarilyUnavailableError,
     PayboxWalletSelectionError,
-} from './errors.js';
+} from '../errors.js';
 import {
     PayboxAuthStatus,
     PayboxErrorCode,
@@ -33,10 +36,7 @@ import {
     PayboxSelectionPhase,
     type PayboxSelectionState,
     type PayboxWalletAuthority,
-} from './types.js';
-import { NoopLogger } from '../logger/noop.logger.js';
-import type { ILogger } from '../logger/types.js';
-import type { WalletManager, WalletProvider } from '../wallet/types.js';
+} from '../types.js';
 
 /** The sole lifecycle owner: auth transport returns material, this module decides persistence and selection. */
 export class PayboxCoordinator implements WalletProvider {

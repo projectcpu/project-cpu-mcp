@@ -1,9 +1,9 @@
 import { createPublicClient, http, type Address, type Hash, type Hex } from 'viem';
 
-import type { IPayboxRpcClient, PayboxEip1559Fees, PayboxRpcClientOptions } from './types.js';
-import { LAUNCH_CHAIN_ID } from '../config/constants.js';
-import { viemChainForChainId } from '../wallet/chain.utils.js';
-import { TxStatus, type GasEstimateRequest, type ReadContractParams, type TxReceipt } from '../wallet/types.js';
+import { LAUNCH_CHAIN_ID } from '../../config/constants.js';
+import { viemChainForChainId } from '../../wallet/chain.utils.js';
+import { TxStatus, type GasEstimateRequest, type ReadContractParams, type TxReceipt } from '../../wallet/types.js';
+import type { IPayboxRpcClient, PayboxEip1559Fees, PayboxRpcClientOptions } from '../types.js';
 
 export class PayboxRpcClient implements IPayboxRpcClient {
     private readonly client;

@@ -1,4 +1,4 @@
-import { PayboxRefreshState, type PayboxAuthRecord } from './types.js';
+import { PayboxRefreshState, type PayboxAuthRecord } from '../types.js';
 
 export function payboxRefreshState(record: PayboxAuthRecord): PayboxRefreshState {
     return 'refreshState' in record ? record.refreshState : PayboxRefreshState.Ready;

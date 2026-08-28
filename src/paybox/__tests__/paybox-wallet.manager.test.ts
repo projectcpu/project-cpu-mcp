@@ -24,8 +24,6 @@ import {
     PayboxOperationIncompleteError,
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
-import { PayboxWalletManager } from '../paybox-wallet.manager.js';
-import { verifiedPayboxTransaction } from '../paybox-wallet.utils.js';
 import { PayboxResetCause } from '../types.js';
 import type {
     IPayboxRpcClient,
@@ -34,6 +32,8 @@ import type {
     PayboxTokens,
     PayboxWalletAuthority,
 } from '../types.js';
+import { PayboxWalletManager } from '../wallet/manager.js';
+import { verifiedPayboxTransaction } from '../wallet/utils.js';
 
 const key = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const otherKey = '0x8b3a350cf5c34c9194ca3a545d9b5d4a1f0abf1c9f3c2bb18ce19e6f01a82652';
