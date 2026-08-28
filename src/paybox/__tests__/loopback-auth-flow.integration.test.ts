@@ -289,18 +289,19 @@ describe('LoopbackAuthFlow', () => {
         expect(callbackResponse.status).toBe(200);
         expect(callbackResponse.headers.get('cache-control')).toBe('no-store');
         expect(callbackResponse.headers.get('content-security-policy')).toContain("default-src 'none'");
+        expect(callbackResponse.headers.get('content-security-policy')).toContain('font-src data:');
         const callbackHtml = await callbackResponse.text();
-        expect(callbackHtml).toContain('Paste the pbxk1 signing key');
-        expect(callbackHtml).toContain('<label');
-        expect(callbackHtml).toContain('Connect Project CPU MCP');
-        expect(callbackHtml).toContain('LOCAL ONLY');
-        expect(callbackHtml).toContain('--accent: #ccff00');
-        expect(callbackHtml).toContain("font-family: 'IBM Plex Mono'");
+        expect(callbackHtml).toContain('<form');
+        expect(callbackHtml).toContain('name="key"');
+        expect(callbackHtml).toContain('type="password"');
+        expect(callbackHtml).toContain('Copy the <code>pbxk1</code> value from the Paybox tab, then paste it below.');
         expect(callbackHtml).toContain(`https://app.paybox.test/agent-key?client_id=${PAYBOX_AGENT_CLIENT_ID}`);
         expect(openBrowser).toHaveBeenNthCalledWith(
             2,
             `https://app.paybox.test/agent-key?client_id=${PAYBOX_AGENT_CLIENT_ID}`,
         );
+        const openedProvisioningUrl = new URL(String(openBrowser.mock.calls[1]?.[0]));
+        expect([...openedProvisioningUrl.searchParams]).toEqual([['client_id', PAYBOX_AGENT_CLIENT_ID]]);
         const keyPath = /action="([^"]+)"/.exec(callbackHtml)?.[1] ?? '';
         const keyResponse = await fetch(new URL(keyPath, redirect), {
             method: 'POST',
@@ -308,9 +309,11 @@ describe('LoopbackAuthFlow', () => {
             body: new URLSearchParams({ key: VALID_SIGNING_KEY }).toString(),
         });
         expect(keyResponse.status).toBe(200);
+        expect(await keyResponse.text()).toContain('You can close this tab and return to Project CPU.');
 
         await expect(finish(flow)).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
         const registration = JSON.parse(String(requests[1]?.init.body));
+        expect(registration.client_name).toBe('Project CPU MCP');
         expect(registration.redirect_uris).toEqual([redirect.toString()]);
         const exchanged = new URLSearchParams(String(requests[2]?.init.body));
         expect(exchanged.get('code')).toBe('code-1');

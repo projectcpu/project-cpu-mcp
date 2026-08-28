@@ -9,6 +9,7 @@ import {
     LOOPBACK_KEY_PREFIX,
     OAUTH_DISCOVERY_PATH,
     OAUTH_SCOPE,
+    PAYBOX_OAUTH_CLIENT_NAME,
 } from './constants.js';
 import { oauthError, oauthTokenError, pkceChallenge, randomUrlPart } from './utils.js';
 import {
@@ -148,7 +149,11 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' }),
+                body: JSON.stringify({
+                    client_name: PAYBOX_OAUTH_CLIENT_NAME,
+                    redirect_uris: [redirectUri],
+                    token_endpoint_auth_method: 'none',
+                }),
             },
             signal,
         );
