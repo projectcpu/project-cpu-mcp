@@ -30,35 +30,33 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
     ) {}
 
     public async refreshTokens(tokens: PayboxTokens): Promise<PayboxTokens> {
-        let refreshed;
         try {
-            refreshed = await this.refresher.refresh(tokens.baseUrl, {
+            const refreshed = await this.refresher.refresh(tokens.baseUrl, {
                 clientId: tokens.clientId,
                 accessToken: tokens.accessToken,
                 refreshToken: tokens.refreshToken,
                 expiresAt: tokens.expiresAt,
                 resource: tokens.resource,
             });
+            return payboxTokensSchema.parse({
+                ...refreshed,
+                baseUrl: tokens.baseUrl,
+            });
         } catch (error) {
             throw classifiedPayboxError(error, PayboxRequestContext.Refresh);
         }
-        return payboxTokensSchema.parse({
-            ...refreshed,
-            baseUrl: tokens.baseUrl,
-        });
     }
 
     public async listEligibleAutonomousEvmGrants(
         tokens: PayboxTokens,
         signingKey: string,
     ): Promise<EligiblePayboxGrantList> {
-        let response;
         try {
-            response = await this.client(tokens, signingKey).listCredentials();
+            const response = await this.client(tokens, signingKey).listCredentials();
+            return autonomousEvmGrants(response, tokens.baseUrl);
         } catch (error) {
             throw classifiedPayboxError(error, PayboxRequestContext.Authenticated);
         }
-        return autonomousEvmGrants(response, tokens.baseUrl);
     }
 
     public createWallet(

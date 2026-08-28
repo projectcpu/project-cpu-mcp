@@ -2,7 +2,13 @@ import { PayboxError } from '@paybox-sh/sdk';
 import { getAddress, parseEther } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PayboxAuthInvalidError, PayboxOperationDeniedError, PayboxTemporarilyUnavailableError } from '../errors.js';
+import {
+    PayboxAuthInvalidError,
+    PayboxInvalidOperationArtifactError,
+    PayboxOperationDeniedError,
+    PayboxOperationIncompleteError,
+    PayboxTemporarilyUnavailableError,
+} from '../errors.js';
 import { PayboxSdkAdapter } from '../paybox-sdk.adapter.js';
 import type { PayboxSdkClientFactory, PayboxTokenRefresher, PayboxTokens, PayboxTransactionIntent } from '../types.js';
 
@@ -41,6 +47,81 @@ function factory(result: unknown): {
 }
 
 describe('PayboxSdkAdapter', () => {
+    it('classifies an untyped SDK signing failure without exposing or replaying it', async () => {
+        const mock = factory([]);
+        mock.sign.mockRejectedValueOnce(new Error('unknown SDK failure with access_token=secret'));
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        const failure = adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello');
+
+        await expect(failure).rejects.toBeInstanceOf(PayboxOperationIncompleteError);
+        await expect(failure).rejects.toMatchObject({
+            data: { code: 'PAYBOX_OPERATION_INCOMPLETE', stateCleared: false, retryable: false },
+        });
+        await expect(failure).rejects.not.toThrow('secret');
+        expect(mock.sign).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        [
+            'message pending result',
+            { status: 'pending_signature', output: null },
+            (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello'),
+            PayboxOperationIncompleteError,
+            'PAYBOX_OPERATION_INCOMPLETE',
+            'operation_incomplete',
+        ],
+        [
+            'message unknown result',
+            { status: 'future_status', output: null },
+            (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello'),
+            PayboxOperationIncompleteError,
+            'PAYBOX_OPERATION_INCOMPLETE',
+            'operation_incomplete',
+        ],
+        [
+            'message malformed success artifact',
+            { status: 'success', output: { output_type: 'signature', credential_id: 'other', value: 'not-hex' } },
+            (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello'),
+            PayboxInvalidOperationArtifactError,
+            'PAYBOX_INVALID_OPERATION_ARTIFACT',
+            'invalid_operation_artifact',
+        ],
+        [
+            'transaction pending result',
+            { status: 'pending_signature', output: null },
+            (adapter: PayboxSdkAdapter) => adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
+            PayboxOperationIncompleteError,
+            'PAYBOX_OPERATION_INCOMPLETE',
+            'operation_incomplete',
+        ],
+        [
+            'transaction malformed success artifact',
+            { status: 'success', output: { output_type: 'signature', credential_id: 'other', value: 'not-hex' } },
+            (adapter: PayboxSdkAdapter) => adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
+            PayboxInvalidOperationArtifactError,
+            'PAYBOX_INVALID_OPERATION_ARTIFACT',
+            'invalid_operation_artifact',
+        ],
+    ])(
+        'classifies %s without invalidating or resubmitting',
+        async (_case, response, request, ErrorClass, code, failureClass) => {
+            const mock = factory([]);
+            mock.sign.mockResolvedValueOnce(response);
+            const adapter = new PayboxSdkAdapter(mock.factory);
+
+            const failure = request(adapter);
+
+            await expect(failure).rejects.toBeInstanceOf(ErrorClass);
+            await expect(failure).rejects.toMatchObject({
+                data: { code, stateCleared: false, retryable: false },
+                diagnostic: { failureClass, resetCause: null, resetDepth: 'none' },
+            });
+            await expect(failure).rejects.not.toBeInstanceOf(PayboxAuthInvalidError);
+            expect(mock.sign).toHaveBeenCalledOnce();
+        },
+    );
+
     it.each([
         ['message', (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')],
         [
@@ -116,14 +197,34 @@ describe('PayboxSdkAdapter', () => {
         expect(mock.list).toHaveBeenCalledOnce();
     });
 
-    it('classifies authenticated transaction-signing rejection as confirmed invalid authority', async () => {
+    it.each([
+        [
+            'message',
+            401,
+            (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello'),
+        ],
+        [
+            'message',
+            403,
+            (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello'),
+        ],
+        [
+            'transaction',
+            401,
+            (adapter: PayboxSdkAdapter) => adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
+        ],
+        [
+            'transaction',
+            403,
+            (adapter: PayboxSdkAdapter) => adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
+        ],
+    ])('classifies authenticated %s-signing HTTP %i as confirmed invalid authority', async (_kind, status, request) => {
         const mock = factory([]);
-        mock.sign.mockRejectedValueOnce(new PayboxError(403, 'key binding rejected', 'POST /agent/wallet-sign'));
+        mock.sign.mockRejectedValueOnce(new PayboxError(status, 'key binding rejected', 'POST /agent/wallet-sign'));
         const adapter = new PayboxSdkAdapter(mock.factory);
 
-        await expect(
-            adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
-        ).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        await expect(request(adapter)).rejects.toBeInstanceOf(PayboxAuthInvalidError);
+        expect(mock.sign).toHaveBeenCalledOnce();
     });
 
     it('classifies an invalid OAuth refresh grant without weakening ambiguous refresh handling', async () => {
@@ -436,11 +537,13 @@ describe('PayboxSdkAdapter', () => {
         null,
         'not-an-envelope',
     ])('rejects malformed or ambiguous top-level grant data: %j', async (response) => {
-        const adapter = new PayboxSdkAdapter(factory(response).factory);
+        const mock = factory(response);
+        const adapter = new PayboxSdkAdapter(mock.factory);
 
-        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toThrow(
-            'invalid grant list',
+        await expect(adapter.listEligibleAutonomousEvmGrants(tokens, 'pbxk1.key')).rejects.toBeInstanceOf(
+            PayboxOperationIncompleteError,
         );
+        expect(mock.list).toHaveBeenCalledOnce();
     });
 
     it('constructs an explicit client and returns the sole enabled autonomous EVM wallet', async () => {
@@ -543,15 +646,15 @@ describe('PayboxSdkAdapter', () => {
         );
 
         mock.sign.mockResolvedValueOnce({ status: 'pending_signature', output: null });
-        await expect(adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')).rejects.toThrow(
-            'did not complete',
+        await expect(adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')).rejects.toBeInstanceOf(
+            PayboxOperationIncompleteError,
         );
         mock.sign.mockResolvedValueOnce({
             status: 'success',
             output: { output_type: 'signature', credential_id: 'other', value: `0x${'a'.repeat(130)}` },
         });
-        await expect(adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')).rejects.toThrow(
-            'invalid message signature',
+        await expect(adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')).rejects.toBeInstanceOf(
+            PayboxInvalidOperationArtifactError,
         );
     });
 
@@ -597,17 +700,17 @@ describe('PayboxSdkAdapter', () => {
 
     it.each([
         [{ status: 'denied', output: null }, 'PAYBOX_OPERATION_DENIED'],
-        [{ status: 'pending_signature', output: null }, 'did not complete'],
+        [{ status: 'pending_signature', output: null }, 'PAYBOX_OPERATION_INCOMPLETE'],
         [
             { status: 'success', output: { output_type: 'signature', credential_id: 'other', value: '0x02ab' } },
-            'invalid serialized transaction',
+            'PAYBOX_INVALID_OPERATION_ARTIFACT',
         ],
         [
             {
                 status: 'success',
                 output: { output_type: 'signature', credential_id: 'credential-a', value: 'not-hex' },
             },
-            'invalid serialized transaction',
+            'PAYBOX_INVALID_OPERATION_ARTIFACT',
         ],
     ])('rejects unsupported transaction signing response %# before manager broadcast', async (response, message) => {
         const mock = factory([]);

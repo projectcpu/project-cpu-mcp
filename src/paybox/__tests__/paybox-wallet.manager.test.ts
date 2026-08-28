@@ -17,7 +17,13 @@ import { AuthService } from '../../services/auth.service.js';
 import type { SessionManager } from '../../session/manager.js';
 import { SessionStatus } from '../../session/types.js';
 import { TxStatus } from '../../wallet/types.js';
-import { PayboxAuthInvalidError, PayboxOperationDeniedError, PayboxTemporarilyUnavailableError } from '../errors.js';
+import {
+    PayboxAuthInvalidError,
+    PayboxInvalidOperationArtifactError,
+    PayboxOperationDeniedError,
+    PayboxOperationIncompleteError,
+    PayboxTemporarilyUnavailableError,
+} from '../errors.js';
 import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import { verifiedPayboxTransaction } from '../paybox-wallet.utils.js';
 import { PayboxResetCause } from '../types.js';
@@ -126,7 +132,17 @@ describe('verifiedPayboxTransaction', () => {
     });
 
     it.each([
-        ['signer', () => signed(intent, other)],
+        ['malformed serialized transaction', '0xdeadbeef' as Hex],
+        ['mismatched transaction intent', null],
+    ])('classifies a %s as an invalid operation artifact', async (_case, malformed) => {
+        const artifact = malformed ?? (await signed({ ...intent, value: intent.value + 1n }));
+
+        await expect(verifiedPayboxTransaction(intent, artifact, account.address)).rejects.toBeInstanceOf(
+            PayboxInvalidOperationArtifactError,
+        );
+    });
+
+    it.each([
         [
             'type',
             () =>
@@ -159,15 +175,19 @@ describe('verifiedPayboxTransaction', () => {
                 }),
         ],
     ])('rejects a signed artifact with a mutated %s', async (_field, artifact) => {
-        await expect(verifiedPayboxTransaction(intent, await artifact(), account.address)).rejects.toThrow(
-            /does not match|must be EIP-1559|unexpected access list/,
+        await expect(verifiedPayboxTransaction(intent, await artifact(), account.address)).rejects.toBeInstanceOf(
+            PayboxInvalidOperationArtifactError,
         );
     });
 
     it('rejects malformed and unsigned artifacts', async () => {
-        await expect(verifiedPayboxTransaction(intent, '0xdeadbeef', account.address)).rejects.toThrow(/malformed/);
+        await expect(verifiedPayboxTransaction(intent, '0xdeadbeef', account.address)).rejects.toBeInstanceOf(
+            PayboxInvalidOperationArtifactError,
+        );
         const unsigned = serializeTransaction({ ...intent, type: 'eip1559' } as TransactionSerializableEIP1559);
-        await expect(verifiedPayboxTransaction(intent, unsigned, account.address)).rejects.toThrow(/malformed/);
+        await expect(verifiedPayboxTransaction(intent, unsigned, account.address)).rejects.toBeInstanceOf(
+            PayboxInvalidOperationArtifactError,
+        );
     });
 
     it('marks a wrong transaction signer as confirmed invalid key binding', async () => {
@@ -181,6 +201,12 @@ describe('PayboxWalletManager', () => {
     it.each([
         ['ordinary denial', new PayboxOperationDeniedError(), PayboxOperationDeniedError],
         ['temporary outage', new PayboxTemporarilyUnavailableError(), PayboxTemporarilyUnavailableError],
+        ['incomplete operation', new PayboxOperationIncompleteError(), PayboxOperationIncompleteError],
+        [
+            'malformed operation artifact',
+            new PayboxInvalidOperationArtifactError(),
+            PayboxInvalidOperationArtifactError,
+        ],
     ])('preserves authority and never broadcasts after %s', async (_case, signingError, errorType) => {
         const invalidate = vi.fn();
         const rpcClient = rpc();

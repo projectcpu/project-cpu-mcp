@@ -1,20 +1,33 @@
 import { PayboxError } from '@paybox-sh/sdk';
 import { getAddress, isAddress, type Hex } from 'viem';
 
-import { PayboxAuthInvalidError, PayboxOperationDeniedError, PayboxTemporarilyUnavailableError } from './errors.js';
+import {
+    PayboxAuthFlowError,
+    PayboxAuthInvalidError,
+    PayboxInvalidOperationArtifactError,
+    PayboxOperationDeniedError,
+    PayboxOperationIncompleteError,
+    PayboxTemporarilyUnavailableError,
+} from './errors.js';
 import {
     PAYBOX_AUTONOMOUS_MODE,
     PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES,
     PAYBOX_DENIED_STATUS,
     PAYBOX_EIP155_CHAIN_ID_PATTERN,
+    PAYBOX_INVALID_GRANT_HTTP_STATUS,
+    PAYBOX_RATE_LIMIT_HTTP_STATUS,
     PAYBOX_REFRESH_HTTP_STATUS_PATTERN,
     PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
     PAYBOX_SIGNATURE_OUTPUT,
+    PAYBOX_SERVER_ERROR_STATUS_MINIMUM,
     PAYBOX_SUCCESS_STATUS,
+    PAYBOX_TRANSPORT_ERROR_CODES,
+    PAYBOX_TRANSPORT_ERROR_NAMES,
     PAYBOX_WALLET_TYPE,
 } from './sdk.constants.js';
 import {
     PayboxRequestContext,
+    PayboxRefreshFailureDisposition,
     PayboxResetCause,
     type EligiblePayboxGrant,
     type EligiblePayboxGrantList,
@@ -28,12 +41,34 @@ export function autonomousEvmGrants(value: unknown, baseUrl: string): EligiblePa
 }
 
 export function classifiedPayboxError(error: unknown, context: PayboxRequestContext): Error {
+    if (
+        error instanceof PayboxAuthFlowError ||
+        error instanceof PayboxAuthInvalidError ||
+        error instanceof PayboxInvalidOperationArtifactError ||
+        error instanceof PayboxOperationDeniedError ||
+        error instanceof PayboxOperationIncompleteError ||
+        error instanceof PayboxTemporarilyUnavailableError
+    ) {
+        return error;
+    }
     const status = payboxHttpStatus(error, context);
     if (status !== null) return classifiedPayboxHttpStatus(status, context, error);
     if (isNetworkOrTimeoutError(error)) {
-        return new PayboxTemporarilyUnavailableError({ cause: error });
+        return new PayboxTemporarilyUnavailableError(
+            { cause: error },
+            context === PayboxRequestContext.Refresh
+                ? PayboxRefreshFailureDisposition.Ambiguous
+                : PayboxRefreshFailureDisposition.NotApplicable,
+        );
     }
-    return error instanceof Error ? error : new Error('Paybox request failed.');
+    if (context === PayboxRequestContext.Authenticated) return new PayboxOperationIncompleteError();
+    if (context === PayboxRequestContext.Refresh) {
+        return new PayboxTemporarilyUnavailableError(
+            error instanceof Error ? { cause: error } : null,
+            PayboxRefreshFailureDisposition.Ambiguous,
+        );
+    }
+    return new PayboxAuthFlowError(error instanceof Error ? { cause: error } : null);
 }
 
 export function classifiedPayboxHttpStatus(
@@ -49,10 +84,23 @@ export function classifiedPayboxHttpStatus(
             options,
         );
     }
-    if (status === 429 || status >= 500) {
-        return new PayboxTemporarilyUnavailableError(options);
+    if (status === PAYBOX_RATE_LIMIT_HTTP_STATUS || status >= PAYBOX_SERVER_ERROR_STATUS_MINIMUM) {
+        return new PayboxTemporarilyUnavailableError(
+            options,
+            context === PayboxRequestContext.Refresh
+                ? PayboxRefreshFailureDisposition.SafeToRetry
+                : PayboxRefreshFailureDisposition.NotApplicable,
+        );
     }
-    return new Error('Paybox request failed.', options ?? undefined);
+    if (context === PayboxRequestContext.Authenticated) return new PayboxOperationIncompleteError();
+    if (context === PayboxRequestContext.Refresh || context === PayboxRequestContext.OAuthToken) {
+        return new PayboxAuthInvalidError(
+            'Paybox authentication authority was rejected.',
+            resetCause(context),
+            options,
+        );
+    }
+    return new PayboxAuthFlowError(options);
 }
 
 export function signatureFromResponse(value: unknown, credentialId: string): Hex {
@@ -60,7 +108,7 @@ export function signatureFromResponse(value: unknown, credentialId: string): Hex
         throw new PayboxOperationDeniedError();
     }
     if (!isRecord(value) || value.status !== PAYBOX_SUCCESS_STATUS || !isRecord(value.output)) {
-        throw new Error('Paybox message signing did not complete successfully.');
+        throw new PayboxOperationIncompleteError();
     }
     const output = value.output;
     if (
@@ -68,7 +116,7 @@ export function signatureFromResponse(value: unknown, credentialId: string): Hex
         output.credential_id !== credentialId ||
         !isHex(output.value)
     ) {
-        throw new Error('Paybox returned an invalid message signature.');
+        throw new PayboxInvalidOperationArtifactError();
     }
     return output.value;
 }
@@ -78,7 +126,7 @@ export function serializedTransactionFromResponse(value: unknown, credentialId: 
         throw new PayboxOperationDeniedError();
     }
     if (!isRecord(value) || value.status !== PAYBOX_SUCCESS_STATUS || !isRecord(value.output)) {
-        throw new Error('Paybox transaction signing did not complete successfully.');
+        throw new PayboxOperationIncompleteError();
     }
     const output = value.output;
     if (
@@ -86,7 +134,7 @@ export function serializedTransactionFromResponse(value: unknown, credentialId: 
         output.credential_id !== credentialId ||
         !isSerializedTransaction(output.value)
     ) {
-        throw new Error('Paybox returned an invalid serialized transaction.');
+        throw new PayboxInvalidOperationArtifactError();
     }
     return output.value;
 }
@@ -103,7 +151,7 @@ function isConfirmedAuthenticationStatus(status: number, context: PayboxRequestC
         return PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES.has(status);
     }
     if (context === PayboxRequestContext.Refresh || context === PayboxRequestContext.OAuthToken) {
-        return status === 400 || PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES.has(status);
+        return status === PAYBOX_INVALID_GRANT_HTTP_STATUS || PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES.has(status);
     }
     return false;
 }
@@ -117,15 +165,9 @@ function resetCause(context: PayboxRequestContext): PayboxResetCause {
 function isNetworkOrTimeoutError(error: unknown): boolean {
     if (error instanceof TypeError) return true;
     if (!(error instanceof Error)) return false;
-    if (error.name === 'AbortError' || error.name === 'TimeoutError') return true;
+    if (PAYBOX_TRANSPORT_ERROR_NAMES.has(error.name)) return true;
     const code = (error as Error & { code: unknown }).code;
-    return (
-        code === 'ECONNREFUSED' ||
-        code === 'ECONNRESET' ||
-        code === 'ENOTFOUND' ||
-        code === 'EAI_AGAIN' ||
-        code === 'ETIMEDOUT'
-    );
+    return typeof code === 'string' && PAYBOX_TRANSPORT_ERROR_CODES.has(code);
 }
 
 function grantRows(value: unknown): Array<unknown> {

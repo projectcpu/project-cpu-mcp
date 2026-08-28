@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { PayboxAuthFlowError } from '../errors.js';
 import { LoopbackAuthFlow } from '../loopback-auth-flow.js';
 import type { PayboxHttpClient } from '../types.js';
 
@@ -17,6 +18,91 @@ afterEach(() => {
 });
 
 describe('LoopbackAuthFlow', () => {
+    it.each([
+        ['discovery', 401, 1],
+        ['discovery', 403, 1],
+        ['discovery', 422, 1],
+        ['registration', 401, 2],
+        ['registration', 403, 2],
+        ['registration', 422, 2],
+    ])('classifies %s HTTP %i as a safe auth-flow failure after %i request(s)', async (stage, status, count) => {
+        const fetchRequest = vi.fn(async (url: string) => {
+            if (stage === 'discovery' || url.includes('/register')) {
+                return { ...response({ raw_body: 'secret' }), ok: false, status };
+            }
+            return response({
+                authorization_endpoint: 'https://issuer.example/authorize',
+                registration_endpoint: 'https://issuer.example/register?private_stage=registration',
+                token_endpoint: 'https://issuer.example/token',
+            });
+        });
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: { fetch: fetchRequest },
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+
+        const failure = flow.start();
+
+        await expect(failure).rejects.toBeInstanceOf(PayboxAuthFlowError);
+        await expect(failure).rejects.toMatchObject({
+            data: {
+                code: 'PAYBOX_AUTHORIZATION_FAILED',
+                stateCleared: false,
+                retryable: false,
+                nextTool: 'cpu_authenticate',
+            },
+            diagnostic: {
+                failureClass: 'authentication_flow',
+                resetCause: null,
+                resetDepth: 'none',
+            },
+        });
+        await expect(failure).rejects.not.toThrow(/secret|registration|private_stage/u);
+        expect(fetchRequest).toHaveBeenCalledTimes(count);
+    });
+
+    it.each([
+        ['discovery', {}, 1],
+        [
+            'registration',
+            {
+                authorization_endpoint: 'https://issuer.example/authorize',
+                registration_endpoint: 'https://issuer.example/register',
+                token_endpoint: 'https://issuer.example/token',
+            },
+            2,
+        ],
+    ])('classifies a malformed %s response without exposing its internal stage', async (stage, discovery, count) => {
+        const fetchRequest = vi.fn(async (url: string) => {
+            if (stage === 'registration' && url.endsWith('/register')) return response({ client_id: '' });
+            return response(discovery);
+        });
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: { fetch: fetchRequest },
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+
+        const failure = flow.start();
+
+        await expect(failure).rejects.toBeInstanceOf(PayboxAuthFlowError);
+        await expect(failure).rejects.toMatchObject({
+            data: {
+                code: 'PAYBOX_AUTHORIZATION_FAILED',
+                stateCleared: false,
+                retryable: false,
+                nextTool: 'cpu_authenticate',
+            },
+        });
+        await expect(failure).rejects.not.toThrow(/discovery|registration|response|client_id/u);
+        expect(fetchRequest).toHaveBeenCalledTimes(count);
+    });
+
     it.each([
         ['HTTP 429', { ...response({}), ok: false, status: 429 }],
         ['HTTP 503', { ...response({}), ok: false, status: 503 }],
@@ -123,7 +209,7 @@ describe('LoopbackAuthFlow', () => {
         redirect.searchParams.set('state', 'wrong');
         expect((await fetch(redirect)).status).toBe(400);
         flow.cancel();
-        await expect(flow.finish()).rejects.toThrow('cancelled');
+        await expect(flow.finish()).rejects.toBeInstanceOf(PayboxAuthFlowError);
     });
 
     it('rejects invalid, oversized, and duplicate key submissions without reflecting secrets', async () => {
@@ -213,7 +299,7 @@ describe('LoopbackAuthFlow', () => {
             expire();
             await new Promise<void>((resolve) => setImmediate(resolve));
             expect(unhandled).toEqual([]);
-            await expect(flow.finish()).rejects.toThrow('timed out');
+            await expect(flow.finish()).rejects.toBeInstanceOf(PayboxAuthFlowError);
             await expect(flow.start()).resolves.toEqual(
                 expect.objectContaining({ authorizationUrl: expect.any(String) }),
             );
@@ -273,6 +359,47 @@ describe('LoopbackAuthFlow', () => {
         }
     });
 
+    it.each([
+        ['HTTP 429', { ...response({ raw_body: 'secret' }), ok: false, status: 429 }],
+        ['network failure', new TypeError('fetch failed with authorization_code=secret')],
+        ['timeout', new DOMException('token request timed out with code=secret', 'TimeoutError')],
+    ])('classifies OAuth exchange %s after exactly one token request', async (_case, outcome) => {
+        const fetchRequest = vi.fn(async (url: string) => {
+            if (url.endsWith('/.well-known/oauth-authorization-server')) {
+                return response({
+                    authorization_endpoint: 'https://issuer.example/authorize',
+                    registration_endpoint: 'https://issuer.example/register',
+                    token_endpoint: 'https://issuer.example/token',
+                });
+            }
+            if (url.endsWith('/register')) return response({ client_id: 'client' });
+            if (outcome instanceof Error) throw outcome;
+            return outcome;
+        });
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: { fetch: fetchRequest },
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+        const start = await flow.start();
+        const authorization = new URL(start.authorizationUrl);
+        const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '');
+        callback.searchParams.set('code', 'secret-code');
+        callback.searchParams.set('state', authorization.searchParams.get('state') ?? '');
+
+        expect((await fetch(callback)).status).toBe(200);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        const failure = flow.finish();
+        await expect(failure).rejects.toMatchObject({
+            data: { code: 'PAYBOX_TEMPORARILY_UNAVAILABLE', stateCleared: false, retryable: true },
+        });
+        await expect(failure).rejects.not.toThrow(/secret-code|authorization_code|token request|exchange/u);
+        expect(fetchRequest).toHaveBeenCalledTimes(3);
+    });
+
     it('cancels pending work and permits a clean replacement start', async () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
@@ -283,7 +410,7 @@ describe('LoopbackAuthFlow', () => {
         flows.push(flow);
         await flow.start();
         flow.cancel();
-        await expect(flow.finish()).rejects.toThrow('cancelled');
+        await expect(flow.finish()).rejects.toBeInstanceOf(PayboxAuthFlowError);
         await expect(flow.start()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
     });
 
@@ -330,7 +457,7 @@ describe('LoopbackAuthFlow', () => {
             }),
         );
 
-        await expect(cancelledStart).rejects.toThrow('cancelled');
+        await expect(cancelledStart).rejects.toBeInstanceOf(PayboxAuthFlowError);
         expect(registrationCalls).toBe(0);
         await expect(flow.start()).resolves.toEqual(expect.objectContaining({ authorizationUrl: expect.any(String) }));
         expect(registrationCalls).toBe(1);

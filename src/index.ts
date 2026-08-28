@@ -13,7 +13,7 @@ import { MapReader } from './map/reader.js';
 import { createMapSocket } from './map/socket.js';
 import { MapStore } from './map/store.js';
 import { MapSync } from './map/sync.js';
-import { PayboxCoordinator } from './paybox/coordinator.js';
+import { createPayboxCoordinator } from './paybox/coordinator.factory.js';
 import { LoopbackAuthFlow } from './paybox/loopback-auth-flow.js';
 import { PayboxSdkAdapter } from './paybox/paybox-sdk.adapter.js';
 import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './paybox/paybox-sdk.factory.js';
@@ -73,7 +73,7 @@ async function main(): Promise<void> {
     let auth: AuthService | null = null;
     const wallet =
         config.WALLET_MODE === WalletMode.PAYBOX
-            ? new PayboxCoordinator(
+            ? createPayboxCoordinator(
                   {
                       storage: new PayboxAuthStorage(os.homedir(), logger.child('paybox:storage')),
                       flow: new LoopbackAuthFlow({
@@ -95,7 +95,7 @@ async function main(): Promise<void> {
                           clearSession: () => session.clear(),
                       },
                   },
-                  logger.child('paybox:coordinator'),
+                  logger,
               )
             : createWalletProvider({ config, session, logger });
     logger.info('wallet provider created', { ready: wallet.isReady() });

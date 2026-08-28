@@ -5,10 +5,16 @@ import { NoopLogger } from '../../logger/noop.logger.js';
 import type { ILogger } from '../../logger/types.js';
 import type { WalletManager } from '../../wallet/types.js';
 import { PayboxCoordinator } from '../coordinator.js';
-import { PayboxAuthInvalidError, PayboxLoopbackUnavailableError } from '../errors.js';
+import {
+    PayboxAuthInvalidError,
+    PayboxAuthFlowError,
+    PayboxLoopbackUnavailableError,
+    PayboxTemporarilyUnavailableError,
+} from '../errors.js';
 import { PayboxWalletManager } from '../paybox-wallet.manager.js';
 import {
     PayboxAuthStatus,
+    PayboxRefreshFailureDisposition,
     PayboxResetCause,
     type IPayboxAuthStorage,
     type IPayboxRpcClient,
@@ -36,6 +42,33 @@ function recordingLogger(): { logger: ILogger; warn: ReturnType<typeof vi.fn> } 
 }
 
 describe('PayboxCoordinator', () => {
+    it('logs only classified recovery metadata for an authentication-flow failure', async () => {
+        const diagnostics = recordingLogger();
+        const coordinator = new PayboxCoordinator(
+            {
+                storage: { load: () => null, save: vi.fn(), clear: vi.fn() },
+                flow: {
+                    start: vi.fn(async () => Promise.reject(new PayboxAuthFlowError())),
+                    finish: vi.fn(),
+                    cancel: vi.fn(),
+                },
+                sdk: {} as IPayboxSdkAdapter,
+                authenticator: testAuthenticator(vi.fn()),
+            },
+            diagnostics.logger,
+        );
+
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toBeInstanceOf(
+            PayboxAuthFlowError,
+        );
+        expect(diagnostics.warn).toHaveBeenCalledOnce();
+        expect(diagnostics.warn).toHaveBeenCalledWith('Paybox authentication request failed', {
+            failureClass: 'authentication_flow',
+            resetCause: null,
+            resetDepth: 'none',
+        });
+    });
+
     it('clears the game session before forced authentication returns a new OAuth state', async () => {
         const events = new Array<string>();
         const coordinator = new PayboxCoordinator({
@@ -549,8 +582,16 @@ describe('PayboxCoordinator', () => {
             { status: PayboxAuthStatus.Authenticated, address: '0x0000000000000000000000000000000000000001' },
         ]);
 
-        expect(save).toHaveBeenCalledOnce();
-        expect(save).toHaveBeenCalledWith({
+        expect(save).toHaveBeenCalledTimes(2);
+        expect(save).toHaveBeenNthCalledWith(1, {
+            version: 1,
+            tokens: storedTokens,
+            signingKey: 'pbxk1.test',
+            credentialId: 'stored-credential',
+            address: '0x0000000000000000000000000000000000000001',
+            refreshState: 'exchange_pending',
+        });
+        expect(save).toHaveBeenNthCalledWith(2, {
             version: 1,
             tokens: rotatedTokens,
             signingKey: 'pbxk1.test',
@@ -645,8 +686,10 @@ describe('PayboxCoordinator', () => {
             expiresAt: Date.now() + 600_000,
         };
         const refreshTokens = vi.fn(async () => rotatedTokens);
+        let saveCount = 0;
         const save = vi.fn(() => {
-            throw new Error('disk full');
+            saveCount += 1;
+            if (saveCount === 2) throw new Error('disk full');
         });
         const authenticate = vi.fn(async () => 'game-jwt');
         const coordinator = new PayboxCoordinator({
@@ -677,7 +720,7 @@ describe('PayboxCoordinator', () => {
 
         expect(refreshTokens).toHaveBeenCalledOnce();
         expect(refreshTokens).toHaveBeenCalledWith(storedTokens);
-        expect(save).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledTimes(2);
         expect(authenticate).not.toHaveBeenCalled();
     });
 
@@ -693,7 +736,7 @@ describe('PayboxCoordinator', () => {
         const refreshTokens = vi.fn(async () => {
             throw new Error('refresh result unknown');
         });
-        const clear = vi.fn();
+        const save = vi.fn();
         const coordinator = new PayboxCoordinator({
             storage: {
                 load: () => ({
@@ -703,8 +746,8 @@ describe('PayboxCoordinator', () => {
                     credentialId: 'stored-credential',
                     address: '0x0000000000000000000000000000000000000001',
                 }),
-                save: vi.fn(),
-                clear,
+                save,
+                clear: vi.fn(),
             },
             flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
             sdk: {
@@ -724,11 +767,91 @@ describe('PayboxCoordinator', () => {
             'refresh result unknown',
         );
 
-        expect(clear).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledWith(expect.objectContaining({ refreshState: 'exchange_pending' }));
         expect(refreshTokens).toHaveBeenCalledOnce();
     });
 
-    it('invalidates persisted refresh authority before exchange so restart cannot replay it', async () => {
+    it.each([
+        ['HTTP 429', new PayboxTemporarilyUnavailableError(null, PayboxRefreshFailureDisposition.SafeToRetry), 'ready'],
+        ['HTTP 503', new PayboxTemporarilyUnavailableError(null, PayboxRefreshFailureDisposition.SafeToRetry), 'ready'],
+        [
+            'network failure',
+            new PayboxTemporarilyUnavailableError(
+                { cause: new TypeError('fetch failed') },
+                PayboxRefreshFailureDisposition.Ambiguous,
+            ),
+            'exchange_pending',
+        ],
+        [
+            'timeout',
+            new PayboxTemporarilyUnavailableError(
+                {
+                    cause: new DOMException('request timed out', 'TimeoutError'),
+                },
+                PayboxRefreshFailureDisposition.Ambiguous,
+            ),
+            'exchange_pending',
+        ],
+    ])('preserves durable and runtime authority when refresh hits %s', async (_case, refreshError, refreshState) => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'single-use-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const storedRecord: PayboxAuthRecord = {
+            version: 1,
+            tokens: storedTokens,
+            signingKey: 'pbxk1.test',
+            credentialId: 'stored-credential',
+            address: '0x0000000000000000000000000000000000000001',
+        };
+        let persistedRecord: PayboxAuthRecord | null = storedRecord;
+        const save = vi.fn<IPayboxAuthStorage['save']>((record) => {
+            persistedRecord = record;
+        });
+        const clear = vi.fn(() => {
+            persistedRecord = null;
+        });
+        const clearSession = vi.fn();
+        const refreshTokens = vi.fn(async () => Promise.reject(refreshError));
+        const createWallet = vi.fn(() => wallet);
+        const options = {
+            storage: { load: vi.fn(() => persistedRecord), save, clear },
+            flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
+            sdk: {
+                refreshTokens,
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet,
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: { authenticate: vi.fn(), clearSession },
+        };
+
+        const firstProcess = new PayboxCoordinator(options);
+        const failure = firstProcess.authenticate({ force: false, payboxCredentialId: null });
+
+        await expect(failure).rejects.toBe(refreshError);
+        expect(firstProcess.isReady()).toBe(true);
+        expect(firstProcess.get()).toBe(wallet);
+        expect(persistedRecord).not.toBeNull();
+        expect(persistedRecord).toMatchObject(storedRecord);
+        expect(persistedRecord).toMatchObject({ refreshState });
+        expect(clearSession).not.toHaveBeenCalled();
+
+        const restartedProcess = new PayboxCoordinator(options);
+
+        expect(restartedProcess.isReady()).toBe(true);
+        expect(restartedProcess.get()).toBe(wallet);
+        expect(refreshTokens).toHaveBeenCalledOnce();
+        expect(clearSession).not.toHaveBeenCalled();
+    });
+
+    it('guards persisted refresh authority before exchange so restart cannot replay it', async () => {
         const storedTokens = {
             clientId: 'client',
             accessToken: 'old-access',
@@ -751,7 +874,11 @@ describe('PayboxCoordinator', () => {
             address: '0x0000000000000000000000000000000000000001',
         };
         const refreshTokens = vi.fn(async () => rotatedTokens);
-        const save = vi.fn<IPayboxAuthStorage['save']>(() => {
+        const save = vi.fn<IPayboxAuthStorage['save']>((record) => {
+            if ('refreshState' in record && record.refreshState === 'exchange_pending') {
+                persistedRecord = record;
+                return;
+            }
             throw new Error('disk full');
         });
         const clear = vi.fn(() => {
@@ -777,17 +904,22 @@ describe('PayboxCoordinator', () => {
         );
 
         const restartedProcess = new PayboxCoordinator(options);
-        await expect(restartedProcess.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
-            status: PayboxAuthStatus.AuthRequired,
-            instructions: expect.any(String),
-            authorizationUrl: 'https://accounts.test/authorize?state=fresh',
+        await expect(restartedProcess.authenticate({ force: false, payboxCredentialId: null })).rejects.toMatchObject({
+            data: { code: 'PAYBOX_TEMPORARILY_UNAVAILABLE', stateCleared: false, retryable: true },
         });
 
-        expect(clear).toHaveBeenCalledOnce();
+        expect(restartedProcess.isReady()).toBe(true);
+        expect(restartedProcess.get()).toBe(wallet);
+        expect(clear).not.toHaveBeenCalled();
         expect(refreshTokens).toHaveBeenCalledOnce();
         expect(refreshTokens).toHaveBeenCalledWith(storedTokens);
-        expect(clear.mock.invocationCallOrder[0]).toBeLessThan(refreshTokens.mock.invocationCallOrder[0] as number);
-        expect(persistedRecord).toBeNull();
+        expect(save.mock.invocationCallOrder[0]).toBeLessThan(refreshTokens.mock.invocationCallOrder[0] as number);
+        expect(persistedRecord).toMatchObject({
+            tokens: storedTokens,
+            credentialId: 'stored-credential',
+            refreshState: 'exchange_pending',
+        });
+        expect(start).not.toHaveBeenCalled();
     });
 
     it('rejects a refresh result invalidated while the SDK helper is unresolved', async () => {
@@ -844,7 +976,8 @@ describe('PayboxCoordinator', () => {
         refresh.resolve(rotatedTokens);
 
         await expect(staleAuthentication).rejects.toThrow('invalidated');
-        expect(save).not.toHaveBeenCalled();
+        expect(save).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenCalledWith(expect.objectContaining({ refreshState: 'exchange_pending' }));
         expect(createWallet).toHaveBeenCalledOnce();
         expect(coordinator.isReady()).toBe(false);
     });
@@ -908,12 +1041,20 @@ describe('PayboxCoordinator', () => {
         expect(listGrants).toHaveBeenCalledWith(rotatedTokens, 'pbxk1.test');
         expect(save).toHaveBeenNthCalledWith(1, {
             version: 1,
+            tokens: storedTokens,
+            signingKey: 'pbxk1.test',
+            credentialId: null,
+            address: null,
+            refreshState: 'exchange_pending',
+        });
+        expect(save).toHaveBeenNthCalledWith(2, {
+            version: 1,
             tokens: rotatedTokens,
             signingKey: 'pbxk1.test',
             credentialId: null,
             address: null,
         });
-        expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ credentialId: 'credential' }));
+        expect(save).toHaveBeenNthCalledWith(3, expect.objectContaining({ credentialId: 'credential' }));
         expect(start).not.toHaveBeenCalled();
     });
 
@@ -1060,7 +1201,7 @@ describe('PayboxCoordinator', () => {
         await expect(retainedWallet.signMessage('economic intent')).rejects.toBeInstanceOf(AuthenticationRequiredError);
 
         expect(signMessage).toHaveBeenCalledOnce();
-        expect(clear).toHaveBeenCalledTimes(2);
+        expect(clear).toHaveBeenCalledOnce();
         expect(clearSession).toHaveBeenCalledOnce();
         expect(cancel).toHaveBeenCalledOnce();
         expect(persisted).toBeNull();

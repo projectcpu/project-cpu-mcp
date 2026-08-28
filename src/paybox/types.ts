@@ -16,17 +16,27 @@ export enum PayboxApprovalMode {
 }
 
 export enum PayboxErrorCode {
+    AuthorizationFailed = 'PAYBOX_AUTHORIZATION_FAILED',
     FullAccessWalletRequired = 'PAYBOX_FULL_ACCESS_WALLET_REQUIRED',
+    InvalidOperationArtifact = 'PAYBOX_INVALID_OPERATION_ARTIFACT',
     OperationDenied = 'PAYBOX_OPERATION_DENIED',
+    OperationIncomplete = 'PAYBOX_OPERATION_INCOMPLETE',
     TemporarilyUnavailable = 'PAYBOX_TEMPORARILY_UNAVAILABLE',
     WalletSelectionInvalid = 'PAYBOX_WALLET_SELECTION_INVALID',
     WalletSelectionNotPending = 'PAYBOX_WALLET_SELECTION_NOT_PENDING',
 }
 
 export enum PayboxFailureClass {
+    AuthenticationFlow = 'authentication_flow',
     ConfirmedAuthentication = 'confirmed_authentication',
+    InvalidOperationArtifact = 'invalid_operation_artifact',
     OperationDenied = 'operation_denied',
+    OperationIncomplete = 'operation_incomplete',
     TemporarilyUnavailable = 'temporarily_unavailable',
+}
+
+export enum PayboxRecoveryTool {
+    Authenticate = 'cpu_authenticate',
 }
 
 export enum PayboxResetCause {
@@ -49,6 +59,17 @@ export enum PayboxRequestContext {
     Unauthenticated = 'unauthenticated',
 }
 
+export enum PayboxRefreshFailureDisposition {
+    Ambiguous = 'ambiguous',
+    NotApplicable = 'not_applicable',
+    SafeToRetry = 'safe_to_retry',
+}
+
+export enum PayboxRefreshState {
+    ExchangePending = 'exchange_pending',
+    Ready = 'ready',
+}
+
 export interface PayboxFailureDiagnostic {
     failureClass: PayboxFailureClass;
     resetCause: PayboxResetCause | null;
@@ -57,6 +78,19 @@ export interface PayboxFailureDiagnostic {
 
 export interface PayboxOperationDeniedErrorData {
     code: PayboxErrorCode.OperationDenied;
+}
+
+export interface PayboxOperationResponseErrorData {
+    code: PayboxErrorCode.InvalidOperationArtifact | PayboxErrorCode.OperationIncomplete;
+    stateCleared: false;
+    retryable: false;
+}
+
+export interface PayboxAuthFlowErrorData {
+    code: PayboxErrorCode.AuthorizationFailed;
+    stateCleared: false;
+    retryable: false;
+    nextTool: PayboxRecoveryTool.Authenticate;
 }
 
 export interface PayboxTemporarilyUnavailableErrorData {
@@ -74,7 +108,7 @@ export const payboxTokensSchema = z.object({
     baseUrl: z.string().url(),
 });
 
-export const payboxAuthRecordSchema = z
+const payboxAuthRecordSchemaV1 = z
     .object({
         version: z.literal(1),
         tokens: payboxTokensSchema.nullable(),
@@ -85,6 +119,7 @@ export const payboxAuthRecordSchema = z
             .refine((value) => isAddress(value, { strict: true }), 'invalid checksummed EVM address')
             .nullable(),
     })
+    .strict()
     .superRefine((record, context) => {
         if ((record.tokens === null) !== (record.signingKey === null)) {
             context.addIssue({ code: z.ZodIssueCode.custom, message: 'incomplete Paybox auth record' });
@@ -96,6 +131,33 @@ export const payboxAuthRecordSchema = z
             context.addIssue({ code: z.ZodIssueCode.custom, message: 'Paybox Wallet selection has no auth material' });
         }
     });
+
+const guardedPayboxAuthRecordSchemaV1 = z
+    .object({
+        version: z.literal(1),
+        tokens: payboxTokensSchema.nullable(),
+        signingKey: z.string().refine(isPbxk1, 'invalid signing key').nullable(),
+        credentialId: z.string().min(1).nullable(),
+        address: z
+            .string()
+            .refine((value) => isAddress(value, { strict: true }), 'invalid checksummed EVM address')
+            .nullable(),
+        refreshState: z.nativeEnum(PayboxRefreshState),
+    })
+    .strict()
+    .superRefine((record, context) => {
+        if ((record.tokens === null) !== (record.signingKey === null)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: 'incomplete Paybox auth record' });
+        }
+        if ((record.credentialId === null) !== (record.address === null)) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: 'incomplete Paybox Wallet selection' });
+        }
+        if (record.tokens === null && record.credentialId !== null) {
+            context.addIssue({ code: z.ZodIssueCode.custom, message: 'Paybox Wallet selection has no auth material' });
+        }
+    });
+
+export const payboxAuthRecordSchema = z.union([guardedPayboxAuthRecordSchemaV1, payboxAuthRecordSchemaV1]);
 
 export type PayboxTokens = z.infer<typeof payboxTokensSchema>;
 export type PayboxAuthRecord = z.infer<typeof payboxAuthRecordSchema>;

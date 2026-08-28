@@ -5,16 +5,21 @@ import {
     PAYBOX_SCHEMA_VERSION,
     PAYBOX_TOKEN_REFRESH_WINDOW_MS,
 } from './constants.js';
+import { payboxRefreshState, withPayboxRefreshState } from './coordinator.utils.js';
 import {
+    PayboxAuthFlowError,
     PayboxAuthInvalidError,
     PayboxFullAccessWalletRequiredError,
     PayboxLoopbackUnavailableError,
+    PayboxTemporarilyUnavailableError,
     PayboxWalletSelectionError,
 } from './errors.js';
 import {
     PayboxAuthStatus,
     PayboxErrorCode,
     PayboxResetCause,
+    PayboxRefreshFailureDisposition,
+    PayboxRefreshState,
     type EligiblePayboxGrant,
     type PayboxAuthMaterial,
     type PayboxAuthenticationFlight,
@@ -61,6 +66,12 @@ export class PayboxCoordinator implements WalletProvider {
         this.options = options;
         const stored = options.storage.load();
         if (stored?.tokens === null || stored?.signingKey === null || stored === null) return;
+        if (payboxRefreshState(stored) === PayboxRefreshState.ExchangePending) {
+            this.refreshPersistenceError = new PayboxTemporarilyUnavailableError(
+                null,
+                PayboxRefreshFailureDisposition.Ambiguous,
+            );
+        }
         this.material = { tokens: stored.tokens, signingKey: stored.signingKey };
         if (stored.credentialId === null || stored.address === null) return;
         this.credentialId = stored.credentialId;
@@ -112,10 +123,15 @@ export class PayboxCoordinator implements WalletProvider {
         try {
             return await this.authenticateCurrent(requestedCredentialId);
         } catch (error) {
-            if (!(error instanceof PayboxAuthInvalidError)) throw error;
-            this.logger.warn('Paybox authentication authority invalidated', { ...error.diagnostic });
-            this.resetAuthState();
-            return this.authenticateCurrent(null);
+            if (error instanceof PayboxAuthInvalidError) {
+                this.logger.warn('Paybox authentication authority invalidated', { ...error.diagnostic });
+                this.resetAuthState();
+                return this.authenticateCurrent(null);
+            }
+            if (error instanceof PayboxAuthFlowError || error instanceof PayboxTemporarilyUnavailableError) {
+                this.logger.warn('Paybox authentication request failed', { ...error.diagnostic });
+            }
+            throw error;
         }
     }
 
@@ -489,8 +505,15 @@ export class PayboxCoordinator implements WalletProvider {
                 PayboxResetCause.InvalidRefresh,
             );
         }
-        // A rotating refresh token must be unrecoverable before an exchange can consume it.
-        this.options.storage.clear();
+        const currentRecord: PayboxAuthRecord = {
+            version: PAYBOX_SCHEMA_VERSION,
+            tokens: material.tokens,
+            signingKey: material.signingKey,
+            credentialId: this.credentialId,
+            address: this.address,
+        };
+        // The guard preserves credentials while making a possibly consumed rotating token non-replayable after restart.
+        this.options.storage.save(withPayboxRefreshState(currentRecord, PayboxRefreshState.ExchangePending));
         let tokens: PayboxAuthMaterial['tokens'];
         try {
             tokens = await this.options.sdk.refreshTokens(material.tokens);
@@ -498,7 +521,22 @@ export class PayboxCoordinator implements WalletProvider {
             const refreshError =
                 error instanceof Error ? error : new Error('Paybox OAuth tokens could not be refreshed safely.');
             if (this.generation === generation) {
-                this.refreshPersistenceError = refreshError;
+                if (
+                    refreshError instanceof PayboxTemporarilyUnavailableError &&
+                    refreshError.refreshFailureDisposition === PayboxRefreshFailureDisposition.SafeToRetry
+                ) {
+                    try {
+                        this.options.storage.save(withPayboxRefreshState(currentRecord, PayboxRefreshState.Ready));
+                    } catch (persistenceError) {
+                        this.refreshPersistenceError =
+                            persistenceError instanceof Error
+                                ? persistenceError
+                                : new Error('Paybox refresh recovery could not be persisted.');
+                        throw this.refreshPersistenceError;
+                    }
+                } else {
+                    this.refreshPersistenceError = refreshError;
+                }
             }
             throw refreshError;
         }

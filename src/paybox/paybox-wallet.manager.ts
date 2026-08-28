@@ -1,6 +1,12 @@
 import { getAddress, type Address, type Hash, type Hex } from 'viem';
 
-import { PayboxAuthInvalidError, PayboxOperationDeniedError, PayboxTemporarilyUnavailableError } from './errors.js';
+import {
+    PayboxAuthInvalidError,
+    PayboxInvalidOperationArtifactError,
+    PayboxOperationDeniedError,
+    PayboxOperationIncompleteError,
+    PayboxTemporarilyUnavailableError,
+} from './errors.js';
 import { verifiedPayboxMessageSignature, verifiedPayboxTransaction } from './paybox-wallet.utils.js';
 import type { PayboxAuthMaterial, PayboxTransactionIntent, PayboxWalletManagerOptions } from './types.js';
 import { AuthenticationRequiredError } from '../api/authentication-required.error.js';
@@ -121,7 +127,12 @@ export class PayboxWalletManager implements WalletManager {
             this.options.authority.invalidate();
             throw new AuthenticationRequiredError();
         }
-        if (error instanceof PayboxOperationDeniedError || error instanceof PayboxTemporarilyUnavailableError) {
+        if (
+            error instanceof PayboxOperationDeniedError ||
+            error instanceof PayboxTemporarilyUnavailableError ||
+            error instanceof PayboxOperationIncompleteError ||
+            error instanceof PayboxInvalidOperationArtifactError
+        ) {
             this.options.logger.warn('Paybox signing request failed', { ...error.diagnostic });
         }
         throw error;

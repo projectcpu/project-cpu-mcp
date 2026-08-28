@@ -8,7 +8,7 @@ import {
     type TransactionSerialized,
 } from 'viem';
 
-import { PayboxAuthInvalidError } from './errors.js';
+import { PayboxAuthInvalidError, PayboxInvalidOperationArtifactError } from './errors.js';
 import { PayboxResetCause, type PayboxTransactionIntent } from './types.js';
 
 export async function verifiedPayboxMessageSignature(message: string, signature: Hex, address: Address): Promise<Hex> {
@@ -46,10 +46,10 @@ export async function verifiedPayboxTransaction(
             serializedTransaction: serializedTransaction as TransactionSerialized,
         });
     } catch {
-        throw new Error('Paybox returned a malformed signed transaction.');
+        throw new PayboxInvalidOperationArtifactError();
     }
     if (transaction.type !== 'eip1559') {
-        throw new Error('Paybox signed transaction must be EIP-1559.');
+        throw new PayboxInvalidOperationArtifactError();
     }
     if (getAddress(signer) !== getAddress(address)) {
         throw new PayboxAuthInvalidError(
@@ -58,7 +58,7 @@ export async function verifiedPayboxTransaction(
         );
     }
     if (transaction.to == null || getAddress(transaction.to) !== getAddress(intent.to)) {
-        throw new Error('Paybox signed transaction destination does not match the requested intent.');
+        throw new PayboxInvalidOperationArtifactError();
     }
     assertHexField('calldata', transaction.data ?? '0x', intent.data);
     assertField('value', transaction.value ?? 0n, intent.value);
@@ -68,19 +68,19 @@ export async function verifiedPayboxTransaction(
     assertField('maximum fee', transaction.maxFeePerGas, intent.maxFeePerGas);
     assertField('nonce', transaction.nonce, intent.nonce);
     if ((transaction.accessList ?? []).length !== 0) {
-        throw new Error('Paybox signed transaction contains an unexpected access list.');
+        throw new PayboxInvalidOperationArtifactError();
     }
     return serializedTransaction;
 }
 
-function assertField(label: string, actual: bigint | number | undefined, expected: bigint | number): void {
+function assertField(_label: string, actual: bigint | number | undefined, expected: bigint | number): void {
     if (actual !== expected) {
-        throw new Error(`Paybox signed transaction ${label} does not match the requested intent.`);
+        throw new PayboxInvalidOperationArtifactError();
     }
 }
 
-function assertHexField(label: string, actual: Hex | undefined, expected: Hex): void {
+function assertHexField(_label: string, actual: Hex | undefined, expected: Hex): void {
     if (actual?.toLowerCase() !== expected.toLowerCase()) {
-        throw new Error(`Paybox signed transaction ${label} does not match the requested intent.`);
+        throw new PayboxInvalidOperationArtifactError();
     }
 }

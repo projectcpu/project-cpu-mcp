@@ -1,18 +1,47 @@
 import { PAYBOX_FULL_ACCESS_WALLET_INSTRUCTIONS } from './constants.js';
 import {
     PayboxApprovalMode,
+    type PayboxAuthFlowErrorData,
     PayboxErrorCode,
     PayboxFailureClass,
+    PayboxRecoveryTool,
     PayboxResetCause,
     PayboxResetDepth,
+    PayboxRefreshFailureDisposition,
     type PayboxFailureDiagnostic,
     type PayboxFullAccessWalletRequiredErrorData,
     type PayboxOperationDeniedErrorData,
+    type PayboxOperationResponseErrorData,
     type PayboxTemporarilyUnavailableErrorData,
     type PayboxWalletSelectionErrorData,
 } from './types.js';
 
 export class PayboxLoopbackUnavailableError extends Error {}
+
+export class PayboxAuthFlowError extends Error {
+    readonly data: PayboxAuthFlowErrorData = {
+        code: PayboxErrorCode.AuthorizationFailed,
+        stateCleared: false,
+        retryable: false,
+        nextTool: PayboxRecoveryTool.Authenticate,
+    };
+    readonly diagnostic: PayboxFailureDiagnostic = {
+        failureClass: PayboxFailureClass.AuthenticationFlow,
+        resetCause: null,
+        resetDepth: PayboxResetDepth.None,
+    };
+
+    constructor(options: ErrorOptions | null = null) {
+        const data: PayboxAuthFlowErrorData = {
+            code: PayboxErrorCode.AuthorizationFailed,
+            stateCleared: false,
+            retryable: false,
+            nextTool: PayboxRecoveryTool.Authenticate,
+        };
+        super(JSON.stringify(data), options ?? undefined);
+        this.name = 'PayboxAuthFlowError';
+    }
+}
 
 export class PayboxAuthInvalidError extends Error {
     readonly diagnostic: PayboxFailureDiagnostic;
@@ -46,6 +75,52 @@ export class PayboxOperationDeniedError extends Error {
     }
 }
 
+export class PayboxOperationIncompleteError extends Error {
+    readonly data: PayboxOperationResponseErrorData = {
+        code: PayboxErrorCode.OperationIncomplete,
+        stateCleared: false,
+        retryable: false,
+    };
+    readonly diagnostic: PayboxFailureDiagnostic = {
+        failureClass: PayboxFailureClass.OperationIncomplete,
+        resetCause: null,
+        resetDepth: PayboxResetDepth.None,
+    };
+
+    constructor() {
+        const data: PayboxOperationResponseErrorData = {
+            code: PayboxErrorCode.OperationIncomplete,
+            stateCleared: false,
+            retryable: false,
+        };
+        super(JSON.stringify(data));
+        this.name = 'PayboxOperationIncompleteError';
+    }
+}
+
+export class PayboxInvalidOperationArtifactError extends Error {
+    readonly data: PayboxOperationResponseErrorData = {
+        code: PayboxErrorCode.InvalidOperationArtifact,
+        stateCleared: false,
+        retryable: false,
+    };
+    readonly diagnostic: PayboxFailureDiagnostic = {
+        failureClass: PayboxFailureClass.InvalidOperationArtifact,
+        resetCause: null,
+        resetDepth: PayboxResetDepth.None,
+    };
+
+    constructor() {
+        const data: PayboxOperationResponseErrorData = {
+            code: PayboxErrorCode.InvalidOperationArtifact,
+            stateCleared: false,
+            retryable: false,
+        };
+        super(JSON.stringify(data));
+        this.name = 'PayboxInvalidOperationArtifactError';
+    }
+}
+
 export class PayboxTemporarilyUnavailableError extends Error {
     readonly data: PayboxTemporarilyUnavailableErrorData = {
         code: PayboxErrorCode.TemporarilyUnavailable,
@@ -58,7 +133,10 @@ export class PayboxTemporarilyUnavailableError extends Error {
         resetDepth: PayboxResetDepth.None,
     };
 
-    constructor(options: ErrorOptions | null = null) {
+    constructor(
+        options: ErrorOptions | null = null,
+        readonly refreshFailureDisposition: PayboxRefreshFailureDisposition = PayboxRefreshFailureDisposition.NotApplicable,
+    ) {
         const data: PayboxTemporarilyUnavailableErrorData = {
             code: PayboxErrorCode.TemporarilyUnavailable,
             stateCleared: false,

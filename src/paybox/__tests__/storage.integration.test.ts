@@ -8,7 +8,7 @@ import { SESSION_DIR } from '../../config/constants.js';
 import type { ILogger } from '../../logger/types.js';
 import { PAYBOX_AUTH_FILE } from '../constants.js';
 import { PayboxAuthStorage } from '../storage.js';
-import type { PayboxAuthRecord } from '../types.js';
+import { PayboxRefreshState, type PayboxAuthRecord } from '../types.js';
 
 const directories: Array<string> = [];
 const logger = { warn: vi.fn() } as unknown as ILogger;
@@ -62,6 +62,15 @@ describe('PayboxAuthStorage', () => {
         storage.save(pendingSelection);
 
         expect(storage.load()).toEqual(pendingSelection);
+    });
+
+    it('round-trips an unresolved refresh guard without discarding authority', () => {
+        const { storage } = fixture();
+        const guarded: PayboxAuthRecord = { ...record, refreshState: PayboxRefreshState.ExchangePending };
+
+        storage.save(guarded);
+
+        expect(storage.load()).toEqual(guarded);
     });
 
     it('rejects corrupt, partial, and incompatible records without touching a real home', () => {
