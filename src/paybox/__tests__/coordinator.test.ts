@@ -363,7 +363,7 @@ describe('PayboxCoordinator', () => {
         });
     });
 
-    it('does not expose a manager from an obsolete generation when replacement construction fails', async () => {
+    it('keeps the restored manager ready without constructing a replacement during token rotation', async () => {
         const storedTokens = {
             clientId: 'client',
             accessToken: 'old-access',
@@ -401,21 +401,23 @@ describe('PayboxCoordinator', () => {
                     refreshToken: 'new-refresh',
                     expiresAt: Date.now() + 600_000,
                 })),
-                listEligibleAutonomousEvmGrants: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('credential')),
                 createWallet,
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
             },
-            authenticator: { authenticate: vi.fn(), clearSession: vi.fn() },
+            authenticator: testAuthenticator(vi.fn(async () => 'game-jwt')),
         });
 
         expect(coordinator.get()).toBe(oldWallet);
-        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
-            'replacement construction failed',
-        );
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
+            status: PayboxAuthStatus.Authenticated,
+            address: '0x0000000000000000000000000000000000000001',
+        });
 
-        expect(coordinator.isReady()).toBe(false);
-        expect(() => coordinator.get()).toThrow('not authenticated');
+        expect(createWallet).toHaveBeenCalledOnce();
+        expect(coordinator.isReady()).toBe(true);
+        expect(coordinator.get()).toBe(oldWallet);
     });
 
     it('fully resets expired authority that has no refresh token and restarts OAuth', async () => {
@@ -518,7 +520,7 @@ describe('PayboxCoordinator', () => {
         expect(start).not.toHaveBeenCalled();
     });
 
-    it('single-flights refresh, persists rotation, and replaces the restored Wallet before fresh SIWE', async () => {
+    it('single-flights refresh and persists rotation without replacing the restored Wallet queue', async () => {
         const storedTokens = {
             clientId: 'client',
             accessToken: 'old-access',
@@ -538,10 +540,7 @@ describe('PayboxCoordinator', () => {
         const oldWallet = {
             getAddress: () => '0x0000000000000000000000000000000000000001',
         } as unknown as WalletManager;
-        const newWallet = {
-            getAddress: () => '0x0000000000000000000000000000000000000001',
-        } as unknown as WalletManager;
-        const createWallet = vi.fn().mockReturnValueOnce(oldWallet).mockReturnValueOnce(newWallet);
+        const createWallet = vi.fn(() => oldWallet);
         const save = vi.fn();
         const authenticate = vi.fn(async () => 'game-jwt');
         const start = vi.fn();
@@ -596,21 +595,14 @@ describe('PayboxCoordinator', () => {
             credentialId: 'stored-credential',
             address: '0x0000000000000000000000000000000000000001',
         });
-        expect(createWallet).toHaveBeenCalledTimes(2);
-        expect(createWallet).toHaveBeenLastCalledWith(
-            rotatedTokens,
-            'pbxk1.test',
-            'stored-credential',
-            '0x0000000000000000000000000000000000000001',
-            expect.anything(),
-        );
-        expect(coordinator.get()).toBe(newWallet);
+        expect(createWallet).toHaveBeenCalledOnce();
+        expect(coordinator.get()).toBe(oldWallet);
         expect(authenticate).toHaveBeenCalledOnce();
-        expect(authenticate).toHaveBeenCalledWith(newWallet, expect.any(AbortSignal));
+        expect(authenticate).toHaveBeenCalledWith(oldWallet, expect.any(AbortSignal));
         expect(start).not.toHaveBeenCalled();
     });
 
-    it('invalidates a retained Wallet after token rotation replaces its generation', async () => {
+    it('keeps a retained Wallet current after token rotation', async () => {
         const storedTokens = {
             clientId: 'client',
             accessToken: 'old-access',
@@ -664,8 +656,98 @@ describe('PayboxCoordinator', () => {
 
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
 
-        expect(coordinator.get()).not.toBe(retainedWallet);
-        await expect(retainedWallet.signMessage('stale intent')).rejects.toThrow('invalidated');
+        expect(coordinator.get()).toBe(retainedWallet);
+        await expect(retainedWallet.signMessage('current intent')).resolves.toBe('new-access');
+        expect(createWallet).toHaveBeenCalledOnce();
+    });
+
+    it('preserves one serialized Wallet queue across refresh for sequential overlapping sends', async () => {
+        const storedTokens = {
+            clientId: 'client',
+            accessToken: 'old-access',
+            refreshToken: 'old-refresh',
+            expiresAt: Date.now() - 1,
+            resource: 'https://api.paybox.test/mcp',
+            baseUrl: 'https://api.paybox.test',
+        };
+        const rotatedTokens = {
+            ...storedTokens,
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+            expiresAt: Date.now() + 600_000,
+        };
+        const refresh = controlledPromise<typeof rotatedTokens>();
+        const nonces = [7, 8];
+        const signed = new Array<{ accessToken: string; nonce: number }>();
+        const createWallet = vi.fn(
+            (
+                _tokens: Parameters<IPayboxSdkAdapter['createWallet']>[0],
+                _signingKey: string,
+                _credentialId: string,
+                address: string,
+                authority: PayboxWalletAuthority,
+            ) => {
+                let queue = Promise.resolve();
+                return {
+                    getAddress: () => address,
+                    sendTransaction: () => {
+                        const operation = queue.then(async () => {
+                            const current = await authority.current();
+                            const nonce = nonces.shift() as number;
+                            signed.push({ accessToken: current.tokens.accessToken, nonce });
+                            return `0x${nonce}`;
+                        });
+                        queue = operation.then(() => undefined);
+                        return operation;
+                    },
+                } as unknown as WalletManager;
+            },
+        );
+        const coordinator = new PayboxCoordinator({
+            storage: {
+                load: () => ({
+                    version: 1,
+                    tokens: storedTokens,
+                    signingKey: 'pbxk1.test',
+                    credentialId: 'stored-credential',
+                    address: '0x0000000000000000000000000000000000000001',
+                }),
+                save: vi.fn(),
+                clear: vi.fn(),
+            },
+            flow: { start: vi.fn(), finish: vi.fn() },
+            sdk: {
+                refreshTokens: vi.fn(() => refresh.promise),
+                listEligibleAutonomousEvmGrants: vi.fn(),
+                createWallet,
+                signMessage: vi.fn(),
+                signTransaction: vi.fn(),
+            },
+            authenticator: testAuthenticator(vi.fn()),
+        });
+        const retainedWallet = coordinator.get();
+
+        const first = retainedWallet.sendTransaction({
+            to: '0x0000000000000000000000000000000000000002',
+            data: '0x01',
+            value: null,
+            gas: null,
+        });
+        const second = retainedWallet.sendTransaction({
+            to: '0x0000000000000000000000000000000000000002',
+            data: '0x02',
+            value: null,
+            gas: null,
+        });
+        refresh.resolve(rotatedTokens);
+
+        await expect(Promise.all([first, second])).resolves.toEqual(['0x7', '0x8']);
+        expect(signed).toEqual([
+            { accessToken: 'new-access', nonce: 7 },
+            { accessToken: 'new-access', nonce: 8 },
+        ]);
+        expect(createWallet).toHaveBeenCalledOnce();
+        expect(coordinator.get()).toBe(retainedWallet);
     });
 
     it('does not reuse a consumed refresh token after rotated-token persistence fails', async () => {
@@ -1125,7 +1207,7 @@ describe('PayboxCoordinator', () => {
         expect(save).toHaveBeenCalledWith(
             expect.objectContaining({ tokens: rotatedTokens, credentialId: 'credential' }),
         );
-        expect(createWallet).toHaveBeenCalledTimes(2);
+        expect(createWallet).toHaveBeenCalledOnce();
     });
 
     it('fully resets refreshed authority after a retained Wallet receives a confirmed signing rejection', async () => {
@@ -1514,13 +1596,9 @@ describe('PayboxCoordinator', () => {
             expect.objectContaining({ status: PayboxAuthStatus.AuthRequired }),
         );
         await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual(
-            expect.objectContaining({ status: PayboxAuthStatus.AuthRequired }),
+            expect.objectContaining({ status: PayboxAuthStatus.Authenticated }),
         );
-        await vi.waitFor(() => expect(authenticate).toHaveBeenCalledTimes(1));
-        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
-            status: PayboxAuthStatus.Authenticated,
-            address: '0x0000000000000000000000000000000000000001',
-        });
+        expect(authenticate).toHaveBeenCalledOnce();
         expect(storage.save).toHaveBeenCalledWith(
             expect.objectContaining({ credentialId: 'credential', signingKey: 'pbxk1.test' }),
         );
@@ -1529,7 +1607,7 @@ describe('PayboxCoordinator', () => {
             status: PayboxAuthStatus.Authenticated,
             address: '0x0000000000000000000000000000000000000001',
         });
-        expect(authenticate).toHaveBeenCalledTimes(3);
+        expect(authenticate).toHaveBeenCalledTimes(2);
     });
 
     it('returns the same public state while browser completion remains unresolved', async () => {

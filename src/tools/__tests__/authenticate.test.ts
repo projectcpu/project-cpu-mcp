@@ -151,26 +151,13 @@ describe('cpu_authenticate', () => {
                 {
                     type: 'text',
                     text: JSON.stringify({
-                        status: PayboxAuthStatus.AuthRequired,
-                        instructions:
-                            'Open the authorization URL in a local browser to continue Paybox authentication.',
-                        authorizationUrl: 'https://accounts.test/authorize?state=opaque',
-                    }),
-                },
-            ],
-        });
-        await vi.waitFor(() => expect(authenticate).toHaveBeenCalledOnce());
-        await expect(handler({ force: null })).resolves.toEqual({
-            content: [
-                {
-                    type: 'text',
-                    text: JSON.stringify({
                         status: PayboxAuthStatus.Authenticated,
                         address: '0x1111111111111111111111111111111111111111',
                     }),
                 },
             ],
         });
+        expect(authenticate).toHaveBeenCalledOnce();
         expect(flow.start).toHaveBeenCalledOnce();
     });
 

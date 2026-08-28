@@ -1,34 +1,55 @@
+import { PayboxAuthFlowPollStatus, type PayboxAuthFlowPollResult } from './types.js';
 import { PayboxLoopbackUnavailableError } from '../errors.js';
-import type { PayboxAuthFlow, PayboxAuthMaterial, PayboxAuthStart } from '../types.js';
+import type { PayboxAuthFlow, PayboxAuthMaterial, PayboxAuthenticateResult, PayboxAuthStart } from '../types.js';
 
 export class PayboxAuthFlowSession {
     private controller: AbortController | null = null;
     private startResult: PayboxAuthStart | null = null;
     private starting: Promise<PayboxAuthStart> | null = null;
     private completing: Promise<void> | null = null;
+    private completionResult: PayboxAuthenticateResult | null = null;
+    private consumingResult: Promise<PayboxAuthFlowPollResult> | null = null;
     private completionError: Error | null = null;
 
     constructor(private readonly flow: PayboxAuthFlow) {}
 
     isActive(): boolean {
-        return this.controller !== null || this.completionError !== null;
+        return (
+            this.controller !== null ||
+            this.completionResult !== null ||
+            this.consumingResult !== null ||
+            this.completionError !== null
+        );
     }
 
-    hasFailed(): boolean {
-        return this.completionError !== null;
-    }
-
-    async poll(complete: (material: PayboxAuthMaterial) => Promise<void>): Promise<PayboxAuthStart> {
+    async poll(
+        complete: (material: PayboxAuthMaterial) => Promise<PayboxAuthenticateResult>,
+    ): Promise<PayboxAuthFlowPollResult> {
         if (this.completionError !== null) {
             const error = this.completionError;
             this.completionError = null;
             throw error;
         }
-        if (this.startResult !== null) {
-            this.beginCompletion(complete);
-            return this.startResult;
+        if (this.consumingResult !== null) return this.consumingResult;
+        if (this.completionResult !== null) return this.consumeCompletion();
+        if (this.startResult === null) {
+            await this.start();
+            return this.pendingResult();
         }
-        return this.start();
+        const pending = this.pendingResult();
+        this.beginCompletion(complete);
+        if (await this.hasCompletedAuthentication()) {
+            if (this.completionResult !== null) return this.consumeCompletion();
+        }
+        return pending;
+    }
+
+    private pendingResult(): PayboxAuthFlowPollResult {
+        if (this.startResult === null) throw new Error('Paybox authentication flow is unavailable.');
+        return {
+            status: PayboxAuthFlowPollStatus.Pending,
+            authorizationUrl: this.startResult.authorizationUrl,
+        };
     }
 
     reset(): void {
@@ -37,6 +58,8 @@ export class PayboxAuthFlowSession {
         this.startResult = null;
         this.starting = null;
         this.completing = null;
+        this.completionResult = null;
+        this.consumingResult = null;
         this.completionError = null;
         controller?.abort(new Error('Paybox authentication was invalidated.'));
     }
@@ -72,7 +95,7 @@ export class PayboxAuthFlowSession {
         }
     }
 
-    private beginCompletion(complete: (material: PayboxAuthMaterial) => Promise<void>): void {
+    private beginCompletion(complete: (material: PayboxAuthMaterial) => Promise<PayboxAuthenticateResult>): void {
         if (this.completing !== null) return;
         const controller = this.controller;
         if (controller === null) throw new Error('Paybox authentication flow is unavailable.');
@@ -83,14 +106,19 @@ export class PayboxAuthFlowSession {
 
     private async runCompletion(
         controller: AbortController,
-        complete: (material: PayboxAuthMaterial) => Promise<void>,
+        complete: (material: PayboxAuthMaterial) => Promise<PayboxAuthenticateResult>,
     ): Promise<void> {
         try {
             const material = await this.flow.finish();
             controller.signal.throwIfAborted();
-            await complete(material);
+            const result = await complete(material);
             controller.signal.throwIfAborted();
-            if (this.controller === controller) this.clearCompletedSession();
+            if (this.controller === controller) {
+                this.controller = null;
+                this.startResult = null;
+                this.completing = null;
+                this.completionResult = result;
+            }
         } catch (error) {
             if (this.controller !== controller) return;
             this.controller = null;
@@ -100,10 +128,28 @@ export class PayboxAuthFlowSession {
         }
     }
 
-    private clearCompletedSession(): void {
-        this.controller = null;
-        this.startResult = null;
-        this.completing = null;
-        this.completionError = null;
+    private async hasCompletedAuthentication(): Promise<boolean> {
+        const completing = this.completing;
+        if (completing === null) return false;
+        return Promise.race([
+            completing.then(() => this.completionResult !== null),
+            new Promise<boolean>((resolve) => setImmediate(() => resolve(false))),
+        ]);
+    }
+
+    private consumeCompletion(): Promise<PayboxAuthFlowPollResult> {
+        const result = this.completionResult;
+        if (result === null) throw new Error('Paybox authentication result is unavailable.');
+        const consuming = Promise.resolve({
+            status: PayboxAuthFlowPollStatus.Completed,
+            result,
+        } as const);
+        this.consumingResult = consuming;
+        void consuming.finally(() => {
+            if (this.consumingResult !== consuming) return;
+            this.consumingResult = null;
+            this.completionResult = null;
+        });
+        return consuming;
     }
 }
