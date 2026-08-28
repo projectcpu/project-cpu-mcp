@@ -1753,9 +1753,13 @@ describe('PayboxCoordinator', () => {
         await expect(coordinator.authenticate({ force: true, payboxCredentialId: null })).rejects.toThrow(
             'storage clear failed',
         );
+        await expect(coordinator.authenticate({ force: true, payboxCredentialId: null })).rejects.toThrow(
+            'storage clear failed',
+        );
 
         expect(load).toHaveBeenCalledOnce();
-        expect(clearSession).toHaveBeenCalledOnce();
+        expect(clear).toHaveBeenCalledTimes(2);
+        expect(clearSession).toHaveBeenCalledTimes(2);
         expect(authenticate).toHaveBeenCalledOnce();
         expect(coordinator.isReady()).toBe(false);
         expect(() => coordinator.get()).toThrow('not authenticated');

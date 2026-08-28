@@ -101,17 +101,16 @@ export class PayboxCoordinator implements WalletProvider {
         const requestedCredentialId = input.payboxCredentialId ?? null;
         if (!input.force) return this.authenticateWithRecovery(requestedCredentialId);
         if (this.forcing !== null) return this.forcing;
-        const forcing = this.authenticateForced();
-        this.forcing = forcing;
-        void forcing.then(
-            () => {
-                if (this.forcing === forcing) this.forcing = null;
-            },
-            () => {
-                if (this.forcing === forcing) this.forcing = null;
-            },
-        );
-        return forcing;
+        this.forcing = this.runForcedAuthentication();
+        return this.forcing;
+    }
+
+    private async runForcedAuthentication(): Promise<PayboxAuthenticateResult> {
+        try {
+            return await this.authenticateForced();
+        } finally {
+            this.forcing = null;
+        }
     }
 
     private async authenticateForced(): Promise<PayboxAuthenticateResult> {
@@ -262,7 +261,7 @@ export class PayboxCoordinator implements WalletProvider {
             }
             throw new Error('Paybox authentication is already in progress for another Wallet.');
         }
-        const authentication = this.validateRestored(wallet, material, generation, credentialId, address);
+        const authentication = this.runRestoredAuthentication(wallet, material, generation, credentialId, address);
         const flight: PayboxRestoredAuthenticationFlight = {
             credentialId,
             address,
@@ -270,15 +269,27 @@ export class PayboxCoordinator implements WalletProvider {
             promise: authentication,
         };
         this.restoring = flight;
-        void authentication.then(
-            () => {
-                if (this.restoring === flight) this.restoring = null;
-            },
-            () => {
-                if (this.restoring === flight) this.restoring = null;
-            },
-        );
         return authentication;
+    }
+
+    private async runRestoredAuthentication(
+        wallet: WalletManager,
+        material: PayboxAuthMaterial,
+        generation: number,
+        credentialId: string,
+        address: Address,
+    ): Promise<PayboxAuthenticateResult> {
+        try {
+            return await this.validateRestored(wallet, material, generation, credentialId, address);
+        } finally {
+            if (
+                this.restoring?.generation === generation &&
+                this.restoring.credentialId === credentialId &&
+                this.restoring.address === address
+            ) {
+                this.restoring = null;
+            }
+        }
     }
 
     private async validateRestored(
@@ -334,7 +345,7 @@ export class PayboxCoordinator implements WalletProvider {
             }
             throw new PayboxWalletSelectionError(PayboxErrorCode.WalletSelectionNotPending);
         }
-        const continuation = this.continueWithMaterial(material, requestedCredentialId, generation);
+        const continuation = this.runContinuation(material, requestedCredentialId, generation);
         const flight: PayboxContinuationFlight = {
             material,
             requestedCredentialId,
@@ -342,15 +353,25 @@ export class PayboxCoordinator implements WalletProvider {
             promise: continuation,
         };
         this.continuing = flight;
-        void continuation.then(
-            () => {
-                if (this.continuing === flight) this.continuing = null;
-            },
-            () => {
-                if (this.continuing === flight) this.continuing = null;
-            },
-        );
         return continuation;
+    }
+
+    private async runContinuation(
+        material: PayboxAuthMaterial,
+        requestedCredentialId: string | null,
+        generation: number,
+    ): Promise<PayboxAuthenticateResult> {
+        try {
+            return await this.continueWithMaterial(material, requestedCredentialId, generation);
+        } finally {
+            if (
+                this.continuing?.generation === generation &&
+                this.continuing.material === material &&
+                this.continuing.requestedCredentialId === requestedCredentialId
+            ) {
+                this.continuing = null;
+            }
+        }
     }
 
     private async continueWithMaterial(
