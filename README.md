@@ -122,7 +122,15 @@ codex plugin marketplace add https://github.com/projectcpu/project-cpu-mcp
 codex plugin add project-cpu@project-cpu
 ```
 
-Codex plugin installation is global. For the recommended project-only fallback, copy `plugins/project-cpu/skills/project-cpu` into your project's skill directory and add the contents of `plugins/project-cpu/.mcp.json` to that project's `.codex/config.toml` using Codex's project MCP configuration. Start a new Codex session after either setup.
+Codex plugin installation is global. For the recommended project-only fallback, copy `plugins/project-cpu/skills/project-cpu` to `<project>/.codex/skills/project-cpu`. Then create or edit `<project>/.codex/config.toml` and add:
+
+```toml
+[mcp_servers.project-cpu]
+command = "npx"
+args = ["-y", "project-cpu-mcp@latest"]
+```
+
+Start a new Codex session after either setup.
 
 ### Authenticate
 
