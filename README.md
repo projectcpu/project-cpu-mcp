@@ -97,6 +97,37 @@ Add to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf:
 
 Every command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
 
+## Agent setup
+
+Install the Project CPU plugin when you want its orchestration skill and MCP server together. Prefer a **project-only** installation so game context is not loaded for unrelated work. The plugin starts the published server with `npx -y project-cpu-mcp@latest`; it contains no wallet credential.
+
+### Claude Code
+
+Add the repository marketplace, then install the plugin at the scope you choose:
+
+```bash
+claude plugin marketplace add projectcpu/project-cpu-mcp
+claude plugin install project-cpu@project-cpu --scope local
+```
+
+- Use `--scope local` for the current checkout, `--scope project` for the project, or `--scope user` for every local project.
+- Restart Claude Code or begin a new session after installation.
+
+### Codex
+
+For global use, add the repository marketplace and install the native plugin:
+
+```bash
+codex plugin marketplace add https://github.com/projectcpu/project-cpu-mcp
+codex plugin add project-cpu@project-cpu
+```
+
+Codex plugin installation is global. For the recommended project-only fallback, copy `plugins/project-cpu/skills/project-cpu` into your project's skill directory and add the contents of `plugins/project-cpu/.mcp.json` to that project's `.codex/config.toml` using Codex's project MCP configuration. Start a new Codex session after either setup.
+
+### Authenticate
+
+After reloading the harness, call `cpu_persona` first, then `cpu_authenticate`. Paybox opens browser authorization and keeps wallet secrets out of chat and configuration.
+
 ## Wallet modes
 
 The server uses one wallet mode to sign actions for the Operator:
