@@ -512,7 +512,7 @@ export class PayboxCoordinator implements WalletProvider {
             credentialId: this.credentialId,
             address: this.address,
         };
-        // The guard preserves credentials while making a possibly consumed rotating token non-replayable after restart.
+        // A crash after the exchange may lose rotated credentials, so restart must not reuse the previous token blindly.
         this.options.storage.save(withPayboxRefreshState(currentRecord, PayboxRefreshState.ExchangePending));
         let tokens: PayboxAuthMaterial['tokens'];
         try {
@@ -521,12 +521,10 @@ export class PayboxCoordinator implements WalletProvider {
             const refreshError =
                 error instanceof Error ? error : new Error('Paybox OAuth tokens could not be refreshed safely.');
             if (this.generation === generation) {
-                if (
-                    refreshError instanceof PayboxTemporarilyUnavailableError &&
-                    refreshError.refreshFailureDisposition === PayboxRefreshFailureDisposition.SafeToRetry
-                ) {
+                if (refreshError instanceof PayboxTemporarilyUnavailableError) {
                     try {
                         this.options.storage.save(withPayboxRefreshState(currentRecord, PayboxRefreshState.Ready));
+                        this.refreshPersistenceError = null;
                     } catch (persistenceError) {
                         this.refreshPersistenceError =
                             persistenceError instanceof Error

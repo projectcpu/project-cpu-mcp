@@ -724,7 +724,7 @@ describe('PayboxCoordinator', () => {
         expect(authenticate).not.toHaveBeenCalled();
     });
 
-    it('does not retry an ambiguous refresh failure after persisted authority was invalidated', async () => {
+    it('retries an ambiguous refresh failure on the next explicit authentication', async () => {
         const storedTokens = {
             clientId: 'client',
             accessToken: 'old-access',
@@ -733,9 +733,18 @@ describe('PayboxCoordinator', () => {
             resource: 'https://api.paybox.test/mcp',
             baseUrl: 'https://api.paybox.test',
         };
-        const refreshTokens = vi.fn(async () => {
-            throw new Error('refresh result unknown');
-        });
+        const rotatedTokens = {
+            ...storedTokens,
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+            expiresAt: Date.now() + 600_000,
+        };
+        const refreshError = new PayboxTemporarilyUnavailableError(
+            { cause: new TypeError('fetch failed') },
+            PayboxRefreshFailureDisposition.Ambiguous,
+        );
+        const refreshTokens = vi.fn(async () => rotatedTokens);
+        refreshTokens.mockRejectedValueOnce(refreshError);
         const save = vi.fn();
         const coordinator = new PayboxCoordinator({
             storage: {
@@ -752,7 +761,7 @@ describe('PayboxCoordinator', () => {
             flow: { start: vi.fn(), finish: vi.fn(), cancel: vi.fn() },
             sdk: {
                 refreshTokens,
-                listEligibleAutonomousEvmGrants: vi.fn(),
+                listEligibleAutonomousEvmGrants: vi.fn(async () => selectedGrantList('stored-credential')),
                 createWallet: vi.fn(() => wallet),
                 signMessage: vi.fn(),
                 signTransaction: vi.fn(),
@@ -760,16 +769,15 @@ describe('PayboxCoordinator', () => {
             authenticator: testAuthenticator(vi.fn(async () => 'game-jwt')),
         });
 
-        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
-            'refresh result unknown',
-        );
-        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toThrow(
-            'refresh result unknown',
-        );
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).rejects.toBe(refreshError);
+        await expect(coordinator.authenticate({ force: false, payboxCredentialId: null })).resolves.toEqual({
+            status: PayboxAuthStatus.Authenticated,
+            address: '0x0000000000000000000000000000000000000001',
+        });
 
-        expect(save).toHaveBeenCalledOnce();
+        expect(refreshTokens).toHaveBeenCalledTimes(2);
         expect(save).toHaveBeenCalledWith(expect.objectContaining({ refreshState: 'exchange_pending' }));
-        expect(refreshTokens).toHaveBeenCalledOnce();
+        expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ tokens: rotatedTokens }));
     });
 
     it.each([
@@ -781,7 +789,7 @@ describe('PayboxCoordinator', () => {
                 { cause: new TypeError('fetch failed') },
                 PayboxRefreshFailureDisposition.Ambiguous,
             ),
-            'exchange_pending',
+            'ready',
         ],
         [
             'timeout',
@@ -791,7 +799,7 @@ describe('PayboxCoordinator', () => {
                 },
                 PayboxRefreshFailureDisposition.Ambiguous,
             ),
-            'exchange_pending',
+            'ready',
         ],
     ])('preserves durable and runtime authority when refresh hits %s', async (_case, refreshError, refreshState) => {
         const storedTokens = {
