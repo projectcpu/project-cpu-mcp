@@ -103,6 +103,59 @@ describe('LoopbackAuthFlow', () => {
         expect(fetchRequest).toHaveBeenCalledTimes(count);
     });
 
+    it('classifies rejected discovery JSON without exposing parser details', async () => {
+        const fetchRequest = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            async json(): Promise<unknown> {
+                throw new SyntaxError('raw discovery body secret?private_stage=discovery');
+            },
+        }));
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: { fetch: fetchRequest },
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+
+        const failure = flow.start();
+
+        await expectParserFailure(failure, /raw|secret|private_stage|discovery|parser|SyntaxError/u);
+        expect(fetchRequest).toHaveBeenCalledOnce();
+    });
+
+    it('classifies rejected registration JSON without exposing parser details', async () => {
+        const fetchRequest = vi.fn(async (url: string) => {
+            if (url.endsWith('/register')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    async json(): Promise<unknown> {
+                        throw new SyntaxError('raw registration body secret?private_stage=registration');
+                    },
+                };
+            }
+            return response({
+                authorization_endpoint: 'https://issuer.example/authorize',
+                registration_endpoint: 'https://issuer.example/register',
+                token_endpoint: 'https://issuer.example/token',
+            });
+        });
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: { fetch: fetchRequest },
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+
+        const failure = flow.start();
+
+        await expectParserFailure(failure, /raw|secret|private_stage|registration|parser|SyntaxError/u);
+        expect(fetchRequest).toHaveBeenCalledTimes(2);
+    });
+
     it.each([
         ['HTTP 429', { ...response({}), ok: false, status: 429 }],
         ['HTTP 503', { ...response({}), ok: false, status: 503 }],
@@ -400,6 +453,46 @@ describe('LoopbackAuthFlow', () => {
         expect(fetchRequest).toHaveBeenCalledTimes(3);
     });
 
+    it('classifies rejected token JSON after exactly one exchange without exposing callback or parser details', async () => {
+        const fetchRequest = vi.fn(async (url: string) => {
+            if (url.endsWith('/.well-known/oauth-authorization-server')) {
+                return response({
+                    authorization_endpoint: 'https://issuer.example/authorize',
+                    registration_endpoint: 'https://issuer.example/register',
+                    token_endpoint: 'https://issuer.example/token?private_stage=exchange',
+                });
+            }
+            if (url.endsWith('/register')) return response({ client_id: 'client' });
+            return {
+                ok: true,
+                status: 200,
+                async json(): Promise<unknown> {
+                    throw new SyntaxError('raw token body secret-code from parser');
+                },
+            };
+        });
+        const flow = new LoopbackAuthFlow({
+            issuerUrl: 'https://issuer.example',
+            httpClient: { fetch: fetchRequest },
+            clock,
+            timeoutMs: 1000,
+        });
+        flows.push(flow);
+        const start = await flow.start();
+        const authorization = new URL(start.authorizationUrl);
+        const callback = new URL(authorization.searchParams.get('redirect_uri') ?? '');
+        callback.searchParams.set('code', 'secret-code');
+        callback.searchParams.set('state', authorization.searchParams.get('state') ?? '');
+
+        expect((await fetch(callback)).status).toBe(200);
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        const failure = flow.finish();
+        await expectParserFailure(failure, /raw|secret-code|private_stage|exchange|parser|SyntaxError/u);
+        expect(fetchRequest).toHaveBeenCalledTimes(3);
+        expect(fetchRequest.mock.calls.filter(([url]) => String(url).includes('/token')).length).toBe(1);
+    });
+
     it('cancels pending work and permits a clean replacement start', async () => {
         const flow = new LoopbackAuthFlow({
             issuerUrl: 'https://issuer.example',
@@ -497,4 +590,22 @@ function controlledPromise<T>(): { promise: Promise<T>; resolve: (value: T) => v
         resolvePromise = resolve;
     });
     return { promise, resolve: resolvePromise };
+}
+
+async function expectParserFailure(failure: Promise<unknown>, forbidden: RegExp): Promise<void> {
+    const error: unknown = await failure.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(PayboxAuthFlowError);
+    expect(error).toHaveProperty('data', {
+        code: 'PAYBOX_AUTHORIZATION_FAILED',
+        stateCleared: false,
+        retryable: false,
+        nextTool: 'cpu_authenticate',
+    });
+    expect(error).toHaveProperty('diagnostic', {
+        failureClass: 'authentication_flow',
+        resetCause: null,
+        resetDepth: 'none',
+    });
+    expect(error).not.toHaveProperty('cause');
+    expect(String(error)).not.toMatch(forbidden);
 }

@@ -109,7 +109,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         if (!response.ok) {
             throw classifiedPayboxHttpStatus(response.status, PayboxRequestContext.Unauthenticated);
         }
-        const value = await response.json();
+        const value = await this.responseJson(response);
         if (!isObject(value)) throw oauthError('malformed discovery response');
         const authorizationEndpoint = urlField(value, 'authorization_endpoint');
         const registrationEndpoint = urlField(value, 'registration_endpoint');
@@ -127,7 +127,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
         if (!response.ok) {
             throw classifiedPayboxHttpStatus(response.status, PayboxRequestContext.Unauthenticated);
         }
-        const value = await response.json();
+        const value = await this.responseJson(response);
         if (!isObject(value)) throw oauthError('malformed registration response');
         return nonEmptyString(value, 'client_id');
     }
@@ -261,7 +261,7 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             }).toString(),
         });
         if (!response.ok) throw oauthTokenError(response.status);
-        return tokenResponse(await response.json());
+        return tokenResponse(await this.responseJson(response));
     }
 
     private armTimeout(): void {
@@ -274,6 +274,14 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             return await this.options.httpClient.fetch(url, init);
         } catch (error) {
             throw classifiedPayboxError(error, PayboxRequestContext.Unauthenticated);
+        }
+    }
+
+    private async responseJson(response: PayboxHttpResponse): Promise<unknown> {
+        try {
+            return await response.json();
+        } catch {
+            throw oauthError('malformed response');
         }
     }
 
