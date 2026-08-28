@@ -84,7 +84,7 @@ export class PayboxCoordinator implements WalletProvider {
         const requestedCredentialId = input.payboxCredentialId ?? null;
         if (!input.force) return this.authenticateWithRecovery(requestedCredentialId);
         if (this.forcing !== null) return this.forcing;
-        const forcing = this.authenticateForced(requestedCredentialId);
+        const forcing = this.authenticateForced();
         this.forcing = forcing;
         void forcing.then(
             () => {
@@ -97,9 +97,9 @@ export class PayboxCoordinator implements WalletProvider {
         return forcing;
     }
 
-    private async authenticateForced(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {
+    private async authenticateForced(): Promise<PayboxAuthenticateResult> {
         this.resetAuthState();
-        return this.authenticateWithRecovery(requestedCredentialId);
+        return this.authenticateWithRecovery(null);
     }
 
     private async authenticateWithRecovery(requestedCredentialId: string | null): Promise<PayboxAuthenticateResult> {

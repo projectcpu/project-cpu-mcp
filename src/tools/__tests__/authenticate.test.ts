@@ -208,7 +208,7 @@ describe('cpu_authenticate', () => {
         expect(harness.verify).toHaveBeenCalledTimes(2);
     });
 
-    it('force-clears the complete Paybox and game session before returning a fresh OAuth state', async () => {
+    it('force-clears stale Paybox selection and game session before returning a fresh OAuth state', async () => {
         const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT);
         client = harness.toolClient;
 
@@ -217,7 +217,10 @@ describe('cpu_authenticate', () => {
         await vi.waitFor(() => expect(harness.session.getStatus()).toBe(SessionStatus.Active));
 
         await expect(
-            harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: { force: true } }),
+            harness.toolClient.callTool({
+                name: 'cpu_authenticate',
+                arguments: { force: true, payboxCredentialId: 'stale-credential' },
+            }),
         ).resolves.toEqual({
             content: [
                 {

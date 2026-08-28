@@ -73,7 +73,7 @@ describe('PayboxCoordinator', () => {
         expect(() => coordinator.get()).toThrow('not authenticated');
     });
 
-    it('single-flights the full reset and OAuth start for overlapping forced authentication calls', async () => {
+    it('single-flights forced authentication with differing stale Wallet selections', async () => {
         const startResult = controlledPromise<{ authorizationUrl: string }>();
         const events = new Array<string>();
         const clear = vi.fn(() => events.push('paybox-cleared'));
@@ -95,8 +95,8 @@ describe('PayboxCoordinator', () => {
             authenticator: { authenticate: vi.fn(), clearSession },
         });
 
-        const first = coordinator.authenticate({ force: true, payboxCredentialId: null });
-        const second = coordinator.authenticate({ force: true, payboxCredentialId: null });
+        const first = coordinator.authenticate({ force: true, payboxCredentialId: 'stale-credential-a' });
+        const second = coordinator.authenticate({ force: true, payboxCredentialId: 'stale-credential-b' });
         await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
         expect(clear).toHaveBeenCalledOnce();
         expect(clearSession).toHaveBeenCalledOnce();
