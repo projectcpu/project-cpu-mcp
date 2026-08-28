@@ -1,3 +1,5 @@
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
+
 import { isAddress, type Address, type Hash, type Hex } from 'viem';
 import { z } from 'zod';
 
@@ -211,6 +213,16 @@ export interface PayboxAuthFlow {
     start(signal: AbortSignal): Promise<PayboxAuthStart>;
     finish(): Promise<PayboxAuthMaterial>;
 }
+
+export interface IPayboxBrowserOpener {
+    open(url: string): void;
+}
+
+export type PayboxBrowserSpawn = (
+    command: string,
+    args: ReadonlyArray<string>,
+    options: SpawnOptions,
+) => Pick<ChildProcess, 'once' | 'unref'>;
 
 export interface PayboxHttpResponse {
     ok: boolean;

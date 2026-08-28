@@ -60,36 +60,6 @@ describe('cpu_authenticate', () => {
         expect(jwt).toBe('restored-jwt');
     });
 
-    it('restores the game JWT through retained AGW authority after it was cleared', async () => {
-        const getAccessToken = vi.fn(async () => 'restored-jwt');
-        const authenticateDevice = vi.fn();
-        const handler = captureAuthenticateHandler({
-            config: { WALLET_MODE: WalletMode.AGW, OPERATOR_PERSONA: false },
-            session: {
-                isAuthenticated: () => true,
-                getSession: () => ({ jwt: null }),
-            },
-            auth: {
-                getAccessToken,
-                reauthenticate: vi.fn(),
-                getPendingAuth: vi.fn(() => null),
-                authenticateDevice,
-            },
-        } as unknown as AppContext);
-
-        const result = await handler({ force: null });
-
-        expect(result.isError).toBeUndefined();
-        expect(result.content).toEqual([
-            {
-                type: 'text',
-                text: 'Authenticated. Session token restored from the retained wallet session.',
-            },
-        ]);
-        expect(getAccessToken).toHaveBeenCalledOnce();
-        expect(authenticateDevice).not.toHaveBeenCalled();
-    });
-
     it('returns only the public Paybox pending and authenticated states without secret inputs', async () => {
         const storage: IPayboxAuthStorage = { load: vi.fn(() => null), save: vi.fn(), clear: vi.fn() };
         const flow: PayboxAuthFlow = {
@@ -140,7 +110,7 @@ describe('cpu_authenticate', () => {
                     text: JSON.stringify({
                         status: 'paybox_auth_required',
                         instructions:
-                            'Open the authorization URL in a local browser to continue Paybox authentication.',
+                            'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
                         authorizationUrl: 'https://accounts.test/authorize?state=opaque',
                     }),
                 },
@@ -214,7 +184,7 @@ describe('cpu_authenticate', () => {
                     text: JSON.stringify({
                         status: 'paybox_auth_required',
                         instructions:
-                            'Open the authorization URL in a local browser to continue Paybox authentication.',
+                            'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
                         authorizationUrl: 'https://accounts.test/authorize?state=opaque',
                     }),
                 },
@@ -459,7 +429,7 @@ describe('cpu_authenticate', () => {
                     text: JSON.stringify({
                         status: 'paybox_auth_required',
                         instructions:
-                            'Open the authorization URL in a local browser to continue Paybox authentication.',
+                            'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
                         authorizationUrl: 'https://accounts.test/authorize?state=opaque',
                     }),
                 },

@@ -7,7 +7,7 @@ you start it with a single `npx` command from any MCP client.
 
 ## Installation
 
-Pick your client below and add the server. No environment variables are required: the default Paybox mode guides you through browser authorization when you first call `cpu_authenticate`.
+Pick your client below and add the server. No environment variables are required: the default Paybox mode automatically opens browser authorization when you first call `cpu_authenticate`. The tool also returns the authorization URL as a fallback for headless environments or systems where the browser cannot be opened.
 
 <details>
 <summary><strong>Claude Code</strong></summary>
@@ -103,7 +103,7 @@ Every command above pins `@latest`, so restarting the server is how you update â
 
 | Variable | Default | When you need it |
 | --- | --- | --- |
-| `WALLET_MODE` | `paybox` | Set to `evm` for a local private-key wallet or `agw` for the Device Authorization flow. |
+| `WALLET_MODE` | `paybox` | Set to `evm` for a local private-key wallet. |
 | `PRIVATE_KEY` | â€” | Required only when `WALLET_MODE=evm`; `0x` followed by 64 hex chars (32 bytes). |
 | `API_URL` | `https://api.projectcpu.cc` | Point the client at a different game API deployment. |
 | `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
@@ -111,7 +111,7 @@ Every command above pins `@latest`, so restarting the server is how you update â
 | `OPERATOR_PERSONA` | `true` | Set to `false` to disable the `cpu_persona` tool and drop its pointer from the server's instructions. |
 | `DEBUG` | `false` | Set to `true` for debug-level logging on stderr. |
 
-Session state (JWT / session keys) is persisted to `~/.project-cpu/`.
+Session state is persisted to `~/.project-cpu/`.
 
 ## What the agent can do
 

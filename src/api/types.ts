@@ -7,7 +7,6 @@ import type { IJwtSession } from '../session/types.js';
 /** HTTP status codes the client and services branch on. */
 export enum HttpStatus {
     Ok = 200,
-    Accepted = 202,
     Unauthorized = 401,
     NotFound = 404,
     Conflict = 409,
@@ -49,23 +48,6 @@ export interface SiweVerifyResponse {
     user: {
         id: string;
         address: string;
-    };
-}
-
-export interface DeviceAuthResponse {
-    deviceCode: string;
-    userCode: string;
-    verificationUri: string;
-    expiresIn: number;
-    interval: number;
-}
-
-export interface DeviceTokenCompleteResponse {
-    sessionConfig: {
-        accountAddress: string;
-        sessionHash: string;
-        policies: unknown;
-        expiresAt: number;
     };
 }
 

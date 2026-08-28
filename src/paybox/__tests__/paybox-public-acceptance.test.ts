@@ -17,7 +17,8 @@ describe('Paybox public acceptance', () => {
 
         expect(first).toEqual({
             status: 'paybox_auth_required',
-            instructions: 'Open the authorization URL in a local browser to continue Paybox authentication.',
+            instructions:
+                'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
             authorizationUrl: 'https://accounts.paybox.test/authorize?state=acceptance',
         });
         expect(scenario.requests()).toEqual([
@@ -137,7 +138,8 @@ describe('Paybox public acceptance', () => {
 
         expect(await scenario.callAuthenticate({ force: true })).toEqual({
             status: 'paybox_auth_required',
-            instructions: 'Open the authorization URL in a local browser to continue Paybox authentication.',
+            instructions:
+                'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
             authorizationUrl: 'https://accounts.paybox.test/authorize?state=acceptance',
         });
         expect(scenario.persistedPaybox()).toBeNull();
@@ -153,7 +155,8 @@ describe('Paybox public acceptance', () => {
 
         expect(await scenario.callAuthenticate()).toEqual({
             status: 'paybox_auth_required',
-            instructions: 'Open the authorization URL in a local browser to continue Paybox authentication.',
+            instructions:
+                'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
             authorizationUrl: 'https://accounts.paybox.test/authorize?state=acceptance',
         });
         expect(scenario.persistedPaybox()).toBeNull();
@@ -169,7 +172,8 @@ describe('Paybox public acceptance', () => {
 
         expect(await scenario.callAuthenticate()).toEqual({
             status: 'paybox_auth_required',
-            instructions: 'Open the authorization URL in a local browser to continue Paybox authentication.',
+            instructions:
+                'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
             authorizationUrl: 'https://accounts.paybox.test/authorize?state=acceptance',
         });
         expect(scenario.persistedPaybox()).toBeNull();
@@ -245,7 +249,8 @@ describe('Paybox public acceptance', () => {
 
         const expected = {
             status: 'paybox_auth_required',
-            instructions: 'Open the authorization URL in a local browser to continue Paybox authentication.',
+            instructions:
+                'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.',
             authorizationUrl: 'https://accounts.paybox.test/authorize?state=acceptance',
         };
         await expect(first).resolves.toEqual(expected);

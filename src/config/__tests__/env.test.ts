@@ -16,9 +16,8 @@ describe('loadEnvConfig WALLET_MODE', () => {
         expect(loadEnvConfig(EVM_ENV).WALLET_MODE).toBe(WalletMode.EVM);
     });
 
-    it('requires a private key only in explicit EVM mode', () => {
+    it('requires a private key in explicit EVM mode', () => {
         expect(() => loadEnvConfig({ WALLET_MODE: WalletMode.EVM })).toThrow(/PRIVATE_KEY/);
-        expect(loadEnvConfig({ WALLET_MODE: WalletMode.AGW }).WALLET_MODE).toBe(WalletMode.AGW);
     });
 });
 

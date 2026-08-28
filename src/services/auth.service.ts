@@ -1,22 +1,11 @@
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-
 import { buildSiweMessage } from './siwe.utils.js';
-import type { AuthServiceOptions, DeviceAuthResult } from './types.js';
+import type { AuthServiceOptions } from './types.js';
 import type { ApiClient } from '../api/client.js';
-import {
-    type DeviceAuthResponse,
-    type DeviceTokenCompleteResponse,
-    HttpStatus,
-    type IAuthenticator,
-    type SiweNonceResponse,
-    type SiweVerifyResponse,
-} from '../api/types.js';
+import { HttpStatus, type IAuthenticator, type SiweNonceResponse, type SiweVerifyResponse } from '../api/types.js';
 import type { ILogger } from '../logger/types.js';
 import { isJwtExpired } from '../session/jwt.utils.js';
 import type { SessionManager } from '../session/manager.js';
 import { SessionStatus } from '../session/types.js';
-import { WalletMode } from '../types.js';
-import { sleep } from '../utils/async.utils.js';
 import type { WalletManager, WalletProvider } from '../wallet/types.js';
 
 export class AuthService implements IAuthenticator {
@@ -24,8 +13,6 @@ export class AuthService implements IAuthenticator {
     private readonly api: ApiClient;
     private readonly wallet: WalletProvider;
     private readonly logger: ILogger;
-
-    private pendingAuth: DeviceAuthResult | null = null;
 
     constructor(options: AuthServiceOptions) {
         this.session = options.session;
@@ -128,103 +115,9 @@ export class AuthService implements IAuthenticator {
         this.session.setSession({
             walletMode,
             address,
-            sessionPrivateKey: null,
             jwt,
-            sessionConfig: null,
             createdAt: now,
             updatedAt: now,
         });
-    }
-
-    // ---- Device Authorization (AGW mode) ----
-
-    getPendingAuth(): DeviceAuthResult | null {
-        return this.pendingAuth;
-    }
-
-    async authenticateDevice(): Promise<DeviceAuthResult> {
-        const sessionPrivateKey = generatePrivateKey();
-        const account = privateKeyToAccount(sessionPrivateKey);
-        const signerAddress = account.address;
-
-        this.logger.info('starting device auth', { signerAddress });
-
-        const { data: deviceAuth } = await this.api.request<DeviceAuthResponse>('/api/v1/auth/device/start', {
-            method: 'POST',
-            body: { signerAddress },
-        });
-
-        const verificationUrl = `${deviceAuth.verificationUri}?code=${deviceAuth.userCode}`;
-
-        const result: DeviceAuthResult = {
-            verificationUrl,
-            userCode: deviceAuth.userCode,
-        };
-
-        this.pendingAuth = result;
-
-        this.pollUntilComplete(
-            deviceAuth.deviceCode,
-            deviceAuth.interval,
-            deviceAuth.expiresIn,
-            sessionPrivateKey,
-            signerAddress,
-        )
-            .catch((error) => {
-                this.logger.error('device auth polling failed', {
-                    error,
-                });
-            })
-            .finally(() => {
-                this.pendingAuth = null;
-            });
-
-        this.logger.info('device auth started — user must open URL', { url: verificationUrl });
-        return result;
-    }
-
-    private async pollUntilComplete(
-        deviceCode: string,
-        intervalS: number,
-        expiresInS: number,
-        sessionPrivateKey: `0x${string}`,
-        signerAddress: string,
-    ): Promise<void> {
-        const deadline = Date.now() + expiresInS * 1000;
-
-        while (Date.now() < deadline) {
-            await sleep(intervalS * 1000);
-
-            const { status, data } = await this.api.request<DeviceTokenCompleteResponse>('/api/v1/auth/device/token', {
-                method: 'POST',
-                body: { deviceCode },
-            });
-
-            if (status === HttpStatus.Accepted) {
-                this.logger.debug('device auth still pending');
-                continue;
-            }
-
-            if (status !== HttpStatus.Ok) {
-                throw new Error(`Device auth polling failed: ${status}`);
-            }
-
-            const now = new Date().toISOString();
-
-            this.session.setSession({
-                walletMode: WalletMode.AGW,
-                address: signerAddress,
-                sessionPrivateKey,
-                jwt: null,
-                sessionConfig: data.sessionConfig,
-                createdAt: now,
-                updatedAt: now,
-            });
-
-            this.logger.info('device auth completed', { address: signerAddress });
-            return;
-        }
-
-        throw new Error('Device authorization timed out. Please try again.');
     }
 }

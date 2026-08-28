@@ -17,11 +17,13 @@ import {
     PayboxLoopbackUnavailableError,
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
+import { SystemBrowserOpener } from './browser-opener.js';
 import { formKey, isObject, nonEmptyString, tokenResponse, urlField } from './loopback-flow.utils.js';
 import { isPbxk1 } from './signing-key.utils.js';
 import { classifiedPayboxError, classifiedPayboxHttpStatus } from '../sdk/utils.js';
 import {
     type LoopbackAuthFlowOptions,
+    type IPayboxBrowserOpener,
     type OAuthMetadata,
     type OAuthTokenResponse,
     type PayboxAuthFlow,
@@ -50,7 +52,10 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
     private readonly waiters = new Set<() => void>();
     private readonly waiterRejectors = new Set<(error: Error) => void>();
 
-    public constructor(private readonly options: LoopbackAuthFlowOptions) {}
+    public constructor(
+        private readonly options: LoopbackAuthFlowOptions,
+        private readonly browserOpener: IPayboxBrowserOpener = new SystemBrowserOpener(),
+    ) {}
 
     public async start(parentSignal: AbortSignal): Promise<PayboxAuthStart> {
         if (this.started) {
@@ -93,7 +98,13 @@ export class LoopbackAuthFlow implements PayboxAuthFlow {
             authorizationUrl.searchParams.set('state', this.state);
             authorizationUrl.searchParams.set('code_challenge', pkceChallenge(this.verifier));
             authorizationUrl.searchParams.set('code_challenge_method', 'S256');
-            return { authorizationUrl: authorizationUrl.toString() };
+            const serializedAuthorizationUrl = authorizationUrl.toString();
+            try {
+                this.browserOpener.open(serializedAuthorizationUrl);
+            } catch {
+                // Returning the URL keeps authentication usable when GUI launch is unavailable.
+            }
+            return { authorizationUrl: serializedAuthorizationUrl };
         } catch (error) {
             if (signal.aborted) throw this.abortError(signal.reason);
             if (this.signal === signal) this.reset();

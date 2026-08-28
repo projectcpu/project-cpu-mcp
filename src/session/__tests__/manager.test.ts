@@ -27,9 +27,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     return {
         walletMode: WalletMode.EVM,
         address: '0x1234567890123456789012345678901234567890',
-        sessionPrivateKey: null,
         jwt: buildJwt(inOneHour),
-        sessionConfig: null,
         createdAt: now,
         updatedAt: now,
         ...overrides,
@@ -108,12 +106,8 @@ describe('SessionManager', () => {
         expect(() => manager.setJwt('new-jwt')).toThrow(/no session/i);
     });
 
-    it('clearJwt preserves wallet session material while removing the game token', () => {
-        const session = createSession({
-            walletMode: WalletMode.AGW,
-            sessionPrivateKey: '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d',
-            sessionConfig: { accountAddress: '0xWALLET', sessionHash: '0xHASH', policies: {}, expiresAt: 1 },
-        });
+    it('clearJwt preserves session identity while removing the game token', () => {
+        const session = createSession();
         storage._seed(session);
         manager.initialize();
 
@@ -122,9 +116,8 @@ describe('SessionManager', () => {
         expect(manager.getSession()).toEqual(
             expect.objectContaining({
                 jwt: null,
-                walletMode: WalletMode.AGW,
-                sessionPrivateKey: session.sessionPrivateKey,
-                sessionConfig: session.sessionConfig,
+                walletMode: WalletMode.EVM,
+                address: session.address,
             }),
         );
         expect(storage.load()).toEqual(expect.objectContaining({ jwt: null, address: session.address }));

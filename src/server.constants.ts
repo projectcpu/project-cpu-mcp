@@ -1,8 +1,8 @@
 export const SERVER_INSTRUCTIONS = [
     'MCP server for Project CPU (blockchain game on EVM).',
     'Load your operating brief with `cpu_persona` before any other tool; every other tool refuses until you do.',
-    'Authenticate first: `cpu_authenticate` opens a session — the default Paybox mode starts browser OAuth,',
-    'EVM mode signs in via SIWE locally, and AGW mode starts a Device Authorization flow.',
+    'Authenticate first: `cpu_authenticate` opens a session — the default Paybox mode opens browser OAuth',
+    'and returns its URL as a fallback, while EVM mode signs in via SIWE locally.',
     'Then read the entry point once: `cpu_get_game_config` carries the static rulebook — resources,',
     'buildings, costs, storage and transport parameters, contract addresses.',
     'It is a router, not the whole catalog: static facts plus a building index, and it names the tool to ask',

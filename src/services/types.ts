@@ -40,11 +40,6 @@ export interface AuthServiceOptions {
     logger: ILogger;
 }
 
-export interface DeviceAuthResult {
-    verificationUrl: string;
-    userCode: string;
-}
-
 /** Resolved contract addresses for the configured network. */
 export interface AppContracts {
     land: string;

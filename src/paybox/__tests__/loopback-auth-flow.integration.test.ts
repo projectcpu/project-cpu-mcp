@@ -6,6 +6,12 @@ import { LoopbackAuthFlow } from '../auth/loopback-flow.js';
 import { PayboxAuthFlowError } from '../errors.js';
 import type { PayboxHttpClient } from '../types.js';
 
+vi.mock('../auth/browser-opener.js', () => ({
+    SystemBrowserOpener: class {
+        public readonly open = vi.fn();
+    },
+}));
+
 const VALID_SIGNING_KEY =
     'pbxk1.eyJwIjoiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSIsInMiOiIy' +
     'MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyIn0';
@@ -185,6 +191,60 @@ describe('LoopbackAuthFlow', () => {
         });
         await expect(failure).rejects.not.toThrow('secret');
         expect(fetchRequest).toHaveBeenCalledOnce();
+    });
+
+    it('opens the authorization URL once after discovery, listening, and registration succeed', async () => {
+        const stages = new Array<string>();
+        const openBrowser = vi.fn(async () => {
+            stages.push('browser');
+        });
+        const client: PayboxHttpClient = {
+            async fetch(url) {
+                if (url.endsWith('/.well-known/oauth-authorization-server')) {
+                    stages.push('discovery');
+                    return response({
+                        authorization_endpoint: 'https://issuer.example/authorize',
+                        registration_endpoint: 'https://issuer.example/register',
+                        token_endpoint: 'https://issuer.example/token',
+                    });
+                }
+                stages.push('registration');
+                return response({ client_id: 'client' });
+            },
+        };
+        const options = {
+            issuerUrl: 'https://issuer.example',
+            httpClient: client,
+            timeoutMs: 1000,
+        };
+        const flow = new LoopbackAuthFlow(options, { open: openBrowser });
+
+        const start = await begin(flow);
+
+        expect(stages).toEqual(['discovery', 'registration', 'browser']);
+        expect(openBrowser).toHaveBeenCalledOnce();
+        expect(openBrowser).toHaveBeenCalledWith(start.authorizationUrl);
+        await expect(flow.start(new AbortController().signal)).rejects.toBeInstanceOf(PayboxAuthFlowError);
+        expect(openBrowser).toHaveBeenCalledOnce();
+    });
+
+    it('returns the authorization URL when the injected browser opener throws', async () => {
+        const openBrowser = vi.fn(() => {
+            throw new Error('headless');
+        });
+        const flow = new LoopbackAuthFlow(
+            {
+                issuerUrl: 'https://issuer.example',
+                httpClient: fakeClient(),
+                timeoutMs: 1000,
+            },
+            { open: openBrowser },
+        );
+
+        const start = await begin(flow);
+
+        expect(start.authorizationUrl).toMatch(/^https:\/\/issuer\.example\/authorize\?/u);
+        expect(openBrowser).toHaveBeenCalledOnce();
     });
 
     it('performs discovery, registration, PKCE exchange and one-shot key capture', async () => {
