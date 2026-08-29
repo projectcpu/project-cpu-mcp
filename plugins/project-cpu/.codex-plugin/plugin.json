@@ -1,6 +1,6 @@
 {
     "name": "project-cpu",
-    "version": "0.10.0",
+    "version": "0.11.0",
     "description": "Project CPU game orchestration skill and MCP server.",
     "author": {
         "name": "projectcpu"
@@ -8,7 +8,11 @@
     "homepage": "https://github.com/projectcpu/project-cpu-mcp#agent-setup",
     "repository": "https://github.com/projectcpu/project-cpu-mcp",
     "license": "MIT",
-    "keywords": ["project-cpu", "game", "mcp"],
+    "keywords": [
+        "project-cpu",
+        "game",
+        "mcp"
+    ],
     "skills": "./skills",
     "mcpServers": "./.mcp.json",
     "interface": {
@@ -17,8 +21,13 @@
         "longDescription": "A Project CPU game orchestrator and its local MCP server.",
         "developerName": "projectcpu",
         "category": "Games",
-        "capabilities": ["Game orchestration", "MCP tools"],
-        "defaultPrompt": ["Help me inspect my Project CPU game state."],
+        "capabilities": [
+            "Game orchestration",
+            "MCP tools"
+        ],
+        "defaultPrompt": [
+            "Help me inspect my Project CPU game state."
+        ],
         "brandColor": "#0A6B78"
     }
 }
