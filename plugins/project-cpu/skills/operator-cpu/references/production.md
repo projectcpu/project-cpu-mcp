@@ -2,13 +2,28 @@
 
 Use this reference to understand production options on the current Cells. Building, Mode, Process length, Upgrade, and offload choices are strategic decisions, not a fixed progression. Current config, Cell state, and tool descriptions define the executable costs and limits.
 
+## Find a production path
+
+Start from the resource the Operator wants to obtain, consume, or use for construction. `cpu_get_resource` gives its complete role map: which extractors mine it, which buildings consume it once as a Build input, which Recipes consume it each Cycle, and which Recipes produce it. These roles are different commitments and should not be substituted for one another.
+
+Use `cpu_find_buildings` with the role that answers the actual question:
+
+- `minableResource` finds extractors that can draw the resource from a Cell deposit;
+- `recipeOutput` finds crafters whose Recipes produce it;
+- `recipeInput` finds crafters whose Recipes consume it every Cycle;
+- `buildInput` finds buildings that consume it once during construction.
+
+Open a candidate with `cpu_get_building` to inspect its construction, operation, Upgrade, Mode-switch, and demolition facts. Its operation section shows the Recipes that building can run. Use `cpu_list_recipes` when the decision needs the whole Recipe catalog or a direct comparison of exact inputs, outputs, duration, and $CPU cost. Building a crafter only erects the machine: after it becomes Ready, `cpu_craft` selects a supported Recipe and the number of Batches, debiting that run's Recipe inputs up front.
+
 ## Establish a production Cell
 
-Inspect a relevant revealed Cell with `cpu_get_cell`: ownership, deposits, Warehouse room, building, Mode, and Process state constrain its options. `cpu_find_buildings` and the current catalog can compare extractors, crafters, Build inputs, $CPU cost, construction time, Upgrade links, and output capacity when the right building is not already known.
+Inspect a relevant revealed Cell with `cpu_get_cell`: ownership, deposits, Warehouse room, building, Mode, and Process state constrain its options. Match that Cell state against the production path rather than assuming every discovered building can operate on every Cell.
 
-If building serves the objective, `cpu_build` starts its Construction window. `cpu_upgrade` follows one valid direct Upgrade link and starts a new Construction window while preserving Cell-bound state described by the tool. Production and active Hub routing or trade require Ready; Hub fee intent can still be configured during Construction so it is in place when the Hub becomes Ready.
+If building serves the objective, `cpu_build` starts its Construction window. `cpu_upgrade` follows one valid direct Upgrade link and starts a new Construction window while preserving the deposits, liquid Warehouse balances, and Mode. Production and active Hub routing or trade require Ready. An owned Hub's Sale fee can be set with `cpu_set_sale_fee` during Construction so that rate is already configured when the Hub becomes Ready.
 
 An extractor or crafter's Mode selects one supported output. The first selection and restarting the same output are free; changing Mode can burn the live Switch cost. Compare the Cell's outputs before `cpu_start_mining` or `cpu_craft`, then use the confirmed result as the authority on what actually burned.
+
+`cpu_demolish` removes a building when the Cell has no Process holding its slot and, for a Hub, no route or Lot dependency blocking removal. Demolition burns the configured $CPU and consumes its configured materials, then leaves a rebuild cooldown. It preserves deposits and other Warehouse balances but clears the building and its Mode. Treat demolition as a strategic option whose live costs and blockers come from the building card, Cell state, and tool result.
 
 ## Mine in bounded runs
 
@@ -20,7 +35,7 @@ The current runtime schedules mining as a bounded Process. `batches` commits its
 
 Warehouse Full means a resource reached its Effective cap. Process Stall means less than one whole output Cycle fits, so settlement stops before the Warehouse necessarily reports Full. `cpu_get_mining_status`, `cpu_get_craft_status`, and `cpu_get_cell` show which condition applies.
 
-Possible responses include consuming the resource in a recipe, selling it through a resource Lot, withdrawing wCPU, or moving inventory to another owned Cell. Compare these against the Operator's objective and leave room for at least one complete Cycle if production should resume. For a chosen move, inspect the Cells and Route, use `cpu_quote_transport`, then `cpu_transport`; after arrival, `cpu_finalize_delivery` makes the inventory usable. Refresh a Quote when a decision-bearing Route, fee, balance, or capacity fact changes.
+Possible responses include consuming the resource in a recipe, selling it through a resource Lot, withdrawing wCPU, or moving inventory to another owned Cell. Compare these against the Operator's objective and leave room for at least one complete Cycle if production should resume. For a chosen move between owned Cells, `cpu_route_network` can export the current route graph and `cpu_next_hops` can inspect one-hop options; `cpu_quote_transport` validates the selected chain. `cpu_transport` submits that full chain once, and `cpu_finalize_delivery` makes the inventory usable after arrival. Refresh a Quote when a decision-bearing Route, fee, balance, or capacity fact changes.
 
 After room exists, a claim can settle matured Batches and reset a stalled Process. Verify the Stall cleared before assuming time is producing value again. A new Process remains unavailable until the prior completed one releases the Cell's process slot.
 
