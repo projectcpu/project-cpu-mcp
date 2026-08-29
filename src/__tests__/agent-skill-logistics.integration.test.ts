@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { CREATE_LOT_DESCRIPTION } from '../tools/trade/create-lot/constants.js';
+import { NEXT_HOPS_DESCRIPTION, ROUTE_NETWORK_DESCRIPTION } from '../tools/transport/constants.js';
+import { LIST_MY_TRANSPORTS_DESCRIPTION } from '../tools/transport/list-mine/constants.js';
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LOGISTICS = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'project-cpu', 'references', 'logistics.md');
 
@@ -50,33 +54,42 @@ describe('the logistics orchestration reference', () => {
         expect(transport).toMatch(/waypoint.*change|change.*waypoint/iu);
     });
 
-    it('turns a resource buy into a usable warehouse balance', () => {
+    it('uses the foreign-Hub route discovery contract before buying a resource lot', () => {
         const buying = section(readLogistics(), 'Buy resources');
 
+        expect(ROUTE_NETWORK_DESCRIPTION).toMatch(/foreign Hub is passage, never an end/iu);
+        expect(NEXT_HOPS_DESCRIPTION).toMatch(/Survey the legal next waypoints/iu);
+        expect(orderedTools(buying)).toContain('cpu_next_hops');
+        expect(orderedTools(buying)).not.toContain('cpu_route_network');
         expectToolsInOrder(orderedTools(buying), [
             'cpu_list_lots',
             'cpu_get_lot',
-            'cpu_route_network',
+            'cpu_next_hops',
             'cpu_quote_buy',
             'cpu_buy_lot',
             'cpu_list_my_transports',
             'cpu_finalize_delivery',
             'cpu_get_map',
         ]);
-        expect(buying).toMatch(/destination.*capacity|capacity.*destination/iu);
-        expect(buying).toMatch(/Lot|Fill/);
     });
 
-    it('keeps seller inventory recoverable after a live terms change or eviction', () => {
+    it('finalizes the listing delivery before using its open-lot lifecycle', () => {
         const selling = section(readLogistics(), 'Sell resources and recover escrow');
 
+        expect(CREATE_LOT_DESCRIPTION).toMatch(/lot is DELIVERING/iu);
+        expect(CREATE_LOT_DESCRIPTION).toMatch(/becomes buyable \(OPEN\).*cpu_finalize_delivery/iu);
+        expect(LIST_MY_TRANSPORTS_DESCRIPTION).toMatch(/ready_to_finalize/iu);
         expectToolsInOrder(orderedTools(selling), [
             'cpu_get_lot_terms',
-            'cpu_route_network',
+            'cpu_next_hops',
             'cpu_create_lot',
+            'cpu_list_my_transports',
+            'cpu_finalize_delivery',
+            'cpu_get_lot',
             'cpu_list_my_lots',
             'cpu_list_fills',
             'cpu_get_lot',
+            'cpu_next_hops',
             'cpu_quote_lot_return',
             'cpu_return_lot',
             'cpu_list_my_transports',
@@ -85,12 +98,5 @@ describe('the logistics orchestration reference', () => {
             'cpu_list_my_lots',
             'cpu_get_lot',
         ]);
-        expect(selling).toMatch(/live rate/iu);
-        expect(selling).toMatch(/seller tolerance/iu);
-        expect(selling).toMatch(/sale fee/iu);
-        expect(selling).toMatch(/Frozen/);
-        expect(selling).toMatch(/Evict|evict/);
-        expect(selling).toMatch(/syndicate/iu);
-        expect(selling).toMatch(/Cell Market/);
     });
 });

@@ -16,7 +16,7 @@ Use current reads for each route, Quote, Delivery, Lot, and Warehouse decision. 
 
 1. Use `cpu_list_lots` to find resource Lots, then inspect the chosen lot with `cpu_get_lot`. Select the exact resource, remaining amount, hub, seller, price, and OPEN state. A Fill is an executed resource-lot purchase, not a Cell Market order.
 2. Check the destination Warehouse has room for the full purchase before committing to it.
-3. Find a current hub-to-destination chain with `cpu_route_network`. Treat a changed route graph or a changed lot state as a new decision.
+3. Scout from the listing Hub with `cpu_next_hops`, choosing each legal waypoint toward the destination until the chain reaches the owned revealed cell. Treat a changed waypoint or lot state as a new decision.
 4. Request `cpu_quote_buy` for that exact lot, amount, and chain. Use its live sale rate, buyer and seller syndicate discount, transit cost, arrival time, and total debit. A frozen Lot or an unroutable waypoint requires another lot or route, not a reused Quote.
 5. Call `cpu_buy_lot` only while the lot, chain, destination capacity, and Quote are still current. Record the returned delivery id.
 6. Wait for `cpu_list_my_transports` to report readiness, then use `cpu_finalize_delivery`.
@@ -25,11 +25,12 @@ Use current reads for each route, Quote, Delivery, Lot, and Warehouse decision. 
 ## Sell resources and recover escrow
 
 1. Ask `cpu_get_lot_terms` for the live Hub and resource terms. Check lot-size limits, current lot capacity, and any Evicted remainders that already need recovery.
-2. Build the source-to-Hub path with `cpu_route_network`. Choose it using current foreign-Hub transit costs and relevant syndicate discounts.
+2. Scout the source-to-Hub chain leg by leg with `cpu_next_hops`. Choose each waypoint using current foreign-Hub transit costs and relevant syndicate discounts.
 3. Create the listing with `cpu_create_lot`, setting a seller tolerance for the maximum sale fee the seller accepts. Record the lot id and delivery id. The lot is not OPEN until its delivery settles.
-4. Track the listing through `cpu_list_my_lots`. Read `cpu_list_fills` to distinguish completed Fills from the remaining ask. Re-read the exact lot with `cpu_get_lot` before each market decision.
-5. The Hub settles its live rate on each sale. A live sale fee above seller tolerance leaves the Lot Frozen, so purchases revert until the rate falls or the seller returns the remainder. A syndicate can change sale and transit economics; use the current Quote and live terms rather than a cached fee. These resource Lots and Fills remain separate from Cell Market orders.
-6. A Hub owner can Evict one foreign OPEN Lot. Eviction leaves the seller's remaining goods escrowed and unbuyable. It neither transfers the goods nor returns every Lot.
-7. For an OPEN or Evicted lot that must leave the Hub, quote its whole remaining inventory with `cpu_quote_lot_return` using a current Hub-to-owned-cell chain. Copy its `maxTransitFeeWei` unchanged. If a waypoint or fee changes, quote again.
-8. Return exactly that one Lot with `cpu_return_lot`. Wait for `cpu_list_my_transports`, then call `cpu_finalize_delivery`.
-9. Verify the destination Warehouse in `cpu_get_map`, and re-check `cpu_list_my_lots` and `cpu_get_lot`. The returned remainder must be absent from escrow before treating the inventory as recovered.
+4. Wait for `cpu_list_my_transports` to mark the listing Delivery ready, then call `cpu_finalize_delivery`. Re-read the exact lot with `cpu_get_lot`; only OPEN Lots can enter market operations.
+5. Track the listing through `cpu_list_my_lots`. Read `cpu_list_fills` to distinguish completed Fills from the remaining ask. Re-read the exact lot with `cpu_get_lot` before each market decision.
+6. The Hub settles its live rate on each sale. A live sale fee above seller tolerance leaves the Lot Frozen, so purchases revert until the rate falls or the seller returns the remainder. A syndicate can change sale and transit economics; use the current Quote and live terms rather than a cached fee. These resource Lots and Fills remain separate from Cell Market orders.
+7. A Hub owner can Evict one foreign OPEN Lot. Eviction leaves the seller's remaining goods escrowed and unbuyable. It neither transfers the goods nor returns every Lot.
+8. For an OPEN or Evicted lot that must leave the Hub, scout its Hub-to-owned-cell chain with `cpu_next_hops`, then quote the whole remaining inventory with `cpu_quote_lot_return`. Copy its `maxTransitFeeWei` unchanged. If a waypoint or fee changes, quote again.
+9. Return exactly that one Lot with `cpu_return_lot`. Wait for `cpu_list_my_transports`, then call `cpu_finalize_delivery`.
+10. Verify the destination Warehouse in `cpu_get_map`, and re-check `cpu_list_my_lots` and `cpu_get_lot`. The returned remainder must be absent from escrow before treating the inventory as recovered.
