@@ -13,6 +13,13 @@ const MARKETPLACE = path.join(REPO_ROOT, '.claude-plugin', 'marketplace.json');
 const MCP = path.join(PLUGIN_ROOT, '.mcp.json');
 const SKILL = path.join(PLUGIN_ROOT, 'skills', 'project-cpu', 'SKILL.md');
 const README = path.join(REPO_ROOT, 'README.md');
+const RELEASE_PLEASE_CONFIG = path.join(REPO_ROOT, 'release-please-config.json');
+
+const COORDINATED_VERSION_FIELDS = [
+    { path: 'plugins/project-cpu/.claude-plugin/plugin.json', jsonpath: '$.version' },
+    { path: 'plugins/project-cpu/.codex-plugin/plugin.json', jsonpath: '$.version' },
+    { path: '.claude-plugin/marketplace.json', jsonpath: '$.plugins[0].version' },
+];
 
 function readJson(file: string): Record<string, unknown> {
     return JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
@@ -26,6 +33,16 @@ describe('the dual-harness plugin', () => {
         expect(readJson(CLAUDE_MANIFEST).version).toBe(PACKAGE.version);
         expect(readJson(CODEX_MANIFEST).version).toBe(PACKAGE.version);
         expect(plugins.find((plugin) => plugin.name === 'project-cpu')?.version).toBe(PACKAGE.version);
+    });
+
+    it('configures release-please to update every coordinated plugin version field', () => {
+        const config = readJson(RELEASE_PLEASE_CONFIG);
+        const packages = config.packages as Record<string, Record<string, unknown>>;
+        const extraFiles = packages['.']?.['extra-files'] as Array<Record<string, unknown>>;
+
+        expect(extraFiles).toEqual(
+            expect.arrayContaining(COORDINATED_VERSION_FIELDS.map((field) => ({ type: 'json', ...field }))),
+        );
     });
 
     it('uses one shared skill tree and MCP definition without a wallet secret', () => {
