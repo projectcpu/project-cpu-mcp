@@ -1,6 +1,6 @@
 {
     "name": "project-cpu",
-    "description": "Project CPU game plugin for Claude Code and Codex.",
+    "description": "Project CPU game plugin.",
     "owner": {
         "name": "projectcpu"
     },
