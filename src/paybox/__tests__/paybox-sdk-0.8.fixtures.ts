@@ -1,11 +1,13 @@
-export const PAYBOX_SDK_COMPATIBILITY_VERSION = '0.8.0';
+import type { ClientCredentialList, ClientGrantSummary } from '@paybox-sh/sdk';
 
 const autonomousWalletGrant = {
     credential: {
         id: 'wallet-a',
+        user_id: 'user-a',
         name: 'Acceptance Wallet',
         provider: 'Paybox',
         credential_type: 'wallet',
+        created_at: '2026-08-28T00:00:00.000Z',
         disabled_at: null,
         metadata: {
             chains: ['evm'],
@@ -13,29 +15,9 @@ const autonomousWalletGrant = {
         },
     },
     grant: { credential_id: 'wallet-a', approval_mode: 'autonomous' },
-};
+} satisfies ClientGrantSummary;
 
-export const payboxSdkEnvelopeGrantList: unknown = {
+export const payboxSdkEnvelopeGrantList: ClientCredentialList = {
     credentials: [autonomousWalletGrant],
     ungranted: [],
-};
-export const payboxLegacyDirectGrantList: unknown = [autonomousWalletGrant];
-
-export const payboxSdkSuccessfulSignature: unknown = {
-    status: 'success',
-    output: {
-        output_type: 'signature',
-        credential_id: 'wallet-a',
-        value: `0x${'11'.repeat(65)}`,
-    },
-};
-
-export const payboxSdkDeniedOperation: unknown = { status: 'denied' };
-
-export const payboxSdkRefreshResponse: unknown = {
-    clientId: 'client-b',
-    accessToken: 'access-b',
-    refreshToken: 'refresh-b',
-    expiresAt: 120_000,
-    resource: null,
 };

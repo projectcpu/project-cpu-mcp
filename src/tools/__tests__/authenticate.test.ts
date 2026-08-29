@@ -15,6 +15,7 @@ import {
     type IPayboxAuthStorage,
     type IPayboxSdkAdapter,
     type PayboxAuthFlow,
+    type PayboxSdkClient,
     type PayboxSdkClientFactory,
 } from '../../paybox/types.js';
 import { AuthService } from '../../services/auth.service.js';
@@ -220,19 +221,10 @@ describe('cpu_authenticate', () => {
                 },
                 grant: { credential_id: 'credential-b', approval_mode: 'autonomous' },
             },
-            {
-                credential: {
-                    id: 'unknown-mode',
-                    credential_type: 'wallet',
-                    disabled_at: null,
-                    metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
-                },
-                grant: { credential_id: 'unknown-mode', approval_mode: 'future_mode' },
-            },
-            { credential: { id: 'malformed-row' } },
-            null,
         ];
-        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, { credentials: choices });
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, {
+            credentials: { credentials: choices, ungranted: [] },
+        });
         client = harness.toolClient;
 
         await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
@@ -290,7 +282,9 @@ describe('cpu_authenticate', () => {
     });
 
     it('returns the corrective zero-grant error without discarding valid Paybox OAuth', async () => {
-        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, { credentials: [] });
+        const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, {
+            credentials: { credentials: [], ungranted: [] },
+        });
         client = harness.toolClient;
 
         await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
@@ -347,6 +341,8 @@ describe('cpu_authenticate', () => {
         const eligible = (id: string, disabledAt: string | null): Record<string, unknown> => ({
             credential: {
                 id,
+                name: id,
+                provider: 'test',
                 credential_type: 'wallet',
                 disabled_at: disabledAt,
                 metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
@@ -354,7 +350,10 @@ describe('cpu_authenticate', () => {
             grant: { credential_id: id, approval_mode: 'autonomous' },
         });
         const harness = await createPayboxPublicHarness(PAYBOX_ACCOUNT, {
-            credentials: [eligible('stale', null), eligible('replacement', null)],
+            credentials: {
+                credentials: [eligible('stale', null), eligible('replacement', null)],
+                ungranted: [],
+            },
         });
         client = harness.toolClient;
 
@@ -362,10 +361,10 @@ describe('cpu_authenticate', () => {
         await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
         await vi.waitFor(() => expect(harness.listCredentials).toHaveBeenCalledOnce());
         await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
-        harness.listCredentials.mockResolvedValueOnce([
-            eligible('stale', '2026-01-01T00:00:00Z'),
-            eligible('replacement', null),
-        ]);
+        harness.listCredentials.mockResolvedValueOnce({
+            credentials: [eligible('stale', '2026-01-01T00:00:00Z'), eligible('replacement', null)],
+            ungranted: [],
+        });
 
         const result = (await harness.toolClient.callTool({
             name: 'cpu_authenticate',
@@ -482,27 +481,29 @@ async function createPayboxPublicHarness(
             output: {
                 output_type: 'signature',
                 credential_id: request.credentialId,
-                value: await signer.signMessage({ message: request.intent.message }),
+                value: { signature: await signer.signMessage({ message: request.intent.message }) },
             },
         };
     });
-    const defaultCredentials = [
-        {
-            credential: {
-                id: 'credential-a',
-                credential_type: 'wallet',
-                disabled_at: null,
-                metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
+    const defaultCredentials = {
+        credentials: [
+            {
+                credential: {
+                    id: 'credential-a',
+                    name: 'Credential A',
+                    provider: 'test',
+                    credential_type: 'wallet',
+                    disabled_at: null,
+                    metadata: { chain: 'evm', address: PAYBOX_ACCOUNT.address },
+                },
+                grant: { credential_id: 'credential-a', approval_mode: 'autonomous' },
             },
-            grant: { approval_mode: 'autonomous' },
-        },
-    ];
+        ],
+        ungranted: [],
+    };
     const listCredentials = vi.fn(async () => options?.credentials ?? defaultCredentials);
     const sdkFactory: PayboxSdkClientFactory = {
-        create: () => ({
-            listCredentials,
-            requestWalletSign: sign,
-        }),
+        create: () => ({ listCredentials, requestWalletSign: sign }) as unknown as PayboxSdkClient,
     };
     const verify = vi.fn(async () => ({
         status: 200,

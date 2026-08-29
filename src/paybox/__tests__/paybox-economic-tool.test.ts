@@ -27,6 +27,7 @@ import type {
     IPayboxRpcClient,
     IPayboxSdkAdapter,
     PayboxAuthRecord,
+    PayboxSdkClient,
     PayboxSdkClientFactory,
     PayboxTokens,
 } from '../types.js';
@@ -80,12 +81,12 @@ describe('Paybox economic tool flow', () => {
                 output: {
                     output_type: 'signature',
                     credential_id: 'persisted-credential',
-                    value: serializedTransaction,
+                    value: { serializedTransaction },
                 },
             };
         });
         const sdkFactory: PayboxSdkClientFactory = {
-            create: vi.fn(() => ({ listCredentials: vi.fn(), requestWalletSign })),
+            create: vi.fn(() => ({ listCredentials: vi.fn(), requestWalletSign }) as unknown as PayboxSdkClient),
         };
         const sdk = new PayboxSdkAdapter(sdkFactory);
         const sendRawTransaction = vi.fn(async (_serializedTransaction: Hex) => transactionHash);

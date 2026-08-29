@@ -31,6 +31,7 @@ import type {
     IPayboxRpcClient,
     IPayboxSdkAdapter,
     PayboxAuthRecord,
+    PayboxSdkClient,
     PayboxSdkClientFactory,
     PayboxTokenRefresher,
     PayboxWalletAuthority,
@@ -142,15 +143,19 @@ export class PayboxPublicScenario {
     public useMultipleGrants(): void {
         this.grantResponse = {
             credentials: [grantRow('wallet-a', 'Acceptance Wallet A'), grantRow('wallet-b', 'Acceptance Wallet B')],
+            ungranted: [],
         };
     }
 
     public useZeroGrants(): void {
-        this.grantResponse = [];
+        this.grantResponse = { credentials: [], ungranted: [] };
     }
 
     public replaceSelectedGrant(): void {
-        this.grantResponse = [grantRow('wallet-replacement', 'Replacement Wallet')];
+        this.grantResponse = {
+            credentials: [grantRow('wallet-replacement', 'Replacement Wallet')],
+            ungranted: [],
+        };
     }
 
     public rejectGrantRequests(status: number): void {
@@ -361,18 +366,19 @@ export class PayboxPublicScenario {
 
     private createSdk(rpc: IPayboxRpcClient): IPayboxSdkAdapter {
         const factory: PayboxSdkClientFactory = {
-            create: (options) => ({
-                listCredentials: async () => {
-                    this.externalRequests.push({
-                        boundary: 'sdk',
-                        operation: 'list_grants',
-                        accessToken: options.token,
-                    });
-                    if (this.grantError !== null) throw this.grantError;
-                    return this.grantResponse;
-                },
-                requestWalletSign: async (args: unknown) => this.signResponse(args, options.token),
-            }),
+            create: (options) =>
+                ({
+                    listCredentials: async () => {
+                        this.externalRequests.push({
+                            boundary: 'sdk',
+                            operation: 'list_grants',
+                            accessToken: options.token,
+                        });
+                        if (this.grantError !== null) throw this.grantError;
+                        return this.grantResponse;
+                    },
+                    requestWalletSign: async (args: unknown) => this.signResponse(args, options.token ?? ''),
+                }) as unknown as PayboxSdkClient,
         };
         const refresher: PayboxTokenRefresher = {
             refresh: async (_baseUrl, current) => {
@@ -531,7 +537,11 @@ function grantRow(credentialId: string, label: string): unknown {
 function successResponse(credentialId: string, value: Hex): unknown {
     return {
         status: 'success',
-        output: { output_type: 'signature', credential_id: credentialId, value },
+        output: {
+            output_type: 'signature',
+            credential_id: credentialId,
+            value: { signature: value, serializedTransaction: value },
+        },
     };
 }
 
