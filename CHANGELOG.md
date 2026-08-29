@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.0...v0.12.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* drop local validation of Paybox-signed transactions ([087a701](https://github.com/projectcpu/project-cpu-mcp/commit/087a70182f408a32d35d4af3a2ac4d89087113a2))
+
 ## [0.12.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.11.1...v0.12.0) (2026-08-29)
 
 
