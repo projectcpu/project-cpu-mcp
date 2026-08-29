@@ -6,22 +6,14 @@ import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SKILL = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'project-cpu', 'SKILL.md');
-const FUNDING_AND_ENTRY = path.join(
-    REPO_ROOT,
-    'plugins',
-    'project-cpu',
-    'skills',
-    'project-cpu',
-    'references',
-    'funding-and-entry.md',
-);
+const FUNDING = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'project-cpu', 'references', 'funding.md');
 
 function readSkill(): string {
     return fs.readFileSync(SKILL, 'utf8');
 }
 
-function readFundingAndEntry(): string {
-    return fs.readFileSync(FUNDING_AND_ENTRY, 'utf8');
+function readFunding(): string {
+    return fs.readFileSync(FUNDING, 'utf8');
 }
 
 describe('the funding and entry skill route', () => {
@@ -36,7 +28,7 @@ describe('the funding and entry skill route', () => {
     });
 
     it('chooses a viable funding path or reports the zero-asset blocker', () => {
-        const reference = readFundingAndEntry();
+        const reference = readFunding();
 
         expect(reference).toMatch(/ETH[\s\S]*cpu_quote_swap[\s\S]*cpu_swap/iu);
         expect(reference).toMatch(/wCPU[\s\S]*cpu_withdraw/iu);
@@ -44,7 +36,7 @@ describe('the funding and entry skill route', () => {
     });
 
     it('acquires and reveals a Cell with preflight and fulfillment checks', () => {
-        const reference = readFundingAndEntry();
+        const reference = readFunding();
 
         expect(reference).toMatch(/cpu_quote_mint[\s\S]*cpu_mint_cell/iu);
         expect(reference).toMatch(/cpu_get_balance[\s\S]*cpu_reveal/iu);
@@ -53,7 +45,7 @@ describe('the funding and entry skill route', () => {
     });
 
     it('defers tool schemas and preserves the Operator authority model', () => {
-        const reference = readFundingAndEntry();
+        const reference = readFunding();
 
         expect(reference).toMatch(/tool descriptions[\s\S]*(inputs|limits|errors)/iu);
         expect(reference).not.toMatch(/autonomous mode|advisory mode|confirmation mode/iu);
