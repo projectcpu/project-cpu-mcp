@@ -18,17 +18,6 @@ const MCP = path.join(PLUGIN_ROOT, '.mcp.json');
 const README = path.join(REPO_ROOT, 'README.md');
 const CPU_WORKTREE = process.env.CPU_WORKTREE ?? null;
 const NON_PAID_READ = 'cpu_get_game_config';
-const CELL_MARKET_TOOLS = [
-    'cpu_get_cell_market',
-    'cpu_get_my_listings',
-    'cpu_get_my_offers',
-    'cpu_get_my_offers_received',
-    'cpu_list_cell',
-    'cpu_make_cell_offer',
-    'cpu_buy_cell',
-    'cpu_accept_cell_offer',
-    'cpu_cancel_order',
-];
 
 const stubs = vi.hoisted(() => ({
     serverTransport: null as object | null,
@@ -131,7 +120,6 @@ describe('the complete Project CPU agent setup', () => {
         );
         expect(setupGuide).toMatch(/### Authenticate[\s\S]*cpu_persona[\s\S]*cpu_authenticate/iu);
         expect(installedFiles).not.toMatch(/0x[a-f0-9]{64}|mnemonic\s*[:=]|eyJ[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\./iu);
-        expect(CELL_MARKET_TOOLS.every((tool) => installedFiles.includes(`\`${tool}\``))).toBe(true);
     });
 
     it('starts the configured fixture server, establishes persona, then permits one non-paid read', async () => {

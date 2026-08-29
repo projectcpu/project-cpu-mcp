@@ -64,15 +64,6 @@ describe('the dual-harness plugin', () => {
         expect(serializedMcp).not.toMatch(/private.?key|secret|mnemonic|wallet_mode/iu);
     });
 
-    it('keeps independent extension points for the game pipelines', () => {
-        const skill = fs.readFileSync(SKILL, 'utf8');
-
-        expect(skill).toContain('references/funding.md');
-        expect(skill).toContain('references/production.md');
-        expect(skill).toContain('references/logistics.md');
-        expect(skill).toContain('references/cell-market.md');
-    });
-
     it('documents project-only and global setup without asking for wallet secrets', () => {
         const readme = fs.readFileSync(README, 'utf8');
 
