@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.11.1...v0.12.0) (2026-08-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* WALLET_MODE now defaults to paybox instead of evm.
+
+### Bug Fixes
+
+* use Paybox SDK response types ([#28](https://github.com/projectcpu/project-cpu-mcp/issues/28)) ([b5c8e30](https://github.com/projectcpu/project-cpu-mcp/commit/b5c8e3091a7f8a32e653c7bd7843e994b8b2f04d))
+
 ## [0.11.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.11.0...v0.11.1) (2026-08-29)
 
 
