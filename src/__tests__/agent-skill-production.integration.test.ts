@@ -12,7 +12,7 @@ const REFERENCE = path.join(
     'skills',
     'project-cpu',
     'references',
-    'production-and-crafting.md',
+    'production.md',
 );
 
 function reference(): string {
