@@ -234,6 +234,8 @@ describe('quote_transport description', () => {
 
     it('scopes a successful quote to quote time instead of promising the transaction will land', () => {
         expect(QUOTE_TRANSPORT_DESCRIPTION).toMatch(/validates route mechanics and economics at quote time/);
+        expect(QUOTE_TRANSPORT_DESCRIPTION).toMatch(/destination capacity included/);
+        expect(QUOTE_TRANSPORT_DESCRIPTION).toMatch(/pending production/);
         expect(QUOTE_TRANSPORT_DESCRIPTION).toMatch(/does not promise/);
         expect(QUOTE_TRANSPORT_DESCRIPTION).toMatch(/ownership, balances, capacity, pauses, allowances/);
         expect(QUOTE_TRANSPORT_DESCRIPTION).not.toMatch(/guarantees the transfer|guarantees the transport/);

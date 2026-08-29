@@ -97,6 +97,7 @@ export const TRANSPORT_ABI = [
     { type: 'error', name: 'ZeroAddress', inputs: [] },
     { type: 'error', name: 'ZeroAmount', inputs: [] },
     { type: 'error', name: 'BelowMinAmount', inputs: [] },
+    { type: 'error', name: 'StorageFull', inputs: [] },
     { type: 'error', name: 'PathTooShort', inputs: [] },
     { type: 'error', name: 'NotRevealed', inputs: [] },
     { type: 'error', name: 'NotEligibleWaypoint', inputs: [] },

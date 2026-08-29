@@ -2,12 +2,71 @@
 
 MCP (Model Context Protocol) server for **Project CPU** — a blockchain game on EVM. It lets an
 AI agent play on your behalf: read the world map, reveal cells, build and mine, craft, move
-resources, trade at marketplaces, and cash out to on-chain $CPU. Runs locally over stdio and is distributed via npm, so
+resources, trade resources through the internal Hub market, trade Cell NFTs through OpenSea, and cash out to on-chain $CPU. Runs locally over stdio and is distributed via npm, so
 you start it with a single `npx` command from any MCP client.
 
 ## Installation
 
-Pick your client below and add the server. No environment variables are required: the default Paybox mode automatically opens browser authorization when you first call `cpu_authenticate`. The tool also returns the authorization URL as a fallback for headless environments or systems where the browser cannot be opened.
+### Agent setup
+
+**Recommended.** The Project CPU plugin installs both the `operator-cpu` skill and the MCP server. It starts `npx -y project-cpu-mcp@latest` with the default Paybox wallet, so no environment variables or wallet credentials are required.
+
+#### Claude Code
+
+Add the marketplace, then install the plugin:
+
+```bash
+claude plugin marketplace add projectcpu/project-cpu-mcp
+claude plugin install project-cpu@project-cpu --scope local
+```
+
+Use `--scope local` for this checkout, `--scope project` for the project, or `--scope user` for all projects.
+
+#### Codex
+
+Add the marketplace, then install the plugin:
+
+```bash
+codex plugin marketplace add https://github.com/projectcpu/project-cpu-mcp
+codex plugin add project-cpu@project-cpu
+```
+
+Codex installs plugins for the current user. Start a new agent session after plugin installation.
+
+### Manual setup
+
+For a custom setup, install the skill and MCP server separately. To use both, complete both sections below.
+
+#### 1. Install the skill
+
+Install `operator-cpu` into the current project:
+
+```bash
+npx skills add projectcpu/project-cpu-mcp --skill operator-cpu
+```
+
+Add `--global` for all projects. The installer detects supported agents; use `--agent codex` or `--agent claude-code` to target one.
+
+Update it later with `npx skills update operator-cpu`; add `--global` for a user installation.
+
+Restart the agent if the new skill does not appear.
+
+#### 2. Install the MCP server
+
+Pick your client below and add the server. No environment variables are required. Paybox opens browser authorization on the first `cpu_authenticate` call and returns the URL as a fallback.
+
+<details>
+<summary><strong>Codex</strong></summary>
+
+Add this to `.codex/config.toml` for the current trusted project or `~/.codex/config.toml` for the current user:
+
+```toml
+[mcp_servers.project-cpu]
+command = "npx"
+args = ["-y", "project-cpu-mcp@latest"]
+```
+
+</details>
 
 <details>
 <summary><strong>Claude Code</strong></summary>
@@ -95,7 +154,11 @@ Add to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf:
 
 </details>
 
-Every command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
+Every MCP command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
+
+## Authenticate
+
+After reloading the harness, call `cpu_persona` first, then `cpu_authenticate`. Paybox opens browser authorization and keeps wallet secrets out of chat and configuration.
 
 ## Wallet modes
 
@@ -116,7 +179,7 @@ Keep `PRIVATE_KEY` secret. Use it only in the MCP server environment. Do not put
 | --- | --- | --- |
 | `WALLET_MODE` | `paybox` | Set to `evm` for a local private-key wallet. |
 | `PRIVATE_KEY` | — | Required only when `WALLET_MODE=evm`; `0x` followed by 64 hex chars (32 bytes). |
-| `API_URL` | `https://api.projectcpu.cc` | Point the client at a different game API deployment. |
+| `API_URL` | `https://api-dev.projectcpu.cc` | Point the client at a different game API deployment. |
 | `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
 | `RPC_URL` | Robinhood public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
 | `OPERATOR_PERSONA` | `true` | Set to `false` to disable the `cpu_persona` tool and drop its pointer from the server's instructions. |
@@ -151,12 +214,17 @@ Once connected, the server exposes tools grouped by area:
   `resourceId` and show the exact per-hub transit fee for it — `cpu_quote_transport`, `cpu_transport`,
   `cpu_get_transport_status`, `cpu_list_my_transports`, `cpu_finalize_delivery`.
 - **Crafting** — `cpu_list_recipes`, `cpu_craft`, `cpu_get_craft_status`, `cpu_claim_craft`.
-- **Trading** — `cpu_get_markets`, `cpu_list_lots`, `cpu_get_lot`, `cpu_quote_buy`, `cpu_buy_lot`,
+- **Internal resource market** — `cpu_get_markets`, `cpu_list_lots`, `cpu_get_lot`, `cpu_quote_buy`, `cpu_buy_lot`,
   `cpu_get_lot_terms` (the live listing window, your live-lot count and any evicted remainder you owe on one
   hub), `cpu_create_lot`, `cpu_list_my_lots`, `cpu_set_sale_fee` (a hub owner sets the per-resource sale-fee
   rate on their own hub), `cpu_list_fills` (the executed-buy feed, pageable by cursor), and
   `cpu_get_market_index` (world 24h VWAP, change, and volume per resource — a different question from
   `cpu_get_markets`'s cheapest ask right now). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
+- **External Cell market** — `cpu_get_cell_market` reads OpenSea orders for one Cell;
+  `cpu_get_my_listings`, `cpu_get_my_offers`, and `cpu_get_my_offers_received` read wallet orders;
+  `cpu_list_cell`, `cpu_buy_cell`, `cpu_make_cell_offer`, `cpu_accept_cell_offer`, and `cpu_cancel_order`
+  create or settle exact orders identified by `orderHash`. The whole Cell NFT and its Cell-bound game state
+  change ownership together.
 - **Eviction & lot return** — `cpu_evict_lot` (a hub owner ends somebody else's open lot on their own hub; it
   moves no goods and seizes nothing, and the seller keeps the whole remainder in escrow), and the seller's
   way out: `cpu_quote_lot_return` then `cpu_return_lot`, which ships one lot's whole unsold remainder from

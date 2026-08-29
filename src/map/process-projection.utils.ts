@@ -29,10 +29,10 @@ function warehouseRoom(
     useHubShelf: boolean,
 ): bigint | null {
     const resource = resources.find((candidate) => candidate.resourceId === resourceId);
-    if (resource === undefined) {
+    if (resource === undefined || resource.storage === null) {
         return configuredStorageCap(resourceId, useHubShelf, config);
     }
-    if (resource.storage === null || resource.storage.cap === null) {
+    if (resource.storage.cap === null) {
         return null;
     }
     const used = BigInt(resource.storage.used);

@@ -13,6 +13,13 @@ function messageFor(name: CellRevertName, args: ReadonlyArray<unknown>, tokenId:
                 `${String(args[0] ?? 'more')} wei and this transaction carried ${String(args[1] ?? 'less')}. ` +
                 `Nothing was spent — reveal cell ${tokenId} again and it prices the reveal afresh.`
             );
+        case CellRevertName.REVEAL_SERVICE_FEES_EXCEED_BUDGET:
+            return (
+                `The configured reveal budget is ${String(args[0] ?? 'unknown')} wei, but the live randomness ` +
+                `fee and metadata publication charge need ${String(args[1] ?? 'more')} wei together. The service ` +
+                `fees cannot be paid on top of the budget, so no reveal can be quoted or requested until the ` +
+                `budget or fees change. Nothing was spent.`
+            );
         case CellRevertName.REVEAL_PAYMENT_NOT_CONFIGURED:
             return (
                 `This deployment has put no price on a reveal yet — neither the ETH leg nor the $CPU leg — so ` +
@@ -112,4 +119,12 @@ export function withRevealRequestPhrase(error: unknown, tokenId: string): unknow
         return withAdapterPhrase(error);
     }
     return new Error(messageFor(decoded.name, decoded.args, tokenId), { cause: error });
+}
+
+export function withRevealQuotePhrase(error: unknown): unknown {
+    const decoded = decodeKnownRevert(error, CELL_ABI, CELL_REVERT_NAMES);
+    if (decoded === null) {
+        return withAdapterPhrase(error);
+    }
+    return new Error(messageFor(decoded.name, decoded.args, 'before the request'), { cause: error });
 }

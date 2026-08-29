@@ -21,6 +21,7 @@ const OUTPUTS = { [RECIPE]: [{ resourceId: RESOURCE, amount: 100 }] };
 function config(overrides: Partial<CellProjectionConfig> = {}): CellProjectionConfig {
     return makeProjectionConfig({
         craftOutputsByRecipe: OUTPUTS,
+        storageCapsByResource: { [RESOURCE]: { cellCap: 10_000n, hubCap: 10_000n } },
         ...overrides,
     });
 }
@@ -75,6 +76,29 @@ function drillCell(resources: Array<RawCellResource>): Cell {
 }
 
 describe('process projection schedule and progress', () => {
+    it('gives an unheld non-WCPU output no room when its cap row is missing', () => {
+        const subject = cell({}, uncapped('10000'), config({ storageCapsByResource: {} }));
+
+        expect(projection(subject, 5, config({ storageCapsByResource: {} }))).toMatchObject({
+            stalled: true,
+            progress: { claimableBatches: 0 },
+        });
+    });
+
+    it('keeps an unheld WCPU output uncapped even when its cap row is missing', () => {
+        const wcpuConfig = config({ storageCapsByResource: {} });
+        const subject = cell(
+            { process: makeMiningProcess({ resource: 1, yieldPerCycle: 100, durationSec: 1 }) },
+            [makeResource({ resourceId: 1, deposit: '10000', storage: null })],
+            wcpuConfig,
+        );
+
+        expect(projection(subject, 5, wcpuConfig)).toMatchObject({
+            stalled: false,
+            progress: { claimableBatches: 5 },
+        });
+    });
+
     it('counts only whole cycles and exposes the next cycle boundary', () => {
         const subject = cell(
             {

@@ -24,6 +24,7 @@ import {
 } from './constants.js';
 import type { ResourceBuildingRowView, ResourceLensView, ResourceRecipeRowView } from './types.js';
 import type { CraftStackView, RecipeView } from '../../../api/types.js';
+import { WCPU_RESOURCE_ID } from '../../../config/constants.js';
 import type { AppConfig, CatalogBuildingView } from '../../../services/types.js';
 import { resourceLabel, resourceName, type ResourceNames } from '../../../utils/format.utils.js';
 import { PANEL_FIELD_SEPARATOR } from '../../../utils/panel.constants.js';
@@ -110,8 +111,8 @@ function recipeRowLine(row: ResourceRecipeRowView): string {
     ].join(PANEL_FIELD_SEPARATOR);
 }
 
-function shelfValue(units: number): string {
-    return units === UNLIMITED_SHELF_CAP ? UNLIMITED_SHELF_VALUE : `${units} units`;
+function shelfValue(resourceId: number, units: number): string {
+    return resourceId === WCPU_RESOURCE_ID && units === UNLIMITED_SHELF_CAP ? UNLIMITED_SHELF_VALUE : `${units} units`;
 }
 
 function storageLines(lens: ResourceLensView): Array<string> {
@@ -120,8 +121,8 @@ function storageLines(lens: ResourceLensView): Array<string> {
     }
     return [
         STORAGE_SECTION_TITLE,
-        `${LENS_INDENT}${CELL_SHELF_LABEL}: ${shelfValue(lens.storage.cellShelf)}`,
-        `${LENS_INDENT}${HUB_SHELF_LABEL}: ${shelfValue(lens.storage.hubShelf)}`,
+        `${LENS_INDENT}${CELL_SHELF_LABEL}: ${shelfValue(lens.resourceId, lens.storage.cellShelf)}`,
+        `${LENS_INDENT}${HUB_SHELF_LABEL}: ${shelfValue(lens.resourceId, lens.storage.hubShelf)}`,
     ];
 }
 

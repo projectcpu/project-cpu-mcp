@@ -1,4 +1,5 @@
 import type { CellBuildingView, CellProjectionConfig, ProcessProjectionConfig } from './types.js';
+import { WCPU_RESOURCE_ID } from '../config/constants.js';
 
 export function configuredStorageCap(
     resourceId: number,
@@ -6,7 +7,10 @@ export function configuredStorageCap(
     config: ProcessProjectionConfig,
 ): bigint | null {
     const caps = config.storageCapsByResource[resourceId];
-    return caps === undefined ? null : useHubShelf ? caps.hubCap : caps.cellCap;
+    if (caps === undefined) {
+        return resourceId === WCPU_RESOURCE_ID ? null : 0n;
+    }
+    return useHubShelf ? caps.hubCap : caps.cellCap;
 }
 
 export function usesHubShelf(

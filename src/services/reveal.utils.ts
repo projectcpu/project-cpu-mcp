@@ -1,11 +1,11 @@
 import { parseEventLogs, type Address, type Log } from 'viem';
 
-import { REVEAL_FEE_BUFFER_BPS } from './reveal.constants.js';
-import type { RevealDepositView } from './types.js';
+import { REVEAL_PAYMENT_BUFFER_BPS } from './reveal.constants.js';
+import type { RevealDepositView, RevealQuote } from './types.js';
 import { BPS_DENOMINATOR } from '../config/constants.js';
 import { CELL_ABI } from '../contracts/cell.abi.js';
 import { sameAddress, sameTokenId } from '../randomness/request.utils.js';
-import type { ResourceNames } from '../utils/format.utils.js';
+import { cpuFromWei, ethFromWei, type ResourceNames } from '../utils/format.utils.js';
 
 export interface RevealRequestedView {
     requestId: bigint;
@@ -13,14 +13,23 @@ export interface RevealRequestedView {
 }
 
 /**
- * The ETH a reveal transaction carries: the quoted total plus headroom. The randomness leg of the quote is
- * read in an `eth_call`, where it can price lower than the send is charged, so a transaction carrying the
- * quote exactly can still underpay. The headroom goes on the total for that reason — a share of the fee leg
- * alone would be zero exactly when it is needed. The excess is refunded inside the same transaction, so
- * the reveal still costs the quoted total.
+ * The ETH a reveal transaction carries: the quoted budget plus headroom. Governance can move the configured
+ * budget between the quote and the send; the excess is refunded inside the same transaction, so an unchanged
+ * budget still costs exactly what the Cell quoted.
  */
-export function bufferedRevealValue(totalRequiredWei: bigint): bigint {
-    return totalRequiredWei + (totalRequiredWei * REVEAL_FEE_BUFFER_BPS) / BPS_DENOMINATOR;
+export function bufferedRevealValue(ethBudgetWei: bigint): bigint {
+    return ethBudgetWei + (ethBudgetWei * REVEAL_PAYMENT_BUFFER_BPS) / BPS_DENOMINATOR;
+}
+
+export function revealCpuShortfallMessage(tokenId: string, quote: RevealQuote, cpuBalanceWei: bigint): string {
+    const shortfallWei = quote.cpuBurnWei - cpuBalanceWei;
+    return (
+        `Reveal cell ${tokenId} currently costs ${ethFromWei(quote.ethBudgetWei.toString())} ETH + ` +
+        `${cpuFromWei(quote.cpuBurnWei.toString())} $CPU. Wallet has ${cpuFromWei(cpuBalanceWei.toString())} ` +
+        `$CPU; shortfall ${cpuFromWei(shortfallWei.toString())} $CPU. No approval or reveal transaction was ` +
+        `sent. Acquire the missing $CPU: call \`cpu_quote_swap\`, then \`cpu_swap\` with \`sell: "ETH"\`, then ` +
+        `retry \`cpu_reveal\`; the retry re-quotes the price.`
+    );
 }
 
 export function revealRequestedOf(logs: Array<Log>, cell: Address, tokenId: string): RevealRequestedView | null {

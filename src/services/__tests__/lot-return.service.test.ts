@@ -160,13 +160,13 @@ class RevertingContractClient extends FakeContractClient {
     }
 }
 
-function destinationCell(storage: RawCellResourceStorage | null = makeStorage()): Cell {
+function destinationCell(storage: RawCellResourceStorage | null = makeStorage(), balance = '0'): Cell {
     const config = makeConfig();
     return toCell(
         makeCell({
             tokenId: DESTINATION.toString(),
             owner: WALLET_ADDRESS,
-            resources: [makeResource({ resourceId: RESOURCE, storage })],
+            resources: [makeResource({ resourceId: RESOURCE, balance, storage })],
         }),
         1_700_000_000,
         toProjectionConfig(config),
@@ -269,10 +269,11 @@ describe('LotReturnService quote', () => {
         const { service } = makeService({
             cell: destinationCell(
                 makeStorage({
-                    used: '10',
+                    used: '60',
                     cellCap: '100',
                     reserved: { incomingTransport: '20', lots: '30' },
                 }),
+                '10',
             ),
         });
         const quote = await service.quoteReturn(input);
@@ -283,10 +284,11 @@ describe('LotReturnService quote', () => {
         const { service } = makeService({
             cell: destinationCell(
                 makeStorage({
-                    used: '10',
+                    used: '20',
                     cellCap: '100',
                     reserved: { incomingTransport: '5', lots: '5' },
                 }),
+                '10',
             ),
         });
         const quote = await service.quoteReturn(input);
@@ -297,22 +299,23 @@ describe('LotReturnService quote', () => {
         const { service } = makeService({
             cell: destinationCell(
                 makeStorage({
-                    used: '11',
+                    used: '21',
                     cellCap: '100',
                     reserved: { incomingTransport: '5', lots: '5' },
                 }),
+                '11',
             ),
         });
         const quote = await service.quoteReturn(input);
         expect(quote.capacity).toEqual({ fits: false, required: '80', free: '79' });
     });
 
-    it('treats uncapped destination storage as room enough and reports no free figure', async () => {
+    it('never treats a null non-WCPU cap as unlimited destination room', async () => {
         const { service } = makeService({
-            cell: destinationCell(makeStorage({ used: '9999', cellCap: null, hubCap: null })),
+            cell: destinationCell(makeStorage({ used: '9999', cellCap: null, hubCap: null }), '9999'),
         });
         const quote = await service.quoteReturn(input);
-        expect(quote.capacity).toEqual({ fits: true, required: '80', free: null });
+        expect(quote.capacity).toEqual({ fits: false, required: '80', free: '0' });
     });
 
     it('refuses to guess when the destination cell cannot be read at all', async () => {
@@ -456,7 +459,8 @@ describe('LotReturnService settlement', () => {
     it('refuses an insufficient destination before allowance or transaction, naming what is needed and free', async () => {
         const { service, contracts, allowance } = makeService({
             cell: destinationCell(
-                makeStorage({ used: '10', cellCap: '100', reserved: { incomingTransport: '20', lots: '30' } }),
+                makeStorage({ used: '60', cellCap: '100', reserved: { incomingTransport: '20', lots: '30' } }),
+                '10',
             ),
         });
         await expect(service.returnLot(input)).rejects.toThrow(/80.*40|40.*80/s);
