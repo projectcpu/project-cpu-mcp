@@ -1,6 +1,6 @@
 # Logistics and internal resource trade
 
-Compare Routes by the Operator's priorities: distance, ETA, Transit fee, Same-clan discount, reach, room, and foreign Hubs. Graphs and Quotes reserve nothing. Resource Lots trade Warehouse units for $CPU. `funding.md` covers the separate Cell NFT market.
+Compare Routes by the Operator's priorities: distance, ETA, Transit fee, Same-clan discount, reach, room, and foreign Hubs. Graphs and Quotes reserve nothing. Resource Lots trade Warehouse units for $CPU.
 
 ## Transport cargo
 

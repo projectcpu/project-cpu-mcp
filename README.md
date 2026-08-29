@@ -2,7 +2,7 @@
 
 MCP (Model Context Protocol) server for **Project CPU** — a blockchain game on EVM. It lets an
 AI agent play on your behalf: read the world map, reveal cells, build and mine, craft, move
-resources, trade at marketplaces, and cash out to on-chain $CPU. Runs locally over stdio and is distributed via npm, so
+resources, trade resources through the internal Hub market, trade Cell NFTs through OpenSea, and cash out to on-chain $CPU. Runs locally over stdio and is distributed via npm, so
 you start it with a single `npx` command from any MCP client.
 
 ## Installation
@@ -214,12 +214,17 @@ Once connected, the server exposes tools grouped by area:
   `resourceId` and show the exact per-hub transit fee for it — `cpu_quote_transport`, `cpu_transport`,
   `cpu_get_transport_status`, `cpu_list_my_transports`, `cpu_finalize_delivery`.
 - **Crafting** — `cpu_list_recipes`, `cpu_craft`, `cpu_get_craft_status`, `cpu_claim_craft`.
-- **Trading** — `cpu_get_markets`, `cpu_list_lots`, `cpu_get_lot`, `cpu_quote_buy`, `cpu_buy_lot`,
+- **Internal resource market** — `cpu_get_markets`, `cpu_list_lots`, `cpu_get_lot`, `cpu_quote_buy`, `cpu_buy_lot`,
   `cpu_get_lot_terms` (the live listing window, your live-lot count and any evicted remainder you owe on one
   hub), `cpu_create_lot`, `cpu_list_my_lots`, `cpu_set_sale_fee` (a hub owner sets the per-resource sale-fee
   rate on their own hub), `cpu_list_fills` (the executed-buy feed, pageable by cursor), and
   `cpu_get_market_index` (world 24h VWAP, change, and volume per resource — a different question from
   `cpu_get_markets`'s cheapest ask right now). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
+- **External Cell market** — `cpu_get_cell_market` reads OpenSea orders for one Cell;
+  `cpu_get_my_listings`, `cpu_get_my_offers`, and `cpu_get_my_offers_received` read wallet orders;
+  `cpu_list_cell`, `cpu_buy_cell`, `cpu_make_cell_offer`, `cpu_accept_cell_offer`, and `cpu_cancel_order`
+  create or settle exact orders identified by `orderHash`. The whole Cell NFT and its Cell-bound game state
+  change ownership together.
 - **Eviction & lot return** — `cpu_evict_lot` (a hub owner ends somebody else's open lot on their own hub; it
   moves no goods and seizes nothing, and the seller keeps the whole remainder in escrow), and the seller's
   way out: `cpu_quote_lot_return` then `cpu_return_lot`, which ships one lot's whole unsold remainder from

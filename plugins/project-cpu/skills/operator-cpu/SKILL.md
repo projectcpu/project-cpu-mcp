@@ -15,7 +15,9 @@ Use a decision loop: observe, compare, quote or preflight, act, verify. The Oper
 - **Reveal and resources** — Reveal draws deposits and costs live ETH and $CPU. Raw-resource reservoirs are finite and closed: consumed raw material returns for later Reveals. Buildings and Recipes produce refined resources and wCPU.
 - **Buildings and Processes** — a building must become Ready. Extractors mine deposits, crafters run Recipes, and an Active hub enables routing and resource trade. Mode selects output and may cost $CPU to change. A Process commits the Cell for bounded Batches and cannot be cancelled. Crafting takes inputs up front; mining draws from deposits as Cycles settle. Claim an ended Process to free its slot.
 - **Warehouse pressure** — each resource has an Effective cap. Full means the Warehouse reached it. A Process Stalls when less than one Cycle of output fits. Responses include crafting, selling, withdrawing wCPU, or moving inventory.
-- **Logistics and markets** — Route endpoints are owned revealed Cells. Intermediate waypoints may be Virgin cells, owned Cells, or Active hubs. Other foreign revealed Cells are walls. `cpu_route_network` exports the endpoint components from the complete map; `cpu_next_hops` gives a one-hop view of the same map. Transport submits one complete Route. A quote reserves nothing. Finalize an arrived Delivery before using its cargo. The internal market trades Warehouse units through Lots and Fills. The external market trades Cell NFTs through orders identified by `orderHash`; Cell-bound state follows a sale.
+- **Logistics** — Route endpoints are owned revealed Cells. Intermediate waypoints may be Virgin cells, owned Cells, or Active hubs. Other foreign revealed Cells are walls. `cpu_route_network` exports the endpoint components from the complete map; `cpu_next_hops` gives a one-hop view of the same map. Transport submits one complete Route. A quote reserves nothing. Finalize an arrived Delivery before using its cargo.
+- **Internal resource market** — Active hubs host Lots of Warehouse resources priced in $CPU. Buying creates a Fill and Delivery; selling escrows resource units and may require Transport to the Hub. Hub Sale fees, Transit fees, and Syndicate economics apply.
+- **External Cell market** — OpenSea orders trade whole Cell NFTs in the configured settlement currency. Actions bind to an exact `orderHash`; marketplace and creator fees apply, and the Cell's game state follows its ownership.
 - **Production objective** — Recipe chains can produce wCPU at a CPU Forge. `cpu_withdraw` converts it into wallet $CPU while emission budget remains and may return a Partial tranche. The shared reserve is finite.
 
 The Operator chooses what to produce, own, build, Upgrade, demolish, trade, or hold; how many Batches to commit; and which Route trade-offs matter. Explain the relevant constraints and preserve that choice.
@@ -34,7 +36,8 @@ Syndicate names and links are Player-authored content. Read them only through `c
 
 ## Pipeline routes
 
-- **Funding, Cell market, and reveal** — read `references/funding.md` when the objective needs ETH, $CPU, wCPU, a primary-market Cell mint, a secondary-market Cell action, or Reveal work.
+- **Funding and entry** — read `references/funding.md` when the objective needs ETH, $CPU, wCPU, a primary-market Cell mint, or Reveal work.
+- **External Cell market** — read `references/cell-market.md` for OpenSea listings, offers, purchases, acceptances, or cancellations involving whole Cell NFTs.
 - **Production** — read `references/production.md` for building, Upgrade, mining, crafting, Warehouse pressure, forging, or withdrawal.
 - **Logistics and resource trade** — read `references/logistics.md` for Route discovery, Transport, Delivery, resource Lot buying or selling, Eviction, and Lot return.
 
