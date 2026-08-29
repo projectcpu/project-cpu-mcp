@@ -1,11 +1,15 @@
 {
     "name": "project-cpu",
-    "version": "0.10.0",
+    "version": "0.11.0",
     "description": "Project CPU game orchestration skill and MCP server.",
     "author": {
         "name": "projectcpu"
     },
     "repository": "https://github.com/projectcpu/project-cpu-mcp",
     "license": "MIT",
-    "keywords": ["project-cpu", "game", "mcp"]
+    "keywords": [
+        "project-cpu",
+        "game",
+        "mcp"
+    ]
 }

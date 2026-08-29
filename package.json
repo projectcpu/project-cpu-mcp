@@ -1,6 +1,6 @@
 {
     "name": "project-cpu-mcp",
-    "version": "0.10.0",
+    "version": "0.11.0",
     "description": "MCP server for Project CPU — AI agents interact with the game on behalf of players",
     "keywords": [
         "mcp",
