@@ -45,7 +45,6 @@ const transactionHash = `0x${'7'.repeat(64)}` as Hash;
 
 enum TransactionResponseMode {
     Denied = 'denied',
-    Mismatch = 'mismatch',
     Outage = 'outage',
     Success = 'success',
 }
@@ -168,10 +167,6 @@ export class PayboxPublicScenario {
 
     public outageTransactions(): void {
         this.transactionResponseMode = TransactionResponseMode.Outage;
-    }
-
-    public mismatchTransactions(): void {
-        this.transactionResponseMode = TransactionResponseMode.Mismatch;
     }
 
     public rejectGameApiReads(): void {
@@ -480,7 +475,7 @@ export class PayboxPublicScenario {
             gas: BigInt(intent.gas),
             maxPriorityFeePerGas: BigInt(intent.maxPriorityFeePerGas),
             maxFeePerGas: BigInt(intent.maxFeePerGas),
-            nonce: this.transactionResponseMode === TransactionResponseMode.Mismatch ? intent.nonce + 1 : intent.nonce,
+            nonce: intent.nonce,
         });
         return successResponse(request.credentialId, serialized);
     }

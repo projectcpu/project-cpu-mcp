@@ -7,7 +7,7 @@ import {
     PayboxOperationIncompleteError,
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
-import { verifiedPayboxMessageSignature, verifiedPayboxTransaction } from './utils.js';
+import { verifiedPayboxMessageSignature } from './utils.js';
 import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import { LAUNCH_CHAIN_ID } from '../../config/constants.js';
 import type {
@@ -104,19 +104,18 @@ export class PayboxWalletManager implements WalletManager {
             value: intent.value.toString(),
             nonce: intent.nonce,
         });
-        let verified: Hex;
+        let signedTransaction: Hex;
         try {
-            const serializedTransaction = await this.options.sdk.signTransaction(
+            signedTransaction = await this.options.sdk.signTransaction(
                 authority.tokens,
                 authority.signingKey,
                 this.options.credentialId,
                 intent,
             );
-            verified = await verifiedPayboxTransaction(intent, serializedTransaction, this.address);
         } catch (error) {
             this.throwSigningFailure(error);
         }
-        const hash = await this.options.rpc.sendRawTransaction(verified);
+        const hash = await this.options.rpc.sendRawTransaction(signedTransaction);
         this.options.logger.info('Paybox transaction sent', { hash });
         return hash;
     }
