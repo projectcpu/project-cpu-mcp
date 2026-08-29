@@ -7,7 +7,66 @@ you start it with a single `npx` command from any MCP client.
 
 ## Installation
 
-Pick your client below and add the server. No environment variables are required: the default Paybox mode automatically opens browser authorization when you first call `cpu_authenticate`. The tool also returns the authorization URL as a fallback for headless environments or systems where the browser cannot be opened.
+### Agent setup
+
+**Recommended.** The Project CPU plugin installs both the `operator-cpu` skill and the MCP server. It starts `npx -y project-cpu-mcp@latest` with the default Paybox wallet, so no environment variables or wallet credentials are required.
+
+#### Claude Code
+
+Add the marketplace, then install the plugin:
+
+```bash
+claude plugin marketplace add projectcpu/project-cpu-mcp
+claude plugin install project-cpu@project-cpu --scope local
+```
+
+Use `--scope local` for this checkout, `--scope project` for the project, or `--scope user` for all projects.
+
+#### Codex
+
+Add the marketplace, then install the plugin:
+
+```bash
+codex plugin marketplace add https://github.com/projectcpu/project-cpu-mcp
+codex plugin add project-cpu@project-cpu
+```
+
+Codex installs plugins for the current user. Start a new agent session after plugin installation.
+
+### Manual setup
+
+For a custom setup, install the skill and MCP server separately. To use both, complete both sections below.
+
+#### 1. Install the skill
+
+Install `operator-cpu` into the current project:
+
+```bash
+npx skills add projectcpu/project-cpu-mcp --skill operator-cpu
+```
+
+Add `--global` for all projects. The installer detects supported agents; use `--agent codex` or `--agent claude-code` to target one.
+
+Update it later with `npx skills update operator-cpu`; add `--global` for a user installation.
+
+Restart the agent if the new skill does not appear.
+
+#### 2. Install the MCP server
+
+Pick your client below and add the server. No environment variables are required. Paybox opens browser authorization on the first `cpu_authenticate` call and returns the URL as a fallback.
+
+<details>
+<summary><strong>Codex</strong></summary>
+
+Add this to `.codex/config.toml` for the current trusted project or `~/.codex/config.toml` for the current user:
+
+```toml
+[mcp_servers.project-cpu]
+command = "npx"
+args = ["-y", "project-cpu-mcp@latest"]
+```
+
+</details>
 
 <details>
 <summary><strong>Claude Code</strong></summary>
@@ -95,44 +154,9 @@ Add to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf:
 
 </details>
 
-Every command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
+Every MCP command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
 
-## Agent setup
-
-Install the Project CPU plugin when you want its orchestration skill and MCP server together. Prefer a **project-only** installation so game context is not loaded for unrelated work. The plugin starts the published server with `npx -y project-cpu-mcp@latest`; it contains no wallet credential.
-
-### Claude Code
-
-Add the repository marketplace, then install the plugin at the scope you choose:
-
-```bash
-claude plugin marketplace add projectcpu/project-cpu-mcp
-claude plugin install project-cpu@project-cpu --scope local
-```
-
-- Use `--scope local` for the current checkout, `--scope project` for the project, or `--scope user` for every local project.
-- Restart Claude Code or begin a new session after installation.
-
-### Codex
-
-For global use, add the repository marketplace and install the native plugin:
-
-```bash
-codex plugin marketplace add https://github.com/projectcpu/project-cpu-mcp
-codex plugin add project-cpu@project-cpu
-```
-
-Codex plugin installation is global. For the recommended project-only fallback, copy `plugins/project-cpu/skills/operator-cpu` to `<project>/.agents/skills/operator-cpu`. Then create or edit `<project>/.codex/config.toml` and add:
-
-```toml
-[mcp_servers.project-cpu]
-command = "npx"
-args = ["-y", "project-cpu-mcp@latest"]
-```
-
-Start a new Codex session after either setup.
-
-### Authenticate
+## Authenticate
 
 After reloading the harness, call `cpu_persona` first, then `cpu_authenticate`. Paybox opens browser authorization and keeps wallet secrets out of chat and configuration.
 
