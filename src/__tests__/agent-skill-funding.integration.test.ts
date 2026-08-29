@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const SKILL = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'project-cpu', 'SKILL.md');
-const FUNDING = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'project-cpu', 'references', 'funding.md');
+const SKILL = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'operator-cpu', 'SKILL.md');
+const FUNDING = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'operator-cpu', 'references', 'funding.md');
 
 function readSkill(): string {
     return fs.readFileSync(SKILL, 'utf8');

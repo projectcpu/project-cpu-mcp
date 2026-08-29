@@ -9,7 +9,7 @@ import { NEXT_HOPS_DESCRIPTION, ROUTE_NETWORK_DESCRIPTION } from '../tools/trans
 import { LIST_MY_TRANSPORTS_DESCRIPTION } from '../tools/transport/list-mine/constants.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const LOGISTICS = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'project-cpu', 'references', 'logistics.md');
+const LOGISTICS = path.join(REPO_ROOT, 'plugins', 'project-cpu', 'skills', 'operator-cpu', 'references', 'logistics.md');
 
 function readLogistics(): string {
     return fs.readFileSync(LOGISTICS, 'utf8');

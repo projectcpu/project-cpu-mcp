@@ -1,5 +1,5 @@
 ---
-name: project-cpu
+name: operator-cpu
 description: Operate a Project CPU game session through its MCP server when an Operator asks to inspect or play the game.
 ---
 

@@ -11,7 +11,7 @@ const CLAUDE_MANIFEST = path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json');
 const CODEX_MANIFEST = path.join(PLUGIN_ROOT, '.codex-plugin', 'plugin.json');
 const MARKETPLACE = path.join(REPO_ROOT, '.claude-plugin', 'marketplace.json');
 const MCP = path.join(PLUGIN_ROOT, '.mcp.json');
-const SKILL = path.join(PLUGIN_ROOT, 'skills', 'project-cpu', 'SKILL.md');
+const SKILL = path.join(PLUGIN_ROOT, 'skills', 'operator-cpu', 'SKILL.md');
 const README = path.join(REPO_ROOT, 'README.md');
 const RELEASE_PLEASE_CONFIG = path.join(REPO_ROOT, 'release-please-config.json');
 
@@ -83,7 +83,7 @@ describe('the dual-harness plugin', () => {
         expect(readme).toMatch(/Paybox[\s\S]*cpu_authenticate/iu);
         expect(readme).toMatch(/reload|new session/iu);
         expect(readme).toMatch(/project-only[\s\S]*recommend/iu);
-        expect(readme).toContain('<project>/.agents/skills/project-cpu');
-        expect(readme).not.toContain('<project>/.codex/skills/project-cpu');
+        expect(readme).toContain('<project>/.agents/skills/operator-cpu');
+        expect(readme).not.toContain('<project>/.codex/skills/operator-cpu');
     });
 });

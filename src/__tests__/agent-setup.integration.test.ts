@@ -127,7 +127,7 @@ describe('the complete Project CPU agent setup', () => {
         });
         expect(setupGuide).toMatch(/Claude Code[\s\S]*--scope local[\s\S]*--scope project[\s\S]*--scope user/iu);
         expect(setupGuide).toMatch(
-            /Codex[\s\S]*global[\s\S]*\.agents\/skills\/project-cpu[\s\S]*\.codex\/config\.toml/iu,
+            /Codex[\s\S]*global[\s\S]*\.agents\/skills\/operator-cpu[\s\S]*\.codex\/config\.toml/iu,
         );
         expect(setupGuide).toMatch(/### Authenticate[\s\S]*cpu_persona[\s\S]*cpu_authenticate/iu);
         expect(installedFiles).not.toMatch(/0x[a-f0-9]{64}|mnemonic\s*[:=]|eyJ[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\./iu);

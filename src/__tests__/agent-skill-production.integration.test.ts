@@ -10,7 +10,7 @@ const REFERENCE = path.join(
     'plugins',
     'project-cpu',
     'skills',
-    'project-cpu',
+    'operator-cpu',
     'references',
     'production.md',
 );
