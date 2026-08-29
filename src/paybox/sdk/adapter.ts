@@ -1,13 +1,13 @@
 import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './factory.js';
 import { payboxSdkFailureLogMeta } from './logging.utils.js';
-import {
-    autonomousEvmGrants,
-    classifiedPayboxError,
-    serializedTransactionFromResponse,
-    signatureFromResponse,
-} from './utils.js';
+import { autonomousEvmGrants, classifiedPayboxError } from './utils.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import type { WalletManager } from '../../wallet/types.js';
+import {
+    PayboxInvalidOperationArtifactError,
+    PayboxOperationDeniedError,
+    PayboxOperationIncompleteError,
+} from '../errors.js';
 import { PayboxRequestContext, PayboxSdkOperation, PayboxSdkStage, payboxTokensSchema } from '../types.js';
 import type {
     EligiblePayboxGrantList,
@@ -117,7 +117,17 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
                 error,
             );
         }
-        return signatureFromResponse(response, credentialId);
+        if (response.status === 'denied') throw new PayboxOperationDeniedError();
+        if (response.status !== 'success' || response.output === null) {
+            throw new PayboxOperationIncompleteError();
+        }
+        if (response.output.output_type !== 'signature' || response.output.credential_id !== credentialId) {
+            throw new PayboxInvalidOperationArtifactError({
+                outputType: response.output.output_type,
+                credentialId: response.output.credential_id,
+            });
+        }
+        return (response.output.value as { signature: string }).signature;
     }
 
     public async signTransaction(
@@ -155,7 +165,17 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
                 error,
             );
         }
-        return serializedTransactionFromResponse(response, credentialId);
+        if (response.status === 'denied') throw new PayboxOperationDeniedError();
+        if (response.status !== 'success' || response.output === null) {
+            throw new PayboxOperationIncompleteError();
+        }
+        if (response.output.output_type !== 'signature' || response.output.credential_id !== credentialId) {
+            throw new PayboxInvalidOperationArtifactError({
+                outputType: response.output.output_type,
+                credentialId: response.output.credential_id,
+            });
+        }
+        return (response.output.value as { serializedTransaction: `0x${string}` }).serializedTransaction;
     }
 
     private client(tokens: PayboxTokens, signingKey: string): PayboxSdkClient {

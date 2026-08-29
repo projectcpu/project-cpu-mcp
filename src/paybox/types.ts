@@ -1,5 +1,6 @@
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 
+import type { PayboxClient, PayboxClientOptions } from '@paybox-sh/sdk';
 import { isAddress, type Address, type Hash, type Hex } from 'viem';
 import { z } from 'zod';
 
@@ -353,13 +354,10 @@ export interface PayboxSiweAuthenticator {
     clearSession(): void;
 }
 
-export interface PayboxSdkClient {
-    listCredentials(): Promise<unknown>;
-    requestWalletSign(args: unknown, options: unknown): Promise<unknown>;
-}
+export type PayboxSdkClient = Pick<PayboxClient, 'listCredentials' | 'requestWalletSign'>;
 
 export interface PayboxSdkClientFactory {
-    create(options: { baseUrl: string; token: string; signingKey: string }): PayboxSdkClient;
+    create(options: PayboxClientOptions): PayboxSdkClient;
 }
 
 export interface PayboxTransactionIntent {

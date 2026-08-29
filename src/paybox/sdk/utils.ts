@@ -1,5 +1,5 @@
-import { PayboxError } from '@paybox-sh/sdk';
-import { getAddress, isAddress, type Hex } from 'viem';
+import { PayboxError, type ClientCredentialList, type ClientGrantSummary } from '@paybox-sh/sdk';
+import { getAddress, isAddress } from 'viem';
 
 import { redactString } from '../../logger/redact.utils.js';
 import {
@@ -13,7 +13,6 @@ import {
 import {
     PAYBOX_AUTONOMOUS_MODE,
     PAYBOX_CONFIRMED_AUTH_HTTP_STATUSES,
-    PAYBOX_DENIED_STATUS,
     PAYBOX_EIP155_CHAIN_ID_PATTERN,
     PAYBOX_INVALID_GRANT_HTTP_STATUS,
     PAYBOX_PROVIDER_ERROR_MESSAGE_FIELDS,
@@ -21,11 +20,7 @@ import {
     PAYBOX_RATE_LIMIT_HTTP_STATUS,
     PAYBOX_REFRESH_HTTP_STATUS_PATTERN,
     PAYBOX_MANAGEMENT_HOST_BY_API_HOST,
-    PAYBOX_SIGNATURE_ARTIFACT_FIELD,
-    PAYBOX_SIGNATURE_OUTPUT,
-    PAYBOX_TRANSACTION_ARTIFACT_FIELD,
     PAYBOX_SERVER_ERROR_STATUS_MINIMUM,
-    PAYBOX_SUCCESS_STATUS,
     PAYBOX_TRANSPORT_ERROR_CODES,
     PAYBOX_TRANSPORT_ERROR_NAMES,
     PAYBOX_WALLET_TYPE,
@@ -38,9 +33,9 @@ import {
     type EligiblePayboxGrantList,
 } from '../types.js';
 
-export function autonomousEvmGrants(value: unknown, baseUrl: string): EligiblePayboxGrantList {
+export function autonomousEvmGrants(value: ClientCredentialList, baseUrl: string): EligiblePayboxGrantList {
     return {
-        grants: grantRows(value).flatMap(normalizeGrant),
+        grants: value.credentials.flatMap(normalizeGrant),
         managementUrl: managementUrlFromBaseUrl(baseUrl),
     };
 }
@@ -106,44 +101,6 @@ export function classifiedPayboxHttpStatus(
         );
     }
     return new PayboxAuthFlowError(options);
-}
-
-export function signatureFromResponse(value: unknown, credentialId: string): Hex {
-    if (isRecord(value) && value.status === PAYBOX_DENIED_STATUS) {
-        throw new PayboxOperationDeniedError();
-    }
-    if (!isRecord(value) || value.status !== PAYBOX_SUCCESS_STATUS || !isRecord(value.output)) {
-        throw new PayboxOperationIncompleteError();
-    }
-    const output = value.output;
-    const signature = artifactValue(output.value, PAYBOX_SIGNATURE_ARTIFACT_FIELD);
-    if (output.output_type !== PAYBOX_SIGNATURE_OUTPUT || output.credential_id !== credentialId || !isHex(signature)) {
-        throw new PayboxInvalidOperationArtifactError(value);
-    }
-    return signature;
-}
-
-export function serializedTransactionFromResponse(value: unknown, credentialId: string): Hex {
-    if (isRecord(value) && value.status === PAYBOX_DENIED_STATUS) {
-        throw new PayboxOperationDeniedError();
-    }
-    if (!isRecord(value) || value.status !== PAYBOX_SUCCESS_STATUS || !isRecord(value.output)) {
-        throw new PayboxOperationIncompleteError();
-    }
-    const output = value.output;
-    const serializedTransaction = artifactValue(output.value, PAYBOX_TRANSACTION_ARTIFACT_FIELD);
-    if (
-        output.output_type !== PAYBOX_SIGNATURE_OUTPUT ||
-        output.credential_id !== credentialId ||
-        !isSerializedTransaction(serializedTransaction)
-    ) {
-        throw new PayboxInvalidOperationArtifactError(value);
-    }
-    return serializedTransaction;
-}
-
-function artifactValue(value: unknown, field: string): unknown {
-    return isRecord(value) ? value[field] : value;
 }
 
 function payboxHttpStatus(error: unknown, context: PayboxRequestContext): number | null {
@@ -212,24 +169,14 @@ function errorMessage(error: unknown): string | null {
     return error instanceof Error ? error.message : null;
 }
 
-function grantRows(value: unknown): Array<unknown> {
-    if (Array.isArray(value)) return value;
-    if (!isRecord(value)) throw new Error('Paybox returned an invalid grant list.');
-    if (Array.isArray(value.credentials)) return value.credentials;
-    throw new Error('Paybox returned an invalid grant list.');
-}
-
-function normalizeGrant(value: unknown): Array<EligiblePayboxGrant> {
-    if (!isRecord(value)) return [];
-    if (!isRecord(value.credential) || !isRecord(value.grant)) return [];
+function normalizeGrant(value: ClientGrantSummary): Array<EligiblePayboxGrant> {
     const credential = value.credential;
     const grant = value.grant;
     if (
         credential.credential_type !== PAYBOX_WALLET_TYPE ||
         credential.disabled_at !== null ||
         grant.approval_mode !== PAYBOX_AUTONOMOUS_MODE ||
-        (grant.credential_id !== undefined && grant.credential_id !== credential.id) ||
-        typeof credential.id !== 'string' ||
+        grant.credential_id !== credential.id ||
         credential.id.length === 0
     ) {
         return [];
@@ -241,14 +188,10 @@ function normalizeGrant(value: unknown): Array<EligiblePayboxGrant> {
         {
             credentialId: credential.id,
             address: getAddress(address),
-            label: displayField(credential.name),
-            provider: displayField(credential.provider),
+            label: credential.name,
+            provider: credential.provider,
         },
     ];
-}
-
-function displayField(value: unknown): string | null {
-    return typeof value === 'string' ? value : null;
 }
 
 export function managementUrlFromBaseUrl(baseUrl: string): string | null {
@@ -290,14 +233,6 @@ function isEvmChain(chain: unknown): boolean {
         chain === 'ethereum' ||
         (typeof chain === 'string' && PAYBOX_EIP155_CHAIN_ID_PATTERN.test(chain))
     );
-}
-
-function isHex(value: unknown): value is Hex {
-    return typeof value === 'string' && /^0x[0-9a-fA-F]{130}$/.test(value);
-}
-
-function isSerializedTransaction(value: unknown): value is Hex {
-    return typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})+$/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -46,10 +46,14 @@ export async function verifiedPayboxTransaction(
             serializedTransaction: serializedTransaction as TransactionSerialized,
         });
     } catch {
-        throw new PayboxInvalidOperationArtifactError();
+        throw new PayboxInvalidOperationArtifactError({ reason: 'malformed_serialized_transaction' });
     }
     if (transaction.type !== 'eip1559') {
-        throw new PayboxInvalidOperationArtifactError();
+        throw new PayboxInvalidOperationArtifactError({
+            field: 'type',
+            expected: 'eip1559',
+            actual: transaction.type,
+        });
     }
     if (getAddress(signer) !== getAddress(address)) {
         throw new PayboxAuthInvalidError(
@@ -58,7 +62,11 @@ export async function verifiedPayboxTransaction(
         );
     }
     if (transaction.to == null || getAddress(transaction.to) !== getAddress(intent.to)) {
-        throw new PayboxInvalidOperationArtifactError();
+        throw new PayboxInvalidOperationArtifactError({
+            field: 'to',
+            expected: intent.to,
+            actual: transaction.to ?? null,
+        });
     }
     assertHexField('calldata', transaction.data ?? '0x', intent.data);
     assertField('value', transaction.value ?? 0n, intent.value);
@@ -68,19 +76,31 @@ export async function verifiedPayboxTransaction(
     assertField('maximum fee', transaction.maxFeePerGas, intent.maxFeePerGas);
     assertField('nonce', transaction.nonce, intent.nonce);
     if ((transaction.accessList ?? []).length !== 0) {
-        throw new PayboxInvalidOperationArtifactError();
+        throw new PayboxInvalidOperationArtifactError({
+            field: 'accessList',
+            expected: 0,
+            actual: transaction.accessList?.length ?? 0,
+        });
     }
     return serializedTransaction;
 }
 
-function assertField(_label: string, actual: bigint | number | undefined, expected: bigint | number): void {
+function assertField(label: string, actual: bigint | number | undefined, expected: bigint | number): void {
     if (actual !== expected) {
-        throw new PayboxInvalidOperationArtifactError();
+        throw new PayboxInvalidOperationArtifactError({
+            field: label,
+            expected: expected.toString(),
+            actual: actual?.toString() ?? null,
+        });
     }
 }
 
-function assertHexField(_label: string, actual: Hex | undefined, expected: Hex): void {
+function assertHexField(label: string, actual: Hex | undefined, expected: Hex): void {
     if (actual?.toLowerCase() !== expected.toLowerCase()) {
-        throw new PayboxInvalidOperationArtifactError();
+        throw new PayboxInvalidOperationArtifactError({
+            field: label,
+            expected,
+            actual: actual ?? null,
+        });
     }
 }
