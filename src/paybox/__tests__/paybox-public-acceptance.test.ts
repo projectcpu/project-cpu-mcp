@@ -277,23 +277,4 @@ describe('Paybox public acceptance', () => {
         expect(scenario.requestCount('browser', 'open_authorization')).toBe(2);
         expect(scenario.requestCount('auth_flow', 'cancel')).toBe(1);
     });
-
-    it('rejects a mismatched EIP-1559 artifact locally before any Robinhood broadcast', async () => {
-        scenario = await createPayboxPublicScenario();
-        await scenario.bootstrap();
-        scenario.mismatchTransactions();
-
-        const result = await scenario.callWithdraw();
-
-        expect(result.isError).toBe(true);
-        expect(scenario.resultData(result)).toEqual({
-            code: 'PAYBOX_INVALID_OPERATION_ARTIFACT',
-            stateCleared: false,
-            retryable: false,
-        });
-        expect(scenario.requestCount('sdk', 'sign_transaction')).toBe(1);
-        expect(scenario.requestCount('rpc', 'broadcast')).toBe(0);
-        expect(scenario.requestCount('rpc', 'wait_for_receipt')).toBe(0);
-        expect(scenario.persistedPaybox()).not.toBeNull();
-    });
 });

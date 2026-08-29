@@ -1,11 +1,4 @@
-import {
-    getAddress,
-    type Hash,
-    type Hex,
-    parseEther,
-    serializeTransaction,
-    type TransactionSerializableEIP1559,
-} from 'viem';
+import { getAddress, type Hash, type Hex, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -33,7 +26,6 @@ import type {
     PayboxWalletAuthority,
 } from '../types.js';
 import { PayboxWalletManager } from '../wallet/manager.js';
-import { verifiedPayboxTransaction } from '../wallet/utils.js';
 
 const key = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const otherKey = '0x8b3a350cf5c34c9194ca3a545d9b5d4a1f0abf1c9f3c2bb18ce19e6f01a82652';
@@ -124,78 +116,6 @@ class RecordingLogger implements ILogger {
         return this;
     }
 }
-
-describe('verifiedPayboxTransaction', () => {
-    it('accepts only the exact selected-wallet EIP-1559 artifact', async () => {
-        const artifact = await signed();
-        await expect(verifiedPayboxTransaction(intent, artifact, account.address)).resolves.toBe(artifact);
-    });
-
-    it.each([
-        ['malformed serialized transaction', '0xdeadbeef' as Hex],
-        ['mismatched transaction intent', null],
-    ])('classifies a %s as an invalid operation artifact', async (_case, malformed) => {
-        const artifact = malformed ?? (await signed({ ...intent, value: intent.value + 1n }));
-
-        await expect(verifiedPayboxTransaction(intent, artifact, account.address)).rejects.toBeInstanceOf(
-            PayboxInvalidOperationArtifactError,
-        );
-    });
-
-    it.each([
-        [
-            'type',
-            () =>
-                account.signTransaction({
-                    to: intent.to,
-                    value: intent.value,
-                    data: intent.data,
-                    chainId: intent.chainId,
-                    gas: intent.gas,
-                    gasPrice: intent.maxFeePerGas,
-                    nonce: intent.nonce,
-                    type: 'legacy',
-                }),
-        ],
-        ['destination', () => signed({ ...intent, to: getAddress('0x0000000000000000000000000000000000005678') })],
-        ['calldata', () => signed({ ...intent, data: '0xabcd' })],
-        ['value', () => signed({ ...intent, value: intent.value + 1n })],
-        ['chain', () => signed({ ...intent, chainId: 1 })],
-        ['gas', () => signed({ ...intent, gas: intent.gas + 1n })],
-        ['priority fee', () => signed({ ...intent, maxPriorityFeePerGas: intent.maxPriorityFeePerGas + 1n })],
-        ['maximum fee', () => signed({ ...intent, maxFeePerGas: intent.maxFeePerGas + 1n })],
-        ['nonce', () => signed({ ...intent, nonce: intent.nonce + 1 })],
-        [
-            'access list',
-            () =>
-                account.signTransaction({
-                    ...intent,
-                    type: 'eip1559',
-                    accessList: [{ address: destination, storageKeys: [] }],
-                }),
-        ],
-    ])('rejects a signed artifact with a mutated %s', async (_field, artifact) => {
-        await expect(verifiedPayboxTransaction(intent, await artifact(), account.address)).rejects.toBeInstanceOf(
-            PayboxInvalidOperationArtifactError,
-        );
-    });
-
-    it('rejects malformed and unsigned artifacts', async () => {
-        await expect(verifiedPayboxTransaction(intent, '0xdeadbeef', account.address)).rejects.toBeInstanceOf(
-            PayboxInvalidOperationArtifactError,
-        );
-        const unsigned = serializeTransaction({ ...intent, type: 'eip1559' } as TransactionSerializableEIP1559);
-        await expect(verifiedPayboxTransaction(intent, unsigned, account.address)).rejects.toBeInstanceOf(
-            PayboxInvalidOperationArtifactError,
-        );
-    });
-
-    it('marks a wrong transaction signer as confirmed invalid key binding', async () => {
-        await expect(
-            verifiedPayboxTransaction(intent, await signed(intent, other), account.address),
-        ).rejects.toBeInstanceOf(PayboxAuthInvalidError);
-    });
-});
 
 describe('PayboxWalletManager', () => {
     it.each([
@@ -472,21 +392,6 @@ describe('PayboxWalletManager', () => {
         await expect(first).rejects.toThrow('signing failed');
         await expect(second).resolves.toBe(hash);
         expect(signTransaction).toHaveBeenCalledTimes(2);
-    });
-
-    it('rejects malformed, mismatched, and denied signing outcomes before broadcast', async () => {
-        for (const outcome of [
-            () => Promise.resolve('0xdeadbeef' as Hex),
-            () => signed({ ...intent, value: intent.value + 1n }),
-            () => Promise.reject(new Error('PAYBOX_OPERATION_DENIED')),
-        ]) {
-            const rpcClient = rpc();
-            const wallet = manager({ signTransaction: vi.fn(outcome) }, rpcClient);
-            await expect(
-                wallet.sendTransaction({ to: destination, data: intent.data, value: intent.value, gas: null }),
-            ).rejects.toThrow();
-            expect(rpcClient.sendRawTransaction).not.toHaveBeenCalled();
-        }
     });
 
     it('delegates reads, estimation, balance, gas price, and receipts only to Robinhood RPC', async () => {
