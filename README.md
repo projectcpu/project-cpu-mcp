@@ -122,7 +122,7 @@ codex plugin marketplace add https://github.com/projectcpu/project-cpu-mcp
 codex plugin add project-cpu@project-cpu
 ```
 
-Codex plugin installation is global. For the recommended project-only fallback, copy `plugins/project-cpu/skills/project-cpu` to `<project>/.codex/skills/project-cpu`. Then create or edit `<project>/.codex/config.toml` and add:
+Codex plugin installation is global. For the recommended project-only fallback, copy `plugins/project-cpu/skills/project-cpu` to `<project>/.agents/skills/project-cpu`. Then create or edit `<project>/.codex/config.toml` and add:
 
 ```toml
 [mcp_servers.project-cpu]

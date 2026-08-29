@@ -66,5 +66,7 @@ describe('the dual-harness plugin', () => {
         expect(readme).toMatch(/Paybox[\s\S]*cpu_authenticate/iu);
         expect(readme).toMatch(/reload|new session/iu);
         expect(readme).toMatch(/project-only[\s\S]*recommend/iu);
+        expect(readme).toContain('<project>/.agents/skills/project-cpu');
+        expect(readme).not.toContain('<project>/.codex/skills/project-cpu');
     });
 });
