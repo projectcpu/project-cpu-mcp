@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.11.0...v0.11.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* drop tool-surface README parity test ([228908e](https://github.com/projectcpu/project-cpu-mcp/commit/228908e1282f1cabf00925b174062dac5df4e92d))
+
 ## [0.11.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.10.0...v0.11.0) (2026-08-29)
 
 
