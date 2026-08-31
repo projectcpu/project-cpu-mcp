@@ -5,6 +5,7 @@ import { ApiClient } from '../../api/client.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import { SessionManager } from '../../session/manager.js';
 import { type SessionData, SessionStatus } from '../../session/types.js';
+import { WalletMode } from '../../types.js';
 import type { WalletManager, WalletProvider } from '../../wallet/types.js';
 import { AuthService } from '../auth.service.js';
 
@@ -36,6 +37,7 @@ describe('AuthService', () => {
 
         session = new SessionManager(null as never);
         api = new ApiClient(null as never);
+        vi.mocked(session.getWalletMode).mockReturnValue(WalletMode.EVM);
 
         walletManager = {
             getAddress: vi.fn(() => ADDRESS),
@@ -53,14 +55,6 @@ describe('AuthService', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
-    });
-
-    describe('surface', () => {
-        it('exposes SIWE login only', () => {
-            const surface = service as unknown as Record<string, unknown>;
-            expect(surface.authenticateDevice).toBeUndefined();
-            expect(surface.getPendingAuth).toBeUndefined();
-        });
     });
 
     describe('SIWE', () => {
@@ -118,6 +112,7 @@ describe('AuthService', () => {
                 expect(walletManager.signMessage).toHaveBeenCalledOnce();
                 expect(session.setJwt).not.toHaveBeenCalled();
                 expect(session.setSession).toHaveBeenCalledWith({
+                    walletMode: WalletMode.EVM,
                     address: ADDRESS,
                     jwt: 'jwt-token',
                     createdAt: expect.any(String),
@@ -183,10 +178,14 @@ describe('AuthService', () => {
                 const token = await service.authenticateSiwe();
 
                 expect(token).toBe('jwt-token');
-                expect(api.request).toHaveBeenCalledWith('/api/v1/auth/siwe/nonce', {
-                    method: 'POST',
-                    body: { address: ADDRESS },
-                });
+                expect(api.request).toHaveBeenCalledWith(
+                    '/api/v1/auth/siwe/nonce',
+                    {
+                        method: 'POST',
+                        body: { address: ADDRESS },
+                    },
+                    expect.any(AbortSignal),
+                );
                 expect(walletManager.signMessage).toHaveBeenCalledOnce();
                 expect(api.request).toHaveBeenCalledWith(
                     '/api/v1/auth/siwe/verify',
@@ -194,14 +193,42 @@ describe('AuthService', () => {
                         method: 'POST',
                         body: expect.objectContaining({ signature: '0xsignature' }),
                     }),
+                    expect.any(AbortSignal),
                 );
-                expect(session.setSession).toHaveBeenCalledWith({
-                    address: ADDRESS,
-                    jwt: 'jwt-token',
-                    createdAt: expect.any(String),
-                    updatedAt: expect.any(String),
-                });
+                expect(session.setSession).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        walletMode: WalletMode.EVM,
+                        address: ADDRESS,
+                        jwt: 'jwt-token',
+                    }),
+                );
+            });
+
+            it('does not persist a SIWE result invalidated while verification is pending', async () => {
+                const controller = new AbortController();
+                const verification = controlledPromise<ReturnType<typeof verifyResponse>>();
+                vi.mocked(session.getStatus).mockReturnValue(SessionStatus.Missing);
+                vi.mocked(api.getBaseUrl).mockReturnValue('https://api.test.com');
+                vi.mocked(api.request).mockResolvedValueOnce(nonceResponse());
+                vi.mocked(api.request).mockImplementationOnce(() => verification.promise);
+
+                const authentication = service.authenticateWithWallet(walletManager, controller.signal);
+                await vi.waitFor(() => expect(api.request).toHaveBeenCalledTimes(2));
+                controller.abort(new Error('Authentication was invalidated.'));
+                verification.resolve(verifyResponse());
+
+                await expect(authentication).rejects.toThrow('invalidated');
+                expect(session.setSession).not.toHaveBeenCalled();
+                expect(session.setJwt).not.toHaveBeenCalled();
             });
         });
     });
 });
+
+function controlledPromise<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolvePromise = (_value: T): void => undefined;
+    const promise = new Promise<T>((resolve) => {
+        resolvePromise = resolve;
+    });
+    return { promise, resolve: resolvePromise };
+}

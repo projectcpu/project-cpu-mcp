@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import pkg from '../package.json' with { type: 'json' };
 import { ApiClient } from './api/client.js';
 import { RevealRequestsClient } from './api/reveal-requests.client.js';
-import { DEFAULT_API_URL } from './config/constants.js';
+import { DEFAULT_API_URL, PAYBOX_ISSUER_URL } from './config/constants.js';
 import { loadEnvConfig } from './config/env.js';
 import { createLogger } from './logger/index.js';
 import { DEFAULT_POLL_INTERVAL_MS, DEFAULT_RECONNECT_GRACE_MS } from './map/constants.js';
@@ -13,6 +13,12 @@ import { MapReader } from './map/reader.js';
 import { createMapSocket } from './map/socket.js';
 import { MapStore } from './map/store.js';
 import { MapSync } from './map/sync.js';
+import { SystemBrowserOpener } from './paybox/auth/browser-opener.js';
+import { createPayboxCoordinator } from './paybox/auth/coordinator.factory.js';
+import { LoopbackAuthFlow } from './paybox/auth/loopback-flow.js';
+import { PayboxSdkAdapter } from './paybox/sdk/adapter.js';
+import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './paybox/sdk/factory.js';
+import { PayboxAuthStorage } from './paybox/storage.js';
 import { FulfilmentClaims } from './randomness/claims.js';
 import { RandomnessStrategyFactory } from './randomness/factory.js';
 import { startRevealFulfilment } from './randomness/fulfiller.factory.js';
@@ -42,7 +48,7 @@ import { TransportService } from './services/transport.service.js';
 import { WithdrawService } from './services/withdraw.service.js';
 import { SessionManager } from './session/manager.js';
 import { SessionStorage } from './session/storage.js';
-import type { AppContext } from './types.js';
+import { WalletMode, type AppContext } from './types.js';
 import { errorMessage } from './utils/error.utils.js';
 import { BackendVersion, createBackendVersionProbe } from './version/backend-version.js';
 import { BACKEND_VERSION_TTL_MS, PACKAGE_VERSION_TTL_MS } from './version/constants.js';
@@ -60,12 +66,42 @@ async function main(): Promise<void> {
     const storage = new SessionStorage(os.homedir(), logger.child('session:storage'));
     const session = new SessionManager({
         storage,
+        walletMode: config.WALLET_MODE,
         logger: logger.child('session'),
     });
     session.initialize();
     logger.info('session initialized', { status: session.getStatus() });
 
-    const wallet = createWalletProvider({ config, logger });
+    let auth: AuthService | null = null;
+    const wallet =
+        config.WALLET_MODE === WalletMode.PAYBOX
+            ? createPayboxCoordinator(
+                  {
+                      storage: new PayboxAuthStorage(os.homedir(), logger.child('paybox:storage')),
+                      flow: new LoopbackAuthFlow(
+                          {
+                              issuerUrl: PAYBOX_ISSUER_URL,
+                              httpClient: { fetch: (url, init) => fetch(url, init) },
+                              timeoutMs: null,
+                          },
+                          new SystemBrowserOpener(),
+                      ),
+                      sdk: new PayboxSdkAdapter(defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher, {
+                          rpcUrl: config.RPC_URL,
+                          logger: logger.child('paybox:wallet'),
+                      }),
+                      authenticator: {
+                          authenticate: async (payboxWallet, signal) => {
+                              if (auth === null)
+                                  throw new Error('Paybox authentication is unavailable during startup.');
+                              return auth.authenticateWithWallet(payboxWallet, signal);
+                          },
+                          clearSession: () => session.clear(),
+                      },
+                  },
+                  logger,
+              )
+            : createWalletProvider({ config, logger });
     logger.info('wallet provider created', { ready: wallet.isReady() });
 
     const api = new ApiClient({
@@ -74,7 +110,7 @@ async function main(): Promise<void> {
         logger: logger.child('api'),
     });
 
-    const auth = new AuthService({ session, api, wallet, logger: logger.child('auth') });
+    auth = new AuthService({ session, api, wallet, logger: logger.child('auth') });
     api.setAuthenticator(auth);
 
     const appConfig = new AppConfigService({ api, network: config.NETWORK, logger: logger.child('config') });

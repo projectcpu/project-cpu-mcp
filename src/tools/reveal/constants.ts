@@ -5,7 +5,9 @@ export const REVEAL_DESCRIPTION = [
     'cell a second time additionally needs all its deposits depleted. How the draw arrives depends on the network’s',
     'randomness mode — see `cpu_get_game_config`. On a self-service network this call also settles the draw and',
     'returns the deposits it rolled; call it again on a cell whose reveal is still pending to finish that one,',
-    'which pays for no second reveal.',
+    'which pays for no second reveal. If the wallet lacks the quoted $CPU, this call sends no approval or reveal,',
+    'reports the exact shortfall, and gives the recovery path: `cpu_quote_swap`, then `cpu_swap` selling ETH, then',
+    'retry `cpu_reveal` so the price is quoted again.',
 ].join(' ');
 
 export const FULFILL_REVEAL_DESCRIPTION = [

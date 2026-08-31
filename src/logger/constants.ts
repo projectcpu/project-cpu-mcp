@@ -1,4 +1,8 @@
 export const REDACTED = '[REDACTED]';
+export const LOG_DIR_MODE = 0o700;
+export const LOG_FILE_MODE = 0o600;
+export const LOG_FILE_MAX_BYTES = 5 * 1024 * 1024;
+export const OVERSIZED_LOG_MESSAGE = 'Log entry exceeded the file size limit and was truncated.';
 
 /**
  * Object keys whose values are redacted recursively. Matched case-insensitively
@@ -17,6 +21,10 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
     'authorization',
     'signature',
     'prepared',
+    'signingkey',
+    'pbxk1',
+    'code',
+    'callbackcode',
 ]);
 
 /**
@@ -30,3 +38,7 @@ export const PRIVATE_KEY_PATTERN = /\b0x[a-fA-F0-9]{64}\b/g;
  * with the first segment starting with `eyJ` (base64 of `{"`).
  */
 export const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+export const AUTHORIZATION_BEARER_PATTERN = /(\bAuthorization:\s*Bearer\s+)[^\s,;]+/gi;
+export const PAYBOX_SECRET_PATTERN =
+    /\b(?:pbxk1\.[A-Za-z0-9_-]+|(?:access|refresh)[_-]?token[=:]\s*[^\s&]+|code[=:]\s*[^\s&]+)\b/gi;
+export const SENSITIVE_URL_QUERY_PATTERN = /(https?:\/\/[^\s?]+)\?[^\s]*/gi;

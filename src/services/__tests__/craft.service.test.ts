@@ -242,6 +242,12 @@ describe('CraftService.getStatus', () => {
                 durationSec: 60,
                 startAt: 1,
             },
+            resources: [
+                makeResource({
+                    resourceId: 102,
+                    storage: makeStorage({ cellCap: '100', hubCap: '100' }),
+                }),
+            ],
         });
         const { service } = makeService({ cell });
 

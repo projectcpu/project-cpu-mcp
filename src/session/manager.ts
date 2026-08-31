@@ -1,14 +1,17 @@
 import { type ISessionStorage, type SessionData, type SessionManagerOptions, SessionStatus } from './types.js';
 import type { ILogger } from '../logger/types.js';
+import type { WalletMode } from '../types.js';
 
 export class SessionManager {
     private session: SessionData | null = null;
     private readonly storage: ISessionStorage;
+    private readonly walletMode: WalletMode;
     private readonly logger: ILogger;
     private initialized = false;
 
     constructor(options: SessionManagerOptions) {
         this.storage = options.storage;
+        this.walletMode = options.walletMode;
         this.logger = options.logger;
     }
 
@@ -71,6 +74,23 @@ export class SessionManager {
         this.storage.save(updated);
     }
 
+    clearJwt(): void {
+        this.assertInitialized();
+
+        if (!this.session) {
+            return;
+        }
+
+        const updated: SessionData = {
+            ...this.session,
+            jwt: null,
+            updatedAt: new Date().toISOString(),
+        };
+
+        this.session = updated;
+        this.storage.save(updated);
+    }
+
     setSession(data: SessionData): void {
         this.assertInitialized();
 
@@ -83,6 +103,10 @@ export class SessionManager {
 
         this.session = null;
         this.storage.delete();
+    }
+
+    getWalletMode(): WalletMode {
+        return this.walletMode;
     }
 
     private assertInitialized(): void {

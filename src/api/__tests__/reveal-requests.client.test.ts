@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NoopLogger } from '../../logger/noop.logger.js';
-import type { SessionManager } from '../../session/manager.js';
 import { ApiClient } from '../client.js';
 import { RevealRequestsClient } from '../reveal-requests.client.js';
 
@@ -27,7 +26,7 @@ function answer(requests: Array<Record<string, unknown>>, serverTime = 1_700_000
 }
 
 function createReader(): RevealRequestsClient {
-    const api = new ApiClient({ baseUrl: 'https://api.test.com', session: {} as SessionManager, logger });
+    const api = new ApiClient({ baseUrl: 'https://api.test.com', session: { clearJwt: () => undefined }, logger });
     return new RevealRequestsClient({ api, logger });
 }
 

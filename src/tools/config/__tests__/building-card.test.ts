@@ -145,7 +145,7 @@ const CONFIG: AppConfig = {
         },
     ],
     buildings: [MINE, MINE_L2, STEEL_MILL, HUB],
-    reveal: { ethContribution: '0.001', cpuBurn: '2' },
+    reveal: { ethBudget: '0.001', cpuBurn: '2' },
     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
     trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
     storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },

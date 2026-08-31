@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { InMemoryStorage } from '../../__mocks__/in-memory-storage.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
+import { WalletMode } from '../../types.js';
 import { SessionManager } from '../manager.js';
 import { type SessionData, SessionStatus } from '../types.js';
 
@@ -24,6 +25,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     const now = new Date().toISOString();
     const inOneHour = Math.floor(Date.now() / 1000) + 3600;
     return {
+        walletMode: WalletMode.EVM,
         address: '0x1234567890123456789012345678901234567890',
         jwt: buildJwt(inOneHour),
         createdAt: now,
@@ -38,7 +40,7 @@ describe('SessionManager', () => {
 
     beforeEach(() => {
         storage = new InMemoryStorage();
-        manager = new SessionManager({ storage, logger: testLogger });
+        manager = new SessionManager({ storage, walletMode: WalletMode.EVM, logger: testLogger });
     });
 
     it('initialize loads existing session from storage', () => {
@@ -102,6 +104,23 @@ describe('SessionManager', () => {
     it('setJwt throws when no session exists', () => {
         manager.initialize();
         expect(() => manager.setJwt('new-jwt')).toThrow(/no session/i);
+    });
+
+    it('clearJwt preserves session identity while removing the game token', () => {
+        const session = createSession();
+        storage._seed(session);
+        manager.initialize();
+
+        manager.clearJwt();
+
+        expect(manager.getSession()).toEqual(
+            expect.objectContaining({
+                jwt: null,
+                walletMode: WalletMode.EVM,
+                address: session.address,
+            }),
+        );
+        expect(storage.load()).toEqual(expect.objectContaining({ jwt: null, address: session.address }));
     });
 
     it('setSession replaces entire session in memory and storage', () => {

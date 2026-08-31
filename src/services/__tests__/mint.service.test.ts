@@ -133,7 +133,7 @@ function makeConfig(contracts: Partial<AppContracts> = {}): AppConfig {
         resources: {},
         recipes: [],
         buildings: [],
-        reveal: { ethContribution: '0', cpuBurn: '0' },
+        reveal: { ethBudget: '0', cpuBurn: '0' },
         transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: {} },
         trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
         storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },

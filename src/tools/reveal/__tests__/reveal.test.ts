@@ -5,6 +5,7 @@ import type { RevealResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
 import { ToolEventType, type ToolRegistrar } from '../../types.js';
+import { REVEAL_DESCRIPTION } from '../constants.js';
 import { registerRevealTool } from '../reveal.js';
 
 interface ToolResult {
@@ -79,6 +80,11 @@ const SETTLED_HEAD =
     `Reveal request 7 at randomness source ${SOURCE}, settled by beacon round 91. fulfil tx 0xfulfil.`;
 
 describe('reveal tool', () => {
+    it('gives an autonomous agent the complete $CPU recovery path without telling it to stop', () => {
+        expect(REVEAL_DESCRIPTION).toMatch(/cpu_quote_swap.*cpu_swap.*selling ETH.*retry `cpu_reveal`/is);
+        expect(REVEAL_DESCRIPTION).not.toMatch(/wait for (?:the )?operator|ask (?:the )?operator|stop and/i);
+    });
+
     it('reports a fulfilled genesis reveal as paid, without an approve line', async () => {
         const result = await harness(fulfilledGenesis)({ tokenId: '42' });
         expect(result.content[0]?.text).toMatch(/0xreveal/);

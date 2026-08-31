@@ -1,3 +1,4 @@
+import { AuthenticationRequiredError } from './authentication-required.error.js';
 import { parseJsonBody } from './response.utils.js';
 import {
     type ApiClientOptions,
@@ -7,7 +8,7 @@ import {
     type ServerHealthView,
 } from './types.js';
 import type { ILogger } from '../logger/types.js';
-import type { SessionManager } from '../session/manager.js';
+import type { IJwtSession } from '../session/types.js';
 import { errorMessage } from '../utils/error.utils.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -19,7 +20,7 @@ export interface RequestOptions {
 
 export class ApiClient {
     private readonly baseUrl: string;
-    private readonly session: SessionManager;
+    private readonly session: IJwtSession;
     private readonly logger: ILogger;
     private authenticator: IAuthenticator | null = null;
     private serverReachable = true;
@@ -38,8 +39,12 @@ export class ApiClient {
     /**
      * Low-level request without auth. Use for public endpoints (SIWE nonce/verify, device flow).
      */
-    async request<T>(path: string, options: RequestOptions | null = null): Promise<ApiResponse<T>> {
-        return this.send<T>(path, options?.method ?? 'GET', options?.body ?? null, null);
+    async request<T>(
+        path: string,
+        options: RequestOptions | null = null,
+        signal: AbortSignal | null = null,
+    ): Promise<ApiResponse<T>> {
+        return this.send<T>(path, options?.method ?? 'GET', options?.body ?? null, null, null, true, signal);
     }
 
     /**
@@ -52,8 +57,8 @@ export class ApiClient {
 
     /**
      * Request with a `Authorization: Bearer <jwt>` header. The token is obtained from the
-     * authenticator (which (re-)logs in when missing/expired). On a 401 the authenticator is
-     * asked to re-authenticate and the request is retried exactly once.
+     * authenticator (which logs in when missing/expired). A 401 clears the game JWT and asks the
+     * caller to authenticate explicitly before choosing whether to retry the operation.
      */
     async authenticatedRequest<T>(path: string, options: RequestOptions | null = null): Promise<ApiResponse<T>> {
         if (!this.authenticator) {
@@ -64,15 +69,17 @@ export class ApiClient {
         const body = options?.body ?? null;
 
         const token = await this.authenticator.getAccessToken();
-        const first = await this.send<T>(path, method, body, { Authorization: `Bearer ${token}` });
+        const response = await this.fetchResponse(path, method, body, { Authorization: `Bearer ${token}` });
 
-        if (first.status !== HttpStatus.Unauthorized) {
-            return first;
+        if (response.status === HttpStatus.Unauthorized) {
+            this.setReachable(true, null);
+            this.logger.debug('api response', { method, path, status: response.status });
+            this.session.clearJwt();
+            this.logger.warn('authenticated request got 401 — game JWT cleared', { path });
+            throw new AuthenticationRequiredError();
         }
 
-        this.logger.warn('authenticated request got 401 — re-authenticating and retrying once', { path });
-        const fresh = await this.authenticator.reauthenticate();
-        return this.send<T>(path, method, body, { Authorization: `Bearer ${fresh}` });
+        return this.parseResponse<T>(response, method, path);
     }
 
     private async send<T>(
@@ -82,7 +89,22 @@ export class ApiClient {
         extraHeaders: Record<string, string> | null,
         timeoutMs: number | null = null,
         trackHealth = true,
+        signal: AbortSignal | null = null,
     ): Promise<ApiResponse<T>> {
+        const response = await this.fetchResponse(path, method, body, extraHeaders, timeoutMs, trackHealth, signal);
+
+        return this.parseResponse<T>(response, method, path, trackHealth);
+    }
+
+    private async fetchResponse(
+        path: string,
+        method: HttpMethod,
+        body: unknown | null,
+        extraHeaders: Record<string, string> | null,
+        timeoutMs: number | null = null,
+        trackHealth = true,
+        signal: AbortSignal | null = null,
+    ): Promise<Response> {
         const url = `${this.baseUrl}${path}`;
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
@@ -91,9 +113,12 @@ export class ApiClient {
 
         const init: RequestInit = { method, headers };
 
-        if (timeoutMs !== null) {
-            init.signal = AbortSignal.timeout(timeoutMs);
-        }
+        const timeoutSignal = timeoutMs === null ? null : AbortSignal.timeout(timeoutMs);
+        const requestSignal =
+            signal !== null && timeoutSignal !== null
+                ? AbortSignal.any([signal, timeoutSignal])
+                : (signal ?? timeoutSignal);
+        if (requestSignal !== null) init.signal = requestSignal;
 
         if (body !== undefined && body !== null) {
             init.body = JSON.stringify(body);
@@ -105,6 +130,7 @@ export class ApiClient {
         try {
             response = await fetch(url, init);
         } catch (error) {
+            if (signal?.aborted === true) signal.throwIfAborted();
             if (trackHealth) {
                 this.setReachable(false, errorMessage(error));
             }
@@ -114,6 +140,15 @@ export class ApiClient {
             );
         }
 
+        return response;
+    }
+
+    private async parseResponse<T>(
+        response: Response,
+        method: HttpMethod,
+        path: string,
+        trackHealth = true,
+    ): Promise<ApiResponse<T>> {
         let data: T;
         try {
             data = await parseJsonBody<T>(response);
@@ -157,7 +192,7 @@ export class ApiClient {
         return this.baseUrl;
     }
 
-    getSession(): SessionManager {
+    getSession(): IJwtSession {
         return this.session;
     }
 }

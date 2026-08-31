@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "project-cpu": {
+            "command": "npx",
+            "args": ["-y", "project-cpu-mcp@latest"]
+        }
+    }
+}

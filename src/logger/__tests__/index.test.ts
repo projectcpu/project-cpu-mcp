@@ -40,31 +40,31 @@ describe('createLogger DEBUG wiring', () => {
 
     it('is disabled when DEBUG is unset', () => {
         delete process.env.DEBUG;
-        createLogger('test').debug('hidden');
+        createLogger('test', null).debug('hidden');
         expect(stderr.calls).toHaveLength(0);
     });
 
     it('is disabled when DEBUG is an empty string', () => {
         process.env.DEBUG = '';
-        createLogger('test').debug('hidden');
+        createLogger('test', null).debug('hidden');
         expect(stderr.calls).toHaveLength(0);
     });
 
     it('is enabled when DEBUG=true', () => {
         process.env.DEBUG = 'true';
-        createLogger('test').debug('visible');
+        createLogger('test', null).debug('visible');
         expect(stderr.calls).toHaveLength(1);
     });
 
     it('is disabled when DEBUG=false — explicit switching-off actually works', () => {
         process.env.DEBUG = 'false';
-        createLogger('test').debug('hidden');
+        createLogger('test', null).debug('hidden');
         expect(stderr.calls).toHaveLength(0);
     });
 
     it('does not silently enable debug on a garbage value', () => {
         process.env.DEBUG = 'nonsense';
-        createLogger('test').debug('hidden');
+        createLogger('test', null).debug('hidden');
         expect(stderr.calls).toHaveLength(0);
     });
 });

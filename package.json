@@ -1,6 +1,6 @@
 {
     "name": "project-cpu-mcp",
-    "version": "0.10.0",
+    "version": "0.12.1",
     "description": "MCP server for Project CPU — AI agents interact with the game on behalf of players",
     "keywords": [
         "mcp",
@@ -45,6 +45,7 @@
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.0.0",
+        "@paybox-sh/sdk": "0.8.0",
         "@uniswap/sdk-core": "^7.17.0",
         "@uniswap/universal-router-sdk": "^5.7.0",
         "@uniswap/v4-sdk": "^2.2.2",

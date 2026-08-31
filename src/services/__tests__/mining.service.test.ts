@@ -100,14 +100,20 @@ function miningCell(process: Partial<RawCellProcessMiningView>, resources: RawCe
     });
 }
 
-const uncapped = (deposit: string) => [makeResource({ resourceId: 3, deposit, storage: null })];
+const roomy = (deposit: string) => [
+    makeResource({
+        resourceId: 3,
+        deposit,
+        storage: makeStorage({ cellCap: '1000000', hubCap: '1000000' }),
+    }),
+];
 
 describe('MiningService.getStatus', () => {
     it('reports the schedule and what the matured cycles would bank', async () => {
         const nowSec = 100_000;
         const cell = miningCell(
             { durationSec: 180, yieldPerCycle: 77, batches: 10, startAt: nowSec - (2 * 180 + 30) },
-            uncapped('100000'),
+            roomy('100000'),
         );
         const { service } = makeService({ cell, serverTime: nowSec });
 
@@ -125,7 +131,7 @@ describe('MiningService.getStatus', () => {
     });
 
     it('never banks past the schedule, however late the claim', async () => {
-        const cell = miningCell({ durationSec: 10, yieldPerCycle: 10, batches: 10, startAt: 1 }, uncapped('100000'));
+        const cell = miningCell({ durationSec: 10, yieldPerCycle: 10, batches: 10, startAt: 1 }, roomy('100000'));
         const { service } = makeService({ cell });
 
         const status = await service.getStatus('42');
@@ -140,7 +146,7 @@ describe('MiningService.getStatus', () => {
         const nowSec = 100_000;
         const cell = miningCell(
             { durationSec: 180, yieldPerCycle: 77, batches: 10, claimedBatches: 3, startAt: nowSec - 2 * 180 },
-            uncapped('100000'),
+            roomy('100000'),
         );
         const { service } = makeService({ cell, serverTime: nowSec });
 
@@ -152,7 +158,7 @@ describe('MiningService.getStatus', () => {
     });
 
     it('ends early on the deposit, draining its last partial cycle in full', async () => {
-        const cell = miningCell({ durationSec: 10, yieldPerCycle: 77, batches: 1000, startAt: 1 }, uncapped('100'));
+        const cell = miningCell({ durationSec: 10, yieldPerCycle: 77, batches: 1000, startAt: 1 }, roomy('100'));
         const { service } = makeService({ cell });
 
         const status = await service.getStatus('42');
@@ -165,7 +171,7 @@ describe('MiningService.getStatus', () => {
     it('drains more from the deposit than it credits on a partial-share extractor', async () => {
         const cell = miningCell(
             { durationSec: 10, yieldPerCycle: 100, processDrawPerCycle: 125, batches: 1000, startAt: 1 },
-            uncapped('750'),
+            roomy('750'),
         );
         const config = makeConfig();
         const mine = config.buildings.find((b) => b.type === BuildingType.Mine);
@@ -294,7 +300,7 @@ describe('MiningService.getStatus', () => {
     });
 
     it('retires a job predating bounded mining without crediting anything', async () => {
-        const cell = miningCell({ durationSec: 10, yieldPerCycle: 10, batches: 0, startAt: 1 }, uncapped('500'));
+        const cell = miningCell({ durationSec: 10, yieldPerCycle: 10, batches: 0, startAt: 1 }, roomy('500'));
         const { service } = makeService({ cell });
 
         const status = await service.getStatus('42');

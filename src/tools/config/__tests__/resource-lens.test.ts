@@ -170,6 +170,7 @@ const CONFIG: AppConfig = {
     },
     randomness: { kind: RandomnessKind.ENTROPY, adapter: '0x00000000000000000000000000000000000000a1' },
     resources: {
+        1: 'WCPU',
         5: 'Iron',
         6: 'Copper',
         101: 'Concrete',
@@ -216,7 +217,7 @@ const CONFIG: AppConfig = {
         },
     ],
     buildings: [MINE, MINE_L2, STEEL_MILL, COPPER_SMELTER, HEATSINK_PLANT, KILN, HUB],
-    reveal: { ethContribution: '0.001', cpuBurn: '2' },
+    reveal: { ethBudget: '0.001', cpuBurn: '2' },
     transport: {
         moveRadius: 1,
         hubRadius: 3,
@@ -226,6 +227,7 @@ const CONFIG: AppConfig = {
     trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
     storage: {
         caps: [
+            { resourceId: 1, cellCap: 0, hubCap: 0 },
             { resourceId: 5, cellCap: 100, hubCap: 1000 },
             { resourceId: 102, cellCap: 0, hubCap: 500 },
             { resourceId: 201, cellCap: 42, hubCap: 7 },
@@ -379,11 +381,14 @@ describe('resource lens tool', () => {
         expect(rendered).toContain('0.1');
     });
 
-    it('reads a zero shelf as unlimited rather than as no room', async () => {
-        const rendered = await text(102);
+    it('reads only WCPU zero shelves as unlimited', async () => {
+        const wcpu = await text(1);
+        const steel = await text(102);
 
-        expect((await lens(102)).storage).toEqual({ cellShelf: 0, hubShelf: 500 });
-        expect(rendered).toMatch(/unlimited/i);
+        expect((await lens(1)).storage).toEqual({ cellShelf: 0, hubShelf: 0 });
+        expect(wcpu).toMatch(/unlimited/i);
+        expect(steel).toContain('Cell shelf: 0 units');
+        expect(steel).not.toMatch(/unlimited/i);
     });
 
     it('answers a resource nothing touches with empty lists instead of an error', async () => {
@@ -550,7 +555,8 @@ describe('resource lens prose', () => {
     it('gives each resource its own two shelves and never reports a real ceiling as unlimited', async () => {
         expect(groupRows(await text(5), /^Storage$/)).toEqual(['Cell shelf: 100 units', 'Hub shelf: 1000 units']);
         expect(groupRows(await text(201), /^Storage$/)).toEqual(['Cell shelf: 42 units', 'Hub shelf: 7 units']);
-        expect(groupRows(await text(102), /^Storage$/)).toEqual(['Cell shelf: unlimited', 'Hub shelf: 500 units']);
+        expect(groupRows(await text(1), /^Storage$/)).toEqual(['Cell shelf: unlimited', 'Hub shelf: unlimited']);
+        expect(groupRows(await text(102), /^Storage$/)).toEqual(['Cell shelf: 0 units', 'Hub shelf: 500 units']);
     });
 
     it('reports an absent shelf pair as absent rather than inventing one', async () => {

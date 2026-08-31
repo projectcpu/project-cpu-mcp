@@ -134,7 +134,7 @@ const CONFIG: AppConfig = {
             branch: 'a',
         },
     ],
-    reveal: { ethContribution: '0.001', cpuBurn: '2' },
+    reveal: { ethBudget: '0.001', cpuBurn: '2' },
     transport: { moveRadius: 1, hubRadius: 3, moveTimePerCellSec: 2, moveFeeFloors: { 5: '0.1' } },
     trade: { saleBurnPercent: 1, maxSaleFeePercent: 50 },
     storage: { caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] },
@@ -264,9 +264,9 @@ function upgradeRelationsOf(config: AppConfig): Array<{ type: string; related: A
 describe('get_game_config tool — reveal payment', () => {
     it('never offers a free reveal, whatever the legs are priced at', async () => {
         const profiles: Array<AppConfig['reveal']> = [
-            { ethContribution: '0.001', cpuBurn: '2' },
-            { ethContribution: '0', cpuBurn: '2' },
-            { ethContribution: '0.001', cpuBurn: '0' },
+            { ethBudget: '0.001', cpuBurn: '2' },
+            { ethBudget: '0', cpuBurn: '2' },
+            { ethBudget: '0.001', cpuBurn: '0' },
             null,
         ];
 
@@ -278,19 +278,19 @@ describe('get_game_config tool — reveal payment', () => {
         }
     });
 
-    it('prints the reveal legs a live stand serves, without rescaling either of them', async () => {
-        const text = await prose({ ...CONFIG, reveal: { ethContribution: '0.0001', cpuBurn: '1' } });
+    it('prints the reveal budget and burn without rescaling either of them', async () => {
+        const text = await prose({ ...CONFIG, reveal: { ethBudget: '0.0001', cpuBurn: '1' } });
 
-        expect(text).toContain('contributes 0.0001 ETH to the $CPU liquidity pool and burns 1 $CPU');
-        expect(text).toContain('this view omits the live randomness fee and metadata publication charge');
-        expect(text).toContain('cpu_reveal reads the exact total off the chain and pays that');
+        expect(text).toContain('0.0001 ETH budget and burns 1 $CPU');
+        expect(text).toContain('pool contribution, live randomness fee and metadata publication charge');
+        expect(text).toContain('carved out of that budget');
     });
 
     it('says the amounts are unknown, not zero, when the network serves no reveal payment', async () => {
         const text = await prose({ ...CONFIG, reveal: null });
 
         expect(text).toContain('this network serves no price for it, so the amounts are unknown here');
-        expect(text).toContain('`cpu_reveal` reads the exact total off the chain and pays that');
+        expect(text).toContain('`cpu_reveal` reads the current budget and burn from the Cell before paying');
     });
 });
 
@@ -411,7 +411,7 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(json.chainId).toBe(4663);
         expect(json.contracts).toEqual(CONFIG.contracts);
         expect(json.resources).toEqual({ 5: 'Iron', 101: 'Concrete', 102: 'Steel' });
-        expect(json.reveal).toEqual({ ethContribution: '0.001', cpuBurn: '2' });
+        expect(json.reveal).toEqual({ ethBudget: '0.001', cpuBurn: '2' });
         expect(json.transport).toEqual({ ...CONFIG.transport, hubRadii: [] });
         expect(json.trade).toEqual({ saleBurnPercent: 1, maxSaleFeePercent: 50, lotListing: LOT_LISTING_RULES });
         expect(json.storage).toEqual({ caps: [{ resourceId: 1, cellCap: 100, hubCap: 1000 }] });

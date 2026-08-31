@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
 import type { ILogger } from '../logger/types.js';
+import { WalletMode } from '../types.js';
 
 export const sessionDataSchema = z.object({
+    walletMode: z.nativeEnum(WalletMode),
     address: z.string(),
     jwt: z.string().nullable(),
     createdAt: z.string(),
@@ -18,6 +20,11 @@ export interface ISessionStorage {
     exists(): boolean;
 }
 
+/** The game-session capability API clients need to revoke a rejected bearer token. */
+export interface IJwtSession {
+    clearJwt(): void;
+}
+
 export enum SessionStatus {
     Active = 'active',
     Expired = 'expired',
@@ -26,5 +33,6 @@ export enum SessionStatus {
 
 export interface SessionManagerOptions {
     storage: ISessionStorage;
+    walletMode: WalletMode;
     logger: ILogger;
 }

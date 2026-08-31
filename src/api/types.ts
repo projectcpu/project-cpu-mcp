@@ -2,12 +2,11 @@ import { z } from 'zod';
 
 import { LAUNCH_CHAIN_ID, LAUNCH_NETWORK } from '../config/constants.js';
 import type { ILogger } from '../logger/types.js';
-import type { SessionManager } from '../session/manager.js';
+import type { IJwtSession } from '../session/types.js';
 
 /** HTTP status codes the client and services branch on. */
 export enum HttpStatus {
     Ok = 200,
-    Accepted = 202,
     Unauthorized = 401,
     NotFound = 404,
     Conflict = 409,
@@ -16,15 +15,27 @@ export enum HttpStatus {
 
 export interface ApiClientOptions {
     baseUrl: string;
-    session: SessionManager;
+    session: IJwtSession;
     logger: ILogger;
 }
 
 export interface IAuthenticator {
     /** Returns a valid bearer token, performing a (re-)login if missing or expired. */
     getAccessToken(): Promise<string>;
-    /** Forces a fresh login (used after a 401) and returns the new token. */
-    reauthenticate(): Promise<string>;
+}
+
+export enum ApiAuthenticationErrorCode {
+    AuthenticationRequired = 'AUTHENTICATION_REQUIRED',
+}
+
+export enum AuthenticationNextTool {
+    Authenticate = 'cpu_authenticate',
+}
+
+export interface AuthenticationRequiredErrorData {
+    code: ApiAuthenticationErrorCode.AuthenticationRequired;
+    stateCleared: true;
+    nextTool: AuthenticationNextTool.Authenticate;
 }
 
 export interface SiweNonceResponse {
@@ -126,11 +137,11 @@ export enum BuildingType {
     Hub = 'hub',
 }
 
-/** Cost to demolish a building: `cpu` $CPU burned + `inputs` consumed from the cell's warehouse (no refund). */
+/** Cost to demolish a building: `cpu` $CPU burned + stored-unit `inputs` consumed from the warehouse. */
 export interface DemolishCostView {
     /** $CPU burned to tear it down, human-readable decimal. */
     cpu: string;
-    /** Resources debited from the cell's warehouse (integer units). Ids → `resources`. */
+    /** Resources debited from the cell's warehouse, in the same stored units as balances and caps. */
     inputs: Array<CraftStackView>;
 }
 
@@ -156,7 +167,7 @@ export interface BuildingView {
     /** $CPU per build, human-readable decimal (`'0'` = free). */
     buildCost: string;
     buildTimeSec: number;
-    /** Resources burned to construct it (integer units); empty for tier-1 extractors. Ids → `resources`. */
+    /** Resources burned to construct it, in the same stored units as balances and caps. */
     buildInputs: Array<CraftStackView>;
     /** Cost to tear it down — burned $CPU + warehouse resources consumed. */
     demolishCost: DemolishCostView;
@@ -175,14 +186,13 @@ export interface BuildingView {
 }
 
 /**
- * The two gameplay legs charged on every reveal, both whole-unit decimals as `GET /api/v1/config` serves
- * them — never wei. The view omits the live randomness fee and the metadata publication charge, so the pair
- * is never the total a reveal transaction must carry — only the Cell's own quote is (see
- * `ICellClient.quoteReveal`).
+ * The configured reveal budget and $CPU burn, both whole-unit decimals as `GET /api/v1/config` serves them —
+ * never wei. The randomness fee and metadata publication charge are carved out of the ETH budget; the Cell's
+ * own quote validates that the live service fees still fit before a request is funded.
  */
 export interface RevealPaymentView {
-    /** ETH contributed to the $CPU liquidity pool, decimal ETH. */
-    ethContribution: string;
+    /** Whole ETH budget charged for one reveal, decimal ETH. */
+    ethBudget: string;
     /** $CPU burned from the caller, decimal $CPU. */
     cpuBurn: string;
 }

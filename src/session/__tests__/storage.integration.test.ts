@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { SESSION_DIR, SESSION_FILE } from '../../config/constants.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
+import { WalletMode } from '../../types.js';
 import { SessionStorage } from '../storage.js';
 import type { SessionData } from '../types.js';
 
 function createSessionData(overrides: Partial<SessionData> = {}): SessionData {
     const now = new Date().toISOString();
     return {
+        walletMode: WalletMode.EVM,
         address: '0x1234567890123456789012345678901234567890',
         jwt: 'header.payload.signature',
         createdAt: now,
@@ -65,12 +67,12 @@ describe('SessionStorage', () => {
             expect(loaded?.jwt).toBe('new-jwt');
         });
 
-        it('persists only the address, JWT and timestamps', () => {
+        it('persists only the wallet mode, address, JWT and timestamps', () => {
             storage.save(createSessionData());
             const written = JSON.parse(
                 fs.readFileSync(path.join(tempDir, SESSION_DIR, SESSION_FILE), 'utf-8'),
             ) as Record<string, unknown>;
-            expect(Object.keys(written).sort()).toEqual(['address', 'createdAt', 'jwt', 'updatedAt']);
+            expect(Object.keys(written).sort()).toEqual(['address', 'createdAt', 'jwt', 'updatedAt', 'walletMode']);
         });
 
         it('writes nothing beside session.json', () => {
@@ -96,6 +98,7 @@ describe('SessionStorage', () => {
             );
 
             expect(storage.load()).toEqual({
+                walletMode: WalletMode.EVM,
                 address: '0x1234567890123456789012345678901234567890',
                 jwt: 'header.payload.signature',
                 createdAt: now,
@@ -124,7 +127,6 @@ describe('SessionStorage', () => {
         it('does not throw when file does not exist', () => {
             expect(() => storage.delete()).not.toThrow();
         });
-
         it('leaves the session directory empty', () => {
             storage.save(createSessionData());
             storage.delete();

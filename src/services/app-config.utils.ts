@@ -49,20 +49,19 @@ function isDecimalAmount(value: unknown): value is string {
 }
 
 /**
- * Reads the reveal payment a stand serves, and answers `null` for anything else — an absent field, or a
- * stand still serving a shape this client has never priced a reveal from. Guessing a zero here would read
- * as a free reveal, which no stand offers; the Cell's own quote is the price either way. Both legs are
+ * Reads the reveal payment the game API serves, and answers `null` for anything else. Guessing a zero here
+ * would read as a free reveal; the Cell's own quote remains the transaction authority. Both values are
  * whole-unit decimals as served, never wei: they are displayed, never used in arithmetic.
  */
 function parseRevealPayment(raw: unknown): RevealPaymentView | null {
     if (typeof raw !== 'object' || raw === null) {
         return null;
     }
-    const { ethContribution, cpuBurn } = raw as Record<string, unknown>;
-    if (!isDecimalAmount(ethContribution) || !isDecimalAmount(cpuBurn)) {
+    const { ethBudget, cpuBurn } = raw as Record<string, unknown>;
+    if (!isDecimalAmount(ethBudget) || !isDecimalAmount(cpuBurn)) {
         return null;
     }
-    return { ethContribution, cpuBurn };
+    return { ethBudget, cpuBurn };
 }
 
 function formatIssues(error: ZodError): string {

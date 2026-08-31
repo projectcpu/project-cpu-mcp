@@ -30,6 +30,11 @@ import type { SessionManager } from './session/manager.js';
 import type { IBackendVersionSignal, IPackageVersionSignal } from './version/types.js';
 import type { WalletProvider } from './wallet/types.js';
 
+export enum WalletMode {
+    EVM = 'evm',
+    PAYBOX = 'paybox',
+}
+
 export interface AppContext {
     config: EnvConfig;
     session: SessionManager;

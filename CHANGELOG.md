@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.12.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.0...v0.12.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* drop local validation of Paybox-signed transactions ([087a701](https://github.com/projectcpu/project-cpu-mcp/commit/087a70182f408a32d35d4af3a2ac4d89087113a2))
+
+## [0.12.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.11.1...v0.12.0) (2026-08-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* WALLET_MODE now defaults to paybox instead of evm.
+
+### Bug Fixes
+
+* use Paybox SDK response types ([#28](https://github.com/projectcpu/project-cpu-mcp/issues/28)) ([b5c8e30](https://github.com/projectcpu/project-cpu-mcp/commit/b5c8e3091a7f8a32e653c7bd7843e994b8b2f04d))
+
+## [0.11.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.11.0...v0.11.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* drop tool-surface README parity test ([228908e](https://github.com/projectcpu/project-cpu-mcp/commit/228908e1282f1cabf00925b174062dac5df4e92d))
+
+## [0.11.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.10.0...v0.11.0) (2026-08-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* WALLET_MODE now defaults to paybox instead of evm.
+* cpu_return_lot takes a new required input, `maxTransitFeeWei`. cpu_quote_lot_return's `transitPaid` is renamed to `maxTransitFee` and joined by `maxTransitFeeWei` — a quote debits nothing, it names a ceiling.
+
+### Features
+
+* default to Paybox and remove AGW wallet mode ([#22](https://github.com/projectcpu/project-cpu-mcp/issues/22)) ([b681747](https://github.com/projectcpu/project-cpu-mcp/commit/b681747e2d5533f1b724b4ad7c1a447e91e73285))
+* evict foreign lots and return their remainders home ([0c47ba2](https://github.com/projectcpu/project-cpu-mcp/commit/0c47ba2868adbfb511a471acd77dc08a92578433))
+* **plugin:** add operator-cpu game harness ([#26](https://github.com/projectcpu/project-cpu-mcp/issues/26)) ([ce0270c](https://github.com/projectcpu/project-cpu-mcp/commit/ce0270c081278c06329d6ca06a2b7ced36c1a3ec))
+
+
+### Bug Fixes
+
+* account for land metadata publication charge ([#18](https://github.com/projectcpu/project-cpu-mcp/issues/18)) ([6a5093a](https://github.com/projectcpu/project-cpu-mcp/commit/6a5093a5aab6d7ab65379409e85e54ec87dec68b))
+* align mcp with current contract behavior ([#25](https://github.com/projectcpu/project-cpu-mcp/issues/25)) ([4c4d071](https://github.com/projectcpu/project-cpu-mcp/commit/4c4d071127b9f1bdee9e01753a954b96971f3bfb))
+* guide reveal CPU shortfalls ([#21](https://github.com/projectcpu/project-cpu-mcp/issues/21)) ([8b1b293](https://github.com/projectcpu/project-cpu-mcp/commit/8b1b2936d3af1a83ea13480380485b36786317f2))
+* stop double-counting reserved warehouse space ([#23](https://github.com/projectcpu/project-cpu-mcp/issues/23)) ([69c204a](https://github.com/projectcpu/project-cpu-mcp/commit/69c204a9dab0d1d9647e786fd0dc01a8a289566f))
+
 ## [0.10.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.9.1...v0.10.0) (2026-08-24)
 
 

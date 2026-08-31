@@ -39,7 +39,11 @@ class FakeContracts implements IContractClient {
     ) {}
     async read<T>(params: ReadContractParams): Promise<T> {
         this.reads.push(params);
-        return this.readResults[params.functionName] as T;
+        const result = this.readResults[params.functionName];
+        if (result instanceof Error) {
+            throw result;
+        }
+        return result as T;
     }
     async estimateGas(tx: GasEstimateRequest): Promise<bigint> {
         this.estimates.push(tx);
@@ -85,15 +89,30 @@ describe('CellClient', () => {
         });
     });
 
-    it('keeps funding from the established total when the current quote appends a publication charge', async () => {
+    it('reads the budget and its three carved-out ETH legs positionally', async () => {
         const { client } = makeClient({ quoteReveal: [3_000n, 1_000n, 10_000n, 2n, 6_000n] });
 
         await expect(client.quoteReveal(CELL)).resolves.toEqual({
-            ethContributionWei: 3_000n,
+            poolContributionWei: 3_000n,
             randomnessFeeWei: 1_000n,
-            totalRequiredWei: 10_000n,
+            ethBudgetWei: 10_000n,
             cpuBurnWei: 2n,
+            metadataPublicationChargeWei: 6_000n,
         });
+    });
+
+    it('explains when live reveal service fees no longer fit inside the configured budget', async () => {
+        const data = encodeErrorResult({
+            abi: CELL_ABI,
+            errorName: 'RevealServiceFeesExceedBudget',
+            args: [4_000n, 4_500n],
+        });
+        const failure = new Error('Execution reverted', { cause: { data } });
+        const { client } = makeClient({ quoteReveal: failure });
+
+        await expect(client.quoteReveal(CELL)).rejects.toThrow(
+            /budget is 4000 wei.*randomness fee and metadata publication charge need 4500 wei.*nothing was spent/is,
+        );
     });
 
     it('encodes requestReveal and sends it with the fee value', async () => {
