@@ -8,10 +8,14 @@ Market order.
 
 ## Startup
 
-The wallet is EVM-only. `PRIVATE_KEY` is the single wallet credential and the server refuses to start without
-it; `NETWORK` accepts only `robinhood` (chain 4663) and `RPC_URL` overrides that network's public RPC. The key
-signs SIWE and every marketplace order signature locally, inside this process — there is no second wallet
-mode, no browser handoff and no device authorization anywhere in the package.
+`NETWORK` accepts only `robinhood` (chain 4663), and `RPC_URL` overrides that network's public RPC. The server
+supports the same two wallet modes for marketplace actions as it does for the rest of the game:
+
+- **Paybox (default)** — `cpu_authenticate` opens browser authorization and selects an autonomous EVM wallet
+  grant. Paybox signs transactions and EIP-712 marketplace orders remotely. Before an order is submitted, the
+  server recovers its signer and requires it to match the selected wallet.
+- **EVM** — set `WALLET_MODE=evm` and `PRIVATE_KEY=0x...`. SIWE, transactions and EIP-712 marketplace orders
+  are signed locally.
 
 **No OpenSea API key is required, and no environment variable accepts one.** Every marketplace request this
 server makes goes to the authenticated game API, which mediates all OpenSea REST access. Marketplace calls are
@@ -70,9 +74,11 @@ Cell token ids are canonical decimal strings without leading zeroes: `"1234"`, n
 
 The game API budgets marketplace traffic (roughly ten reads and five trading calls a minute per client). When
 it throttles a call, the server waits inside the same tool call and retries — but only within one cumulative
-**60-second budget per tool invocation**. That budget is not reset by another `429`, another network failure,
-another `5xx`, another authentication round or another prepared-intent answer, and the server never waits past
-the deadline of the prepared order it is working on.
+**60-second automatic-wait budget per tool invocation**. That budget covers server-controlled retry and
+reconciliation sleeps; wallet-signing latency is separate and cannot enlarge it. The budget is not reset by
+another `429`, another network failure, another `5xx`, another authentication round or another prepared-intent
+answer. The server checks the prepared order's deadline before signing and again before every submit attempt,
+so a slow wallet signature is never submitted after expiry.
 
 If the delay the API asks for is longer than the budget can cover, the call returns immediately with a
 retryable error carrying `retryAfterSeconds`. Invoke the same tool again later.

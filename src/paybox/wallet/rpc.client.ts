@@ -49,6 +49,11 @@ export class PayboxRpcClient implements IPayboxRpcClient {
         };
     }
 
+    public async getTransactionSender(hash: Hash): Promise<Address | null> {
+        const transaction = await this.client.getTransaction({ hash });
+        return transaction.from;
+    }
+
     public readContract(params: ReadContractParams): Promise<unknown> {
         return this.client.readContract({
             address: params.address,

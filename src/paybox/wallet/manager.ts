@@ -7,7 +7,7 @@ import {
     PayboxOperationIncompleteError,
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
-import { verifiedPayboxMessageSignature } from './utils.js';
+import { verifiedPayboxMessageSignature, verifiedPayboxTypedDataSignature } from './utils.js';
 import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import { LAUNCH_CHAIN_ID } from '../../config/constants.js';
 import type {
@@ -74,8 +74,8 @@ export class PayboxWalletManager implements WalletManager {
         return this.options.rpc.waitForReceipt(hash);
     }
 
-    public getTransactionSender(_hash: Hash): Promise<Address | null> {
-        return Promise.resolve(null);
+    public getTransactionSender(hash: Hash): Promise<Address | null> {
+        return this.options.rpc.getTransactionSender(hash);
     }
 
     public readContract(params: ReadContractParams): Promise<unknown> {
@@ -86,8 +86,19 @@ export class PayboxWalletManager implements WalletManager {
         return this.options.rpc.getBalance(this.address);
     }
 
-    public signTypedData(_request: SignTypedDataRequest): Promise<Hex> {
-        return Promise.reject(new Error('Paybox typed-data signing is not supported.'));
+    public async signTypedData(request: SignTypedDataRequest): Promise<Hex> {
+        const authority = await this.currentAuthority();
+        try {
+            const signature = await this.options.sdk.signTypedData(
+                authority.tokens,
+                authority.signingKey,
+                this.options.credentialId,
+                request,
+            );
+            return await verifiedPayboxTypedDataSignature(request, signature, this.address);
+        } catch (error) {
+            this.throwSigningFailure(error);
+        }
     }
 
     private async sendAtQueueHead(tx: TransactionRequest): Promise<Hash> {

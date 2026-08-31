@@ -83,4 +83,15 @@ describe('MarketWaitBudget', () => {
 
         expect(Date.now() - startedAt).toBe(MARKET_RETRY_BUDGET_MS);
     });
+
+    it('does not charge external wallet-signing latency against the automatic retry budget', async () => {
+        await runWithMarketWaitBudget(async () => {
+            const open = currentMarketWaitBudget();
+            const remoteSigning = new Promise<void>((resolve) => setTimeout(resolve, 5 * 60_000));
+
+            await Promise.all([remoteSigning, vi.advanceTimersByTimeAsync(5 * 60_000)]);
+
+            expect(open?.remainingMs).toBe(MARKET_RETRY_BUDGET_MS);
+        });
+    });
 });

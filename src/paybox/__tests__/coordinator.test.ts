@@ -1244,6 +1244,7 @@ describe('PayboxCoordinator', () => {
             listEligibleAutonomousEvmGrants: vi.fn(),
             createWallet: vi.fn(),
             signMessage,
+            signTypedData: vi.fn(),
             signTransaction: vi.fn(),
         };
         const createWallet = vi.fn(
@@ -1268,6 +1269,7 @@ describe('PayboxCoordinator', () => {
             listEligibleAutonomousEvmGrants: vi.fn(),
             createWallet,
             signMessage,
+            signTypedData: vi.fn(),
             signTransaction: vi.fn(),
         };
         const coordinator = new PayboxCoordinator({
@@ -1583,6 +1585,7 @@ describe('PayboxCoordinator', () => {
             })),
             createWallet: vi.fn(() => wallet),
             signMessage: vi.fn(),
+            signTypedData: vi.fn(),
             signTransaction: vi.fn(),
         };
         const authenticate = vi.fn(async () => 'game-jwt');

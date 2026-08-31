@@ -3,6 +3,7 @@ import { getAddress, parseEther } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ILogger } from '../../logger/types.js';
+import type { SignTypedDataRequest } from '../../wallet/types.js';
 import {
     PayboxAuthInvalidError,
     PayboxInvalidOperationArtifactError,
@@ -39,6 +40,17 @@ const signingIntent: PayboxTransactionIntent = {
     maxPriorityFeePerGas: 1n,
     maxFeePerGas: 2n,
     nonce: 0,
+};
+const typedData: SignTypedDataRequest = {
+    domain: {
+        name: 'Project CPU test',
+        version: '1',
+        chainId: 4663,
+        verifyingContract: '0x0000000000000000000000000000000000000001',
+    },
+    types: { Test: [{ name: 'value', type: 'uint256' }] },
+    primaryType: 'Test',
+    message: { value: 1n },
 };
 const emptyCredentialList = { credentials: [], ungranted: [] };
 
@@ -78,6 +90,22 @@ function recordingLogger(): { logger: ILogger; warn: ReturnType<typeof vi.fn> } 
 }
 
 describe('PayboxSdkAdapter', () => {
+    it('requests native EIP-712 signing from the selected Paybox credential', async () => {
+        const mock = factory(emptyCredentialList);
+        const adapter = new PayboxSdkAdapter(mock.factory);
+
+        await expect(adapter.signTypedData(tokens, 'pbxk1.key', 'credential-a', typedData)).resolves.toMatch(
+            /^0x[0-9a-f]+$/,
+        );
+        expect(mock.sign).toHaveBeenCalledWith(
+            {
+                credentialId: 'credential-a',
+                intent: { op: 'typedData', typedData },
+            },
+            { autoSign: true },
+        );
+    });
+
     it('logs safe SDK diagnostics when authenticated credential discovery fails unexpectedly', async () => {
         const mock = factory(emptyCredentialList);
         const diagnostics = recordingLogger();
@@ -182,6 +210,22 @@ describe('PayboxSdkAdapter', () => {
             'PAYBOX_INVALID_OPERATION_ARTIFACT',
             'invalid_operation_artifact',
         ],
+        [
+            'typed-data pending result',
+            { status: 'pending_signature', output: null },
+            (adapter: PayboxSdkAdapter) => adapter.signTypedData(tokens, 'pbxk1.key', 'credential-a', typedData),
+            PayboxOperationIncompleteError,
+            'PAYBOX_OPERATION_INCOMPLETE',
+            'operation_incomplete',
+        ],
+        [
+            'typed-data malformed success artifact',
+            { status: 'success', output: { output_type: 'signature', credential_id: 'other', value: 'not-hex' } },
+            (adapter: PayboxSdkAdapter) => adapter.signTypedData(tokens, 'pbxk1.key', 'credential-a', typedData),
+            PayboxInvalidOperationArtifactError,
+            'PAYBOX_INVALID_OPERATION_ARTIFACT',
+            'invalid_operation_artifact',
+        ],
     ])(
         'classifies %s without invalidating or resubmitting',
         async (_case, response, request, ErrorClass, code, failureClass) => {
@@ -203,6 +247,10 @@ describe('PayboxSdkAdapter', () => {
 
     it.each([
         ['message', (adapter: PayboxSdkAdapter) => adapter.signMessage(tokens, 'pbxk1.key', 'credential-a', 'hello')],
+        [
+            'typed data',
+            (adapter: PayboxSdkAdapter) => adapter.signTypedData(tokens, 'pbxk1.key', 'credential-a', typedData),
+        ],
         [
             'transaction',
             (adapter: PayboxSdkAdapter) => adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
@@ -291,6 +339,16 @@ describe('PayboxSdkAdapter', () => {
             'transaction',
             401,
             (adapter: PayboxSdkAdapter) => adapter.signTransaction(tokens, 'pbxk1.key', 'credential-a', signingIntent),
+        ],
+        [
+            'typed data',
+            401,
+            (adapter: PayboxSdkAdapter) => adapter.signTypedData(tokens, 'pbxk1.key', 'credential-a', typedData),
+        ],
+        [
+            'typed data',
+            403,
+            (adapter: PayboxSdkAdapter) => adapter.signTypedData(tokens, 'pbxk1.key', 'credential-a', typedData),
         ],
         [
             'transaction',

@@ -2,7 +2,7 @@ import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './fa
 import { payboxSdkFailureLogMeta } from './logging.utils.js';
 import { autonomousEvmGrants, classifiedPayboxError } from './utils.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
-import type { WalletManager } from '../../wallet/types.js';
+import type { SignTypedDataRequest, WalletManager } from '../../wallet/types.js';
 import {
     PayboxInvalidOperationArtifactError,
     PayboxOperationDeniedError,
@@ -128,6 +128,42 @@ export class PayboxSdkAdapter implements IPayboxSdkAdapter {
             });
         }
         return (response.output.value as { signature: string }).signature;
+    }
+
+    public async signTypedData(
+        tokens: PayboxTokens,
+        signingKey: string,
+        credentialId: string,
+        request: SignTypedDataRequest,
+    ): Promise<`0x${string}`> {
+        let response;
+        try {
+            response = await this.client(tokens, signingKey).requestWalletSign(
+                {
+                    credentialId,
+                    intent: { op: 'typedData', typedData: request },
+                },
+                { autoSign: true },
+            );
+        } catch (error) {
+            throw this.classifiedFailure(
+                PayboxSdkOperation.SignTypedData,
+                PayboxSdkStage.RequestWalletSign,
+                PayboxRequestContext.Authenticated,
+                error,
+            );
+        }
+        if (response.status === 'denied') throw new PayboxOperationDeniedError();
+        if (response.status !== 'success' || response.output === null) {
+            throw new PayboxOperationIncompleteError();
+        }
+        if (response.output.output_type !== 'signature' || response.output.credential_id !== credentialId) {
+            throw new PayboxInvalidOperationArtifactError({
+                outputType: response.output.output_type,
+                credentialId: response.output.credential_id,
+            });
+        }
+        return (response.output.value as { signature: `0x${string}` }).signature;
     }
 
     public async signTransaction(

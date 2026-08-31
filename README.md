@@ -165,7 +165,9 @@ After reloading the harness, call `cpu_persona` first, then `cpu_authenticate`. 
 The server uses one wallet mode to sign actions for the Operator:
 
 - **Paybox (default)** — You do not configure a private key. Call `cpu_authenticate`. The server opens
-  Paybox in your browser, where you select a wallet and approve access. Paybox signs wallet actions.
+  Paybox in your browser, where you select an autonomous EVM wallet grant and approve access. Paybox signs
+  wallet actions, including the EIP-712 orders used by the Cell marketplace; the server verifies every
+  returned signature against the selected wallet before it submits the order.
 - **EVM** — Set `WALLET_MODE=evm` and `PRIVATE_KEY=0x...` in the MCP server environment. The server uses
   that local EVM wallet and signs actions on your machine. Call `cpu_authenticate` to sign in to the game.
 

@@ -9,7 +9,7 @@ import type { ILogger, LogMeta } from '../../logger/types.js';
 import { AuthService } from '../../services/auth.service.js';
 import type { SessionManager } from '../../session/manager.js';
 import { SessionStatus } from '../../session/types.js';
-import { TxStatus } from '../../wallet/types.js';
+import { TxStatus, type SignTypedDataRequest } from '../../wallet/types.js';
 import {
     PayboxAuthInvalidError,
     PayboxInvalidOperationArtifactError,
@@ -51,6 +51,17 @@ const intent: PayboxTransactionIntent = {
     maxFeePerGas: 30_000_000_000n,
     nonce: 7,
 };
+const typedData: SignTypedDataRequest = {
+    domain: {
+        name: 'Project CPU test',
+        version: '1',
+        chainId: 4663,
+        verifyingContract: destination,
+    },
+    types: { Test: [{ name: 'value', type: 'uint256' }] },
+    primaryType: 'Test',
+    message: { value: 1n },
+};
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void } {
     let resolve!: (value: T) => void;
@@ -82,6 +93,7 @@ function rpc(overrides: Partial<IPayboxRpcClient> = {}): IPayboxRpcClient {
             blockNumber: 99n,
             logs: [],
         })),
+        getTransactionSender: vi.fn(async () => account.address),
         readContract: vi.fn(async () => 42n),
         getBalance: vi.fn(async () => 12n),
         ...overrides,
@@ -298,6 +310,28 @@ describe('PayboxWalletManager', () => {
         }
     });
 
+    it('returns only an EIP-712 signature bound to the selected wallet and request', async () => {
+        const signature = await account.signTypedData(
+            typedData as unknown as Parameters<typeof account.signTypedData>[0],
+        );
+        const signTypedData = vi.fn(async () => signature);
+        const wallet = manager({ signTypedData });
+
+        await expect(wallet.signTypedData(typedData)).resolves.toBe(signature);
+        expect(signTypedData).toHaveBeenCalledWith(tokens, 'pbxk1.key', 'credential-a', typedData);
+    });
+
+    it('requires explicit authentication for wrong-wallet and malformed typed-data signatures', async () => {
+        for (const signTypedData of [
+            vi.fn(async () => other.signTypedData(typedData as unknown as Parameters<typeof other.signTypedData>[0])),
+            vi.fn(async () => '0xdeadbeef' as Hex),
+        ]) {
+            await expect(manager({ signTypedData }).signTypedData(typedData)).rejects.toBeInstanceOf(
+                AuthenticationRequiredError,
+            );
+        }
+    });
+
     it('invalidates coordinator authority after a confirmed signing failure', async () => {
         const invalidate = vi.fn();
         const wallet = new PayboxWalletManager({
@@ -394,7 +428,7 @@ describe('PayboxWalletManager', () => {
         expect(signTransaction).toHaveBeenCalledTimes(2);
     });
 
-    it('delegates reads, estimation, balance, gas price, and receipts only to Robinhood RPC', async () => {
+    it('delegates reads, transaction lookup, estimation, balance, gas price, and receipts only to Robinhood RPC', async () => {
         const rpcClient = rpc();
         const wallet = manager({}, rpcClient);
         const read = { address: destination, abi: [], functionName: 'value', args: [] } as const;
@@ -404,6 +438,7 @@ describe('PayboxWalletManager', () => {
         await expect(wallet.getBalance()).resolves.toBe(12n);
         await expect(wallet.readContract(read)).resolves.toBe(42n);
         await expect(wallet.waitForReceipt(hash)).resolves.toMatchObject({ blockNumber: 99n });
+        await expect(wallet.getTransactionSender(hash)).resolves.toBe(account.address);
         expect(rpcClient.estimateGas).toHaveBeenCalledWith(account.address, {
             to: destination,
             data: '0x',
@@ -412,6 +447,7 @@ describe('PayboxWalletManager', () => {
         expect(rpcClient.getBalance).toHaveBeenCalledWith(account.address);
         expect(rpcClient.readContract).toHaveBeenCalledWith(read);
         expect(rpcClient.waitForReceipt).toHaveBeenCalledWith(hash);
+        expect(rpcClient.getTransactionSender).toHaveBeenCalledWith(hash);
     });
 
     it('prevents SIWE verification when the selected-wallet signature check fails', async () => {

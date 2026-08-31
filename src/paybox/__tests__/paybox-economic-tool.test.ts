@@ -102,6 +102,7 @@ describe('Paybox economic tool flow', () => {
                 blockNumber: 123n,
                 logs: [],
             })),
+            getTransactionSender: vi.fn(async () => account.address),
             readContract: vi.fn(),
             getBalance: vi.fn(async () => 0n),
         };
@@ -322,6 +323,7 @@ async function failedEconomicScenario(
             counts.receiptWaits += 1;
             return { status: TxStatus.Success, transactionHash, blockNumber: 123n, logs: [] };
         }),
+        getTransactionSender: vi.fn(async () => account.address),
         readContract: vi.fn(),
         getBalance: vi.fn(async () => 0n),
     };
@@ -351,6 +353,8 @@ async function failedEconomicScenario(
         },
         signMessage: (current, signingKey, credentialId, message) =>
             adapterBoundary.signMessage(current, signingKey, credentialId, message),
+        signTypedData: (current, signingKey, credentialId, request) =>
+            adapterBoundary.signTypedData(current, signingKey, credentialId, request),
         signTransaction: (current, signingKey, credentialId, intent) =>
             adapterBoundary.signTransaction(current, signingKey, credentialId, intent),
     };

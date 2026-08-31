@@ -46,7 +46,8 @@ src/
 ├── server.ts         # McpServer setup, tool registration
 ├── tools/            # MCP controllers (input → service → output)
 ├── services/         # Business logic, orchestration
-├── wallet/           # WalletManager interface + EVM implementation
+├── wallet/           # WalletManager interface + local EVM implementation
+├── paybox/           # Paybox OAuth, remote wallet signing, and RPC adapter
 ├── api/              # ApiClient (HTTP to the game API, JWT bearer + SIWE re-login)
 ├── session/          # SessionStorage + SessionManager (persist game JWT state)
 └── config/           # env + constants
