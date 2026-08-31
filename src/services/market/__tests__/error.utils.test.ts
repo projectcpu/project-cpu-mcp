@@ -89,6 +89,13 @@ describe('marketBackoffDelayMs', () => {
 describe('toMarketErrorCode', () => {
     it('keeps a code the client knows and refuses anything else', () => {
         expect(toMarketErrorCode('upstreamRateLimited')).toBe(MarketErrorCode.UpstreamRateLimited);
+        expect(toMarketErrorCode('upstreamUnavailable')).toBe(MarketErrorCode.UpstreamUnavailable);
+        expect(toMarketErrorCode('invalidRequest')).toBe(MarketErrorCode.InvalidRequest);
+        expect(toMarketErrorCode('staleListing')).toBe(MarketErrorCode.StaleListing);
+        expect(toMarketErrorCode('staleOffer')).toBe(MarketErrorCode.StaleOffer);
+        expect(toMarketErrorCode('unfulfillable')).toBe(MarketErrorCode.Unfulfillable);
+        expect(toMarketErrorCode('notOwner')).toBe(MarketErrorCode.NotOwner);
+        expect(toMarketErrorCode('currencyNotConfigured')).toBe(MarketErrorCode.CurrencyNotConfigured);
         expect(toMarketErrorCode('ORDER_UNAVAILABLE')).toBe(MarketErrorCode.OrderUnavailable);
         expect(toMarketErrorCode('somethingElse')).toBeNull();
         expect(toMarketErrorCode('UPSTREAMRATELIMITED')).toBeNull();
@@ -100,12 +107,14 @@ describe('toMarketErrorCode', () => {
 describe('isRetryableMarketCode', () => {
     it('marks waiting-it-out codes retryable and every terminal code not', () => {
         expect(isRetryableMarketCode(MarketErrorCode.UpstreamRateLimited)).toBe(true);
+        expect(isRetryableMarketCode(MarketErrorCode.UpstreamUnavailable)).toBe(true);
         expect(isRetryableMarketCode(MarketErrorCode.PreparedIntentInProgress)).toBe(true);
         expect(isRetryableMarketCode(MarketErrorCode.OutcomeUnknown)).toBe(true);
         expect(isRetryableMarketCode(MarketErrorCode.UnresolvedCapacityFull)).toBe(true);
         expect(isRetryableMarketCode(MarketErrorCode.NetworkFailure)).toBe(true);
         expect(isRetryableMarketCode(MarketErrorCode.ServiceUnavailable)).toBe(true);
 
+        expect(isRetryableMarketCode(MarketErrorCode.UpstreamRejected)).toBe(false);
         expect(isRetryableMarketCode(MarketErrorCode.PreparedIntentFlowMismatch)).toBe(false);
         expect(isRetryableMarketCode(MarketErrorCode.InvalidInput)).toBe(false);
         expect(isRetryableMarketCode(MarketErrorCode.InvalidMarketResponse)).toBe(false);

@@ -3,7 +3,7 @@ import type { AuthServiceOptions } from './types.js';
 import type { ApiClient } from '../api/client.js';
 import { HttpStatus, type IAuthenticator, type SiweNonceResponse, type SiweVerifyResponse } from '../api/types.js';
 import type { ILogger } from '../logger/types.js';
-import { isJwtExpired } from '../session/jwt.utils.js';
+import { isJwtExpired, jwtAddressOf } from '../session/jwt.utils.js';
 import type { SessionManager } from '../session/manager.js';
 import { SessionStatus } from '../session/types.js';
 import type { WalletProvider } from '../wallet/types.js';
@@ -25,9 +25,21 @@ export class AuthService implements IAuthenticator {
 
     async getAccessToken(): Promise<string> {
         if (this.session.getStatus() === SessionStatus.Active) {
-            const { jwt } = this.session.getSession();
-            if (jwt !== null && !isJwtExpired(jwt)) {
+            const { address, jwt } = this.session.getSession();
+            const walletAddress = this.wallet.get().getAddress();
+            const jwtAddress = jwt === null ? null : jwtAddressOf(jwt);
+            const sessionMatchesWallet = address.toLowerCase() === walletAddress.toLowerCase();
+            const tokenMatchesWallet = jwtAddress?.toLowerCase() === walletAddress.toLowerCase();
+            if (sessionMatchesWallet && tokenMatchesWallet && jwt !== null && !isJwtExpired(jwt)) {
                 return jwt;
+            }
+            if (!sessionMatchesWallet || !tokenMatchesWallet) {
+                this.logger.info('stored session belongs to another wallet — re-running SIWE login', {
+                    address,
+                    jwtAddress,
+                    walletAddress,
+                });
+                return this.login();
             }
             this.logger.info('stored JWT missing or expired — re-running SIWE login');
         }
@@ -86,8 +98,11 @@ export class AuthService implements IAuthenticator {
 
     private persistToken(address: string, jwt: string): void {
         if (this.session.getStatus() === SessionStatus.Active) {
-            this.session.setJwt(jwt);
-            return;
+            const current = this.session.getSession();
+            if (current.address.toLowerCase() === address.toLowerCase()) {
+                this.session.setJwt(jwt);
+                return;
+            }
         }
 
         const now = new Date().toISOString();

@@ -6,12 +6,12 @@ import type { IMarketProfileReader } from './profile.schemas.js';
 import {
     baseUnitAmountSchema,
     cellTokenIdSchema,
+    chainIdSchema,
     evmAddressSchema,
     marketCurrencySchema,
-    marketFeeBreakdownSchema,
-    marketListingSchema,
     marketPreparedIntentSchema,
     marketTransactionSchema,
+    orderHashSchema,
     seaportConsiderationItemSchema,
     seaportOrderParametersSchema,
     unixSecondsSchema,
@@ -45,22 +45,88 @@ export const preparedListingTermsSchema = z.object({
     buyerAddress: evmAddressSchema.nullable(),
 });
 
-export const prepareListingResponseSchema = marketPreparedIntentSchema.extend({
-    listing: preparedListingTermsSchema,
-    fees: marketFeeBreakdownSchema,
-    transactions: z.array(marketTransactionSchema),
-    order: seaportOrderParametersSchema,
+const marketPriceWireSchema = z.object({
+    currencyAddress: evmAddressSchema,
+    symbol: z.string().min(1),
+    decimals: z.number().int().min(0).max(36),
+    amountBaseUnits: baseUnitAmountSchema,
 });
 
-export const submitListingResponseSchema = z.object({ listing: marketListingSchema });
+const listingFeePreviewWireSchema = z.object({
+    grossPrice: marketPriceWireSchema,
+    platformFee: marketPriceWireSchema,
+    creatorFee: marketPriceWireSchema,
+    estimatedProceeds: marketPriceWireSchema,
+});
+
+const prepareListingWireResponseSchema = marketPreparedIntentSchema.extend({
+    order: seaportOrderParametersSchema,
+    approvals: z.array(marketTransactionSchema),
+    fees: listingFeePreviewWireSchema,
+});
+
+const submittedListingWireSchema = z.object({
+    orderHash: orderHashSchema,
+    protocolAddress: evmAddressSchema,
+    maker: evmAddressSchema,
+    tokenId: cellTokenIdSchema,
+    price: marketPriceWireSchema,
+    startsAt: unixSecondsSchema,
+    expiresAt: unixSecondsSchema,
+});
+
+const currencyFrom = (price: z.infer<typeof marketPriceWireSchema>) => ({
+    address: price.currencyAddress,
+    symbol: price.symbol,
+    decimals: price.decimals,
+});
+
+export const prepareListingResponseSchemaFor = (request: ListCellRequest) =>
+    prepareListingWireResponseSchema.transform((data) => ({
+        prepareId: data.prepareId,
+        expiresAt: data.expiresAt,
+        chainId: data.chainId,
+        protocolAddress: data.protocolAddress,
+        listing: {
+            maker: data.order.offerer,
+            tokenId: request.tokenId,
+            price: data.fees.grossPrice.amountBaseUnits,
+            currency: currencyFrom(data.fees.grossPrice),
+            startTime: Number(data.order.startTime),
+            expirationTime: Number(data.order.endTime),
+            buyerAddress: request.buyerAddress,
+        },
+        fees: {
+            platformFee: data.fees.platformFee.amountBaseUnits,
+            creatorFee: data.fees.creatorFee.amountBaseUnits,
+            estimatedProceeds: data.fees.estimatedProceeds.amountBaseUnits,
+        },
+        transactions: data.approvals,
+        order: data.order,
+    }));
+
+export const submitListingResponseSchemaFor = (chainId: number) =>
+    z.object({ listing: submittedListingWireSchema }).transform(({ listing }) => ({
+        listing: {
+            orderHash: listing.orderHash,
+            protocolAddress: listing.protocolAddress,
+            chainId: chainIdSchema.parse(chainId),
+            maker: listing.maker,
+            tokenId: listing.tokenId,
+            price: listing.price.amountBaseUnits,
+            currency: currencyFrom(listing.price),
+            startTime: listing.startsAt,
+            expirationTime: listing.expiresAt,
+        },
+    }));
 
 export type SeaportConsiderationItem = z.infer<typeof seaportConsiderationItemSchema>;
 
 export type PreparedListingTerms = z.infer<typeof preparedListingTermsSchema>;
 
-export type PrepareListingResponse = z.infer<typeof prepareListingResponseSchema>;
+export type PrepareListingResponse = z.infer<ReturnType<typeof prepareListingResponseSchemaFor>>;
 
-export type SubmitListingResponse = z.infer<typeof submitListingResponseSchema>;
+export type SubmitListingResponse = z.infer<ReturnType<typeof submitListingResponseSchemaFor>>;
 
 export interface ListCellRequest {
     tokenId: string;

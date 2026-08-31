@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NoopLogger } from '../../logger/noop.logger.js';
+import type { ILogger } from '../../logger/types.js';
 import type { SessionManager } from '../../session/manager.js';
 import { ApiClient } from '../client.js';
 
@@ -8,8 +9,8 @@ const logger = new NoopLogger();
 
 const mockSession = {} as SessionManager;
 
-function createClient(): ApiClient {
-    return new ApiClient({ baseUrl: 'https://api.test.com', session: mockSession, logger });
+function createClient(overLogger: ILogger = logger): ApiClient {
+    return new ApiClient({ baseUrl: 'https://api.test.com', session: mockSession, logger: overLogger });
 }
 
 describe('ApiClient', () => {
@@ -73,6 +74,41 @@ describe('ApiClient', () => {
             const result = await client.request<typeof payload>('/test');
 
             expect(result).toEqual({ status: 200, data: payload, headers: expect.any(Headers) });
+        });
+
+        it('debug-logs the exact action and parsed response body at the HTTP boundary', async () => {
+            const requestBody = { tokenId: '1', expectedOrderHash: `0x${'e'.repeat(64)}`, maxAmount: '10000' };
+            const responseBody = {
+                statusCode: 400,
+                error: 'Bad Request',
+                message: ['maxAmount: Required'],
+            };
+            const debug = vi.fn();
+            const observingLogger = {
+                debug,
+                info: vi.fn(),
+                warn: vi.fn(),
+                error: vi.fn(),
+                child: vi.fn(),
+            } as unknown as ILogger;
+            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(responseBody), { status: 400 }));
+
+            await createClient(observingLogger).request('/api/v1/market/purchases/prepare', {
+                method: 'POST',
+                body: requestBody,
+            });
+
+            expect(debug).toHaveBeenNthCalledWith(1, 'api request', {
+                method: 'POST',
+                path: '/api/v1/market/purchases/prepare',
+                body: requestBody,
+            });
+            expect(debug).toHaveBeenNthCalledWith(2, 'api response', {
+                method: 'POST',
+                path: '/api/v1/market/purchases/prepare',
+                status: 400,
+                body: responseBody,
+            });
         });
 
         it('should return non-200 status without throwing', async () => {

@@ -360,6 +360,7 @@ export const appConfigResponseSchema = z
         contracts: z
             .object({
                 land: z.string().default(''),
+                usdg: z.string().default(''),
                 cpuToken: z.string().default(''),
                 cpuHook: z.string().default(''),
                 cell: z.string().default(''),

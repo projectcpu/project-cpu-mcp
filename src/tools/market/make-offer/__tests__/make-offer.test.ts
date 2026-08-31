@@ -6,9 +6,11 @@ import {
     approvalData,
     approvalWire,
     BUYER,
+    COLLECTION,
     CONDUIT,
     CONDUIT_KEY,
     COUNTER,
+    CURRENCY,
     CURRENCY_ADDRESS,
     EXPIRES_AT,
     FakeAppConfig,
@@ -26,7 +28,6 @@ import {
     OTHER_CURRENCY,
     parsed,
     PREPARE_ID,
-    preparedOfferTermsWire,
     preparedWire,
     publishedOfferWire,
     reply,
@@ -39,6 +40,7 @@ import {
 } from './fixtures.js';
 import { ERC20_ABI } from '../../../../contracts/erc20.abi.js';
 import { SEAPORT_ADDRESS, SEAPORT_COUNTER_ABI } from '../../../../contracts/seaport.constants.js';
+import { errorWire } from '../../../../services/market/__tests__/fixtures.js';
 import { MarketActionTool } from '../../../../services/market/action.types.js';
 import { MARKET_RETRY_BUDGET_MS } from '../../../../services/market/constants.js';
 import { MarketError } from '../../../../services/market/error.js';
@@ -71,8 +73,40 @@ async function failure(promise: Promise<unknown>): Promise<MarketError> {
     return (await settle(promise)) as MarketError;
 }
 
-function offerOver(over: Record<string, unknown>): Record<string, unknown> {
-    return { offer: preparedOfferTermsWire(over) };
+function preparedOrderOver(over: Record<string, unknown>): Record<string, unknown> {
+    const order = seaportOrderWire();
+    const [payment] = order.offer as Array<Record<string, unknown>>;
+    const [cell, ...fees] = order.consideration as Array<Record<string, unknown>>;
+    const amount = (over.amount as string | undefined) ?? AMOUNT;
+    const currency = (over.currency as typeof NATIVE_CURRENCY | undefined) ?? CURRENCY;
+    const criteria = over.kind === MarketOfferKind.Collection || over.kind === MarketOfferKind.Trait;
+
+    return {
+        currency,
+        order: seaportOrderWire({
+            offerer: over.maker ?? BUYER,
+            offer: [
+                {
+                    ...payment,
+                    itemType: currency.address === NATIVE_ADDRESS ? 0 : 1,
+                    token: currency.address,
+                    startAmount: amount,
+                    endAmount: amount,
+                },
+            ],
+            consideration: [
+                {
+                    ...cell,
+                    itemType: criteria ? 4 : 2,
+                    identifierOrCriteria: criteria ? '0' : (over.tokenId ?? TOKEN_ID),
+                },
+                ...fees,
+            ],
+            counter: over.counter ?? COUNTER,
+            startTime: String(over.startTime ?? NOW_SECONDS),
+            endTime: String(over.expirationTime ?? EXPIRES_AT),
+        }),
+    };
 }
 
 function useFrozenClock(): void {
@@ -99,24 +133,30 @@ describe('publishing an exact-Cell offer', () => {
         expect(result.amount).toBe(AMOUNT);
         expect(result.wallet).toBe(BUYER);
         expect(result.approvalTxHashes).toEqual([]);
-        expect((result.currency as { symbol: string }).symbol).toBe('WETH');
+        expect((result.currency as { symbol: string }).symbol).toBe('USDG');
         expect((result.offer as { orderHash: string }).orderHash).toBe(ORDER_HASH);
         expect((result.offer as { kind: string }).kind).toBe(MarketOfferKind.Item);
     });
 
-    it('reads the maker counter from the pinned protocol contract before it prepares anything', async () => {
+    it('reads the USDG balance and maker counter before it prepares anything', async () => {
         const harness = makeOfferHarness(routes());
 
         await harness.handler(makeOfferArgs());
 
-        expect(harness.wallet.reads).toHaveLength(1);
+        expect(harness.wallet.reads).toHaveLength(2);
         expect(harness.wallet.reads[0]).toEqual({
+            address: CURRENCY_ADDRESS,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [BUYER],
+        });
+        expect(harness.wallet.reads[1]).toEqual({
             address: SEAPORT_ADDRESS,
             abi: SEAPORT_COUNTER_ABI,
             functionName: 'getCounter',
             args: [BUYER],
         });
-        expect(harness.wallet.log[0]).toBe('read:getCounter');
+        expect(harness.wallet.log.slice(0, 2)).toEqual(['read:balanceOf', 'read:getCounter']);
     });
 
     it('sends the counter it read with the prepare request, and never as an agent input', async () => {
@@ -197,14 +237,29 @@ describe('publishing an exact-Cell offer', () => {
 describe('the exact-amount currency approval an offer owes', () => {
     useFrozenClock();
 
+    it('refuses an offer the wallet cannot fund before prepare, approval, signing or submit', async () => {
+        const wallet = new FakeBuyerWallet({ usdgBalance: BigInt(AMOUNT) - 1n });
+        const harness = makeOfferHarness(routes(), wallet);
+
+        const error = await failure(harness.handler(makeOfferArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InsufficientBalance);
+        expect(error.message).toContain(`has ${BigInt(AMOUNT) - 1n} USDG base units but needs ${AMOUNT}`);
+        expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
+        expect(wallet.broadcast).toHaveLength(0);
+        expect(wallet.signed).toHaveLength(0);
+    });
+
     it('broadcasts approvals in the returned order and observes each receipt before signing', async () => {
         const harness = makeOfferHarness(
-            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
         );
 
         const result = parsed(await harness.handler(makeOfferArgs()));
 
         expect(harness.wallet.log).toEqual([
+            'read:balanceOf',
             'read:getCounter',
             'read:information',
             'read:getConduit',
@@ -217,7 +272,7 @@ describe('the exact-amount currency approval an offer owes', () => {
 
     it('stops at a reverted approval and never signs or publishes the offer', async () => {
         const harness = makeOfferHarness(
-            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
             new FakeBuyerWallet({ receiptStatus: TxStatus.Reverted }),
         );
 
@@ -242,7 +297,7 @@ describe('the exact-amount currency approval an offer owes', () => {
         ['is not a currency approval', { kind: 'collectionApproval' }],
     ])('refuses a prepared transaction that %s', async (_label, over) => {
         const harness = makeOfferHarness(
-            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire(over)] }))] }),
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire(over)] }))] }),
         );
 
         const error = await failure(harness.handler(makeOfferArgs()));
@@ -254,7 +309,7 @@ describe('the exact-amount currency approval an offer owes', () => {
 
     it('broadcasts an approval of the exact offer amount for the conduit that settles the signed order', async () => {
         const harness = makeOfferHarness(
-            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
         );
 
         await harness.handler(makeOfferArgs());
@@ -271,7 +326,7 @@ describe('the exact-amount currency approval an offer owes', () => {
 
     it('refuses to approve when the protocol disowns the conduit key the order names', async () => {
         const harness = makeOfferHarness(
-            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
             new FakeBuyerWallet({ conduit: null }),
         );
 
@@ -284,7 +339,7 @@ describe('the exact-amount currency approval an offer owes', () => {
 
     it('keeps the offer unsigned and retryable when the protocol cannot be read', async () => {
         const harness = makeOfferHarness(
-            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
             new FakeBuyerWallet({ protocolReadFails: true }),
         );
 
@@ -306,42 +361,34 @@ describe('the local checks a prepared offer must pass', () => {
             { protocolAddress: `0x${'7'.repeat(40)}` },
             MarketErrorCode.ProtocolAddressMismatch,
         ],
-        ['another maker', offerOver({ maker: `0x${'8'.repeat(40)}` }), MarketErrorCode.WrongOwner],
+        ['another maker', preparedOrderOver({ maker: `0x${'8'.repeat(40)}` }), MarketErrorCode.WrongOwner],
         [
             'an offerer that is not this wallet',
             { order: seaportOrderWire({ offerer: `0x${'8'.repeat(40)}` }) },
             MarketErrorCode.WrongOwner,
         ],
-        ['another Cell', offerOver({ tokenId: '999' }), MarketErrorCode.InvalidMarketResponse],
-        ['another amount', offerOver({ amount: '5' }), MarketErrorCode.InvalidMarketResponse],
-        ['another expiry', offerOver({ expirationTime: EXPIRES_AT + 60 }), MarketErrorCode.InvalidMarketResponse],
-        ['a stale counter', offerOver({ counter: '6' }), MarketErrorCode.InvalidMarketResponse],
-        ['a collection offer', offerOver({ kind: MarketOfferKind.Collection }), MarketErrorCode.InvalidMarketResponse],
-        ['a trait offer', offerOver({ kind: MarketOfferKind.Trait }), MarketErrorCode.InvalidMarketResponse],
+        ['another Cell', preparedOrderOver({ tokenId: '999' }), MarketErrorCode.InvalidMarketResponse],
+        ['another amount', preparedOrderOver({ amount: '5' }), MarketErrorCode.InvalidMarketResponse],
+        [
+            'another expiry',
+            preparedOrderOver({ expirationTime: EXPIRES_AT + 60 }),
+            MarketErrorCode.InvalidMarketResponse,
+        ],
+        ['a stale counter', preparedOrderOver({ counter: '6' }), MarketErrorCode.InvalidMarketResponse],
+        [
+            'a collection offer',
+            preparedOrderOver({ kind: MarketOfferKind.Collection }),
+            MarketErrorCode.InvalidMarketResponse,
+        ],
+        ['a trait offer', preparedOrderOver({ kind: MarketOfferKind.Trait }), MarketErrorCode.InvalidMarketResponse],
         [
             'a start time an hour away',
-            {
-                offer: preparedOfferTermsWire({ startTime: NOW_SECONDS + 3_600 }),
-                order: seaportOrderWire({ startTime: (NOW_SECONDS + 3_600).toString() }),
-            },
+            preparedOrderOver({ startTime: NOW_SECONDS + 3_600 }),
             MarketErrorCode.InvalidMarketResponse,
         ],
         [
             'the chain currency, which an offer cannot be made in',
-            {
-                offer: preparedOfferTermsWire({ currency: NATIVE_CURRENCY }),
-                order: seaportOrderWire({
-                    offer: [
-                        {
-                            itemType: 0,
-                            token: NATIVE_ADDRESS,
-                            identifierOrCriteria: '0',
-                            startAmount: AMOUNT,
-                            endAmount: AMOUNT,
-                        },
-                    ],
-                }),
-            },
+            preparedOrderOver({ currency: NATIVE_CURRENCY }),
             MarketErrorCode.CurrencyUnsupported,
         ],
     ])('refuses a prepared offer that names %s', async (_label, over, code) => {
@@ -368,6 +415,23 @@ describe('the local checks a prepared offer must pass', () => {
 
         expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
         expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
+        expect(harness.wallet.signed).toHaveLength(0);
+    });
+
+    it('refuses to prepare at all when USDG is not configured for this network', async () => {
+        const harness = makeOfferHarness(
+            routes(),
+            new FakeBuyerWallet(),
+            new MarketRecoveryStore(),
+            new FakeAppConfig(COLLECTION, 'the-usdg-token-is-missing'),
+        );
+
+        const error = await failure(harness.handler(makeOfferArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
+        expect(error.message).toContain('USDG is not configured');
+        expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
+        expect(harness.wallet.reads).toHaveLength(0);
         expect(harness.wallet.signed).toHaveLength(0);
     });
 
@@ -551,9 +615,8 @@ describe('the deadline a prepared offer stops at', () => {
     it('stops at the offer expiry when it falls before the prepared-intent deadline', async () => {
         const shortExpiry = NOW_SECONDS + 60;
         const prepared = preparedWire({
-            offer: preparedOfferTermsWire({ expirationTime: shortExpiry }),
-            order: seaportOrderWire({ endTime: shortExpiry.toString() }),
-            transactions: [approvalWire()],
+            ...preparedOrderOver({ expirationTime: shortExpiry }),
+            approvals: [approvalWire()],
         });
         const harness = makeOfferHarness(
             routes({ [MarketRoute.Prepare]: [reply(200, prepared)] }),
@@ -596,7 +659,7 @@ describe('two callers asking for the same offer at once', () => {
         expect(parsed(right)).toEqual(parsed(left));
         expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(1);
         expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(1);
-        expect(harness.wallet.reads).toHaveLength(1);
+        expect(harness.wallet.reads).toHaveLength(2);
     });
 });
 
@@ -703,7 +766,7 @@ describe('a submit whose outcome is uncertain', () => {
             routes({
                 [MarketRoute.MyOffers]: [EMPTY_PAGE, EMPTY_PAGE],
                 [MarketRoute.Submit]: [
-                    reply(429, { code: 'preparedIntentNotFound', message: 'that prepare is gone' }),
+                    reply(429, errorWire('preparedIntentNotFound', 'that prepare is gone')),
                     reply(200, submittedWire()),
                 ],
             }),
@@ -714,6 +777,30 @@ describe('a submit whose outcome is uncertain', () => {
         expect(error.code).toBe(MarketErrorCode.OutcomeUnknown);
         expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(1);
         expect(harness.recovery.size()).toBe(1);
+    });
+
+    it('surfaces a first-attempt upstream rejection directly and releases its recovery record', async () => {
+        const harness = makeOfferHarness(
+            routes({
+                [MarketRoute.MyOffers]: [EMPTY_PAGE],
+                [MarketRoute.Submit]: [
+                    reply(422, {
+                        success: false,
+                        error: 'upstreamRejected',
+                        message: 'The offer cannot be published because the wallet has too little USDG.',
+                        reqId: 'request-123',
+                    }),
+                ],
+            }),
+        );
+
+        const error = await failure(harness.handler(makeOfferArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.UpstreamRejected);
+        expect(error.retryable).toBe(false);
+        expect(error.message).toContain('Diagnostic id: request-123.');
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(1);
+        expect(harness.recovery.size()).toBe(0);
     });
 
     it('does not accept an offer in another currency as the one it may have published', async () => {
@@ -758,7 +845,7 @@ describe('a submit whose outcome is uncertain', () => {
             routes({
                 [MarketRoute.MyOffers]: [EMPTY_PAGE, EMPTY_PAGE],
                 [MarketRoute.Submit]: [
-                    reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '600' }),
+                    reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '600' }),
                     reply(200, submittedWire()),
                 ],
             }),
@@ -780,7 +867,7 @@ describe('a submit whose outcome is uncertain', () => {
             routes({
                 [MarketRoute.MyOffers]: [EMPTY_PAGE, EMPTY_PAGE],
                 [MarketRoute.Submit]: [
-                    reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '30' }),
+                    reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '30' }),
                     reply(200, submittedWire()),
                 ],
             }),
@@ -799,7 +886,7 @@ describe('a submit whose outcome is uncertain', () => {
         const recovery = new MarketRecoveryStore();
         const first = makeOfferHarness(
             routes({
-                [MarketRoute.Submit]: [reply(400, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' })],
+                [MarketRoute.Submit]: [reply(400, errorWire('preparedIntentFlowMismatch', 'wrong flow'))],
             }),
             new FakeBuyerWallet(),
             recovery,
@@ -816,7 +903,7 @@ describe('a submit whose outcome is uncertain', () => {
         const harness = makeOfferHarness(
             routes({
                 [MarketRoute.MyOffers]: [EMPTY_PAGE, reply(200, offersPageWire([publishedOfferWire()], null))],
-                [MarketRoute.Submit]: [reply(401, { code: 'unauthorized', message: 'the session is gone' })],
+                [MarketRoute.Submit]: [reply(401, errorWire('unauthorized', 'the session is gone'))],
             }),
         );
 
@@ -831,7 +918,7 @@ describe('a submit whose outcome is uncertain', () => {
         const recovery = new MarketRecoveryStore();
         const first = makeOfferHarness(
             routes({
-                [MarketRoute.MyOffers]: [EMPTY_PAGE, reply(503, { code: 'x', message: 'down' })],
+                [MarketRoute.MyOffers]: [EMPTY_PAGE, reply(503, errorWire('x', 'down'))],
                 [MarketRoute.Submit]: [new Error('socket hang up')],
             }),
             new FakeBuyerWallet(),
@@ -851,7 +938,14 @@ describe('a submit whose outcome is uncertain', () => {
 
         expect(result.status).toBe(MarketActionStatus.Completed);
         expect(second.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
-        expect(second.wallet.reads).toHaveLength(0);
+        expect(second.wallet.reads).toEqual([
+            {
+                address: CURRENCY_ADDRESS,
+                abi: ERC20_ABI,
+                functionName: 'balanceOf',
+                args: [BUYER],
+            },
+        ]);
         expect(second.transport.callsOn(MarketRoute.Submit)[0]?.body).toEqual({
             prepareId: PREPARE_ID,
             signature: SIGNATURE,
@@ -864,7 +958,7 @@ describe('a submit whose outcome is uncertain', () => {
         await settle(
             makeOfferHarness(
                 routes({
-                    [MarketRoute.MyOffers]: [EMPTY_PAGE, reply(503, { code: 'x', message: 'down' })],
+                    [MarketRoute.MyOffers]: [EMPTY_PAGE, reply(503, errorWire('x', 'down'))],
                     [MarketRoute.Submit]: [new Error('socket hang up')],
                 }),
                 new FakeBuyerWallet(),
@@ -890,7 +984,7 @@ describe('a submit whose outcome is uncertain', () => {
         await settle(
             makeOfferHarness(
                 routes({
-                    [MarketRoute.MyOffers]: [EMPTY_PAGE, reply(503, { code: 'x', message: 'down' })],
+                    [MarketRoute.MyOffers]: [EMPTY_PAGE, reply(503, errorWire('x', 'down'))],
                     [MarketRoute.Submit]: [new Error('socket hang up')],
                 }),
                 new FakeBuyerWallet(),
@@ -900,7 +994,7 @@ describe('a submit whose outcome is uncertain', () => {
         vi.setSystemTime((INTENT_DEADLINE + 1) * 1_000);
 
         const later = makeOfferHarness(
-            routes({ [MarketRoute.MyOffers]: [reply(503, { code: 'x', message: 'down' })] }),
+            routes({ [MarketRoute.MyOffers]: [reply(503, errorWire('x', 'down'))] }),
             new FakeBuyerWallet(),
             recovery,
         );
@@ -918,7 +1012,7 @@ describe('a submit whose outcome is uncertain', () => {
                 [MarketRoute.MyOffers]: [EMPTY_PAGE],
                 [MarketRoute.Submit]: [
                     new Error('socket hang up'),
-                    reply(400, { code: 'preparedIntentNotFound', message: 'that prepare is gone' }),
+                    reply(400, errorWire('preparedIntentNotFound', 'that prepare is gone')),
                 ],
             }),
             new FakeBuyerWallet(),
@@ -950,7 +1044,7 @@ describe('a submit whose outcome is uncertain', () => {
     it('releases the reserved capacity when an offer fails before it is ever submitted', async () => {
         const recovery = new MarketRecoveryStore();
         const harness = makeOfferHarness(
-            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ transactions: [approvalWire()] }))] }),
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
             new FakeBuyerWallet({ receiptStatus: TxStatus.Reverted }),
             recovery,
         );
@@ -993,6 +1087,7 @@ describe('the inputs the offer tool accepts', () => {
         ['a Cell id with a leading zero', { tokenId: '01234' }],
         ['a fractional amount', { amount: '1.5' }],
         ['a zero amount', { amount: '0' }],
+        ['a USDG amount finer than one cent', { amount: '15000' }],
         ['an expiry that has already passed', { expirationTime: NOW_SECONDS - 1 }],
     ])('rejects %s before any marketplace call', async (_label, over) => {
         const harness = makeOfferHarness(routes());
@@ -1022,7 +1117,7 @@ describe('the summary the offer tool prints for an agent', () => {
 
         expect(result.content[0]?.text).toContain(`Cell ${TOKEN_ID}`);
         expect(result.content[0]?.text).toContain(ORDER_HASH);
-        expect(result.content[0]?.text).toContain('WETH');
+        expect(result.content[0]?.text).toContain('USDG');
         expect(result.content[0]?.text).toContain(AMOUNT);
     });
 });

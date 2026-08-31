@@ -48,7 +48,7 @@ import {
 } from './types.js';
 import type { CollectionApprovalCall } from '../../contracts/approval.types.js';
 import { collectionApprovalCall } from '../../contracts/approval.utils.js';
-import { CELL_ABI } from '../../contracts/cell.abi.js';
+import { ERC721_OWNERSHIP_ABI } from '../../contracts/erc721.abi.js';
 import { SeaportSpenderReader } from '../../contracts/seaport-spender.reader.js';
 import { SEAPORT_ADDRESS } from '../../contracts/seaport.constants.js';
 import { SeaportSpenderOutcome, type ISeaportSpenderReader } from '../../contracts/seaport.types.js';
@@ -188,7 +188,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
                 orderHash: request.orderHash,
                 wallet: this.walletAddress(),
                 stage: MarketActionStage.Verify,
-                boundCell: { collection, tokenId: this.requirePrepared(payload).tokenId },
+                boundCell: { collection, tokenId: this.requirePrepared(payload).offer.tokenId },
             });
             await this.requireSoldCell(this.requirePrepared(payload), hash);
         } catch (error) {
@@ -252,7 +252,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
     }
 
     private async requireSoldCell(prepared: PrepareAcceptanceResponse, hash: string): Promise<void> {
-        const tokenId = prepared.tokenId;
+        const tokenId = prepared.offer.tokenId;
         let owner: string;
 
         try {
@@ -299,7 +299,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
             path: MARKET_ACCEPTANCE_PREPARE_PATH,
             method: 'POST',
             body,
-            schema: prepareAcceptanceResponseSchema,
+            schema: prepareAcceptanceResponseSchema(this.wallet.get().getChainId()),
             stage: MarketActionStage.Prepare,
             label: `Preparing the acceptance of offer ${request.orderHash}`,
         });
@@ -314,22 +314,10 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
         collection: string,
     ): Promise<void> {
         const wallet = this.walletAddress();
-        const chainId = this.wallet.get().getChainId();
-
-        if (prepared.chainId !== chainId || prepared.offer.chainId !== chainId) {
-            throw this.untrustworthy(
-                MarketErrorCode.ChainMismatch,
-                `it targets chain ${prepared.chainId} while this wallet sells on chain ${chainId}`,
-                request,
-            );
-        }
-        if (
-            !sameAddress(prepared.protocolAddress, SEAPORT_ADDRESS) ||
-            !sameAddress(prepared.offer.protocolAddress, SEAPORT_ADDRESS)
-        ) {
+        if (!sameAddress(prepared.offer.protocolAddress, SEAPORT_ADDRESS)) {
             throw this.untrustworthy(
                 MarketErrorCode.ProtocolAddressMismatch,
-                `it names protocol contract ${prepared.protocolAddress} instead of the pinned ${SEAPORT_ADDRESS}`,
+                `it names protocol contract ${prepared.offer.protocolAddress} instead of the pinned ${SEAPORT_ADDRESS}`,
                 request,
             );
         }
@@ -381,10 +369,10 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
                     'call the tool again. Nothing was sent.',
             );
         }
-        if (prepared.tokenId !== selected) {
+        if (prepared.offer.tokenId !== selected) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
-                `it would sell Cell ${prepared.tokenId} rather than the Cell ${selected} this call is bound to`,
+                `it would sell Cell ${prepared.offer.tokenId} rather than the Cell ${selected} this call is bound to`,
                 request,
             );
         }
@@ -414,7 +402,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
         request: AcceptCellOfferRequest,
         prepared: PrepareAcceptanceResponse,
     ): Promise<void> {
-        const tokenId = prepared.tokenId;
+        const tokenId = prepared.offer.tokenId;
         let owner: string;
 
         try {
@@ -454,7 +442,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
         const transactions = prepared.transactions;
         const last = transactions.at(-1) ?? null;
 
-        if (last === null || last.kind !== MarketTransactionKind.Fulfilment) {
+        if (last === null || last.kind !== MarketTransactionKind.Fulfillment) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 'it does not end with the one fulfilment transaction that sells the Cell',
@@ -526,11 +514,12 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
             this.requireCollectionOperator(request, transaction, collection),
         );
 
-        if (approvals.length === 0) {
+        const firstApproval = approvals[0];
+        if (firstApproval === undefined) {
             return;
         }
 
-        const operator = await this.requireSettlingOperator(request, prepared);
+        const operator = await this.requireRegisteredOperator(request, firstApproval.operator);
         const stranger = approvals.find((approval) => !sameAddress(approval.operator, operator));
         if (stranger !== undefined) {
             throw this.untrustworthy(
@@ -576,13 +565,9 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
         return approval;
     }
 
-    private async requireSettlingOperator(
-        request: AcceptCellOfferRequest,
-        prepared: PrepareAcceptanceResponse,
-    ): Promise<string> {
-        const conduitKey = prepared.conduitKey;
-        const answer = await this.spenders.spenderForConduitKey(conduitKey);
-        const detail = answer.detail ?? `conduit key ${conduitKey} resolves to nothing`;
+    private async requireRegisteredOperator(request: AcceptCellOfferRequest, operator: string): Promise<string> {
+        const answer = await this.spenders.registeredSpender(operator);
+        const detail = answer.detail ?? `${operator} is not a registered protocol spender`;
 
         if (answer.outcome === SeaportSpenderOutcome.Unreachable) {
             throw new MarketError({
@@ -638,19 +623,17 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
 
     private async readCellOwner(tokenId: string, stage: MarketActionStage): Promise<string> {
         const collection = await this.requireCellCollection(stage);
-        const cell = (await this.wallet.get().readContract({
+        return (await this.wallet.get().readContract({
             address: collection as Address,
-            abi: CELL_ABI,
-            functionName: 'getCell',
+            abi: ERC721_OWNERSHIP_ABI,
+            functionName: 'ownerOf',
             args: [BigInt(tokenId)],
-        })) as { owner: string };
-
-        return cell.owner;
+        })) as string;
     }
 
     private async requireCellCollection(stage: MarketActionStage): Promise<string> {
         const config = await this.appConfig.load();
-        const collection = config.contracts.cell;
+        const collection = config.contracts.land;
 
         if (!evmAddressSchema.safeParse(collection).success) {
             throw new MarketError({
@@ -695,7 +678,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
         throw new MarketError({
             code: MarketErrorCode.PreparedIntentExpired,
             message:
-                'This prepared acceptance is past the earlier of its own deadline and the offer expiry, so it can ' +
+                'This prepared acceptance is past the offer expiry, so it can ' +
                 'no longer be sent. No Cell was sold. Call the tool again for the same exact offer.',
             retryable: false,
             retryAfterSeconds: null,
@@ -775,7 +758,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
         const prepared = this.requirePrepared(payload);
 
         this.logger.info('the Cell sale is confirmed', {
-            tokenId: prepared.tokenId,
+            tokenId: prepared.offer.tokenId,
             status,
             orderHash: request.orderHash,
             txHash: hash,
@@ -785,7 +768,7 @@ export class MarketAcceptanceService implements IMarketAcceptanceService {
             status,
             stage: MarketActionStage.Verify,
             wallet: this.walletAddress(),
-            tokenId: prepared.tokenId,
+            tokenId: prepared.offer.tokenId,
             orderHash: request.orderHash,
             offer: prepared.offer,
             buyer: prepared.offer.maker,

@@ -43,7 +43,7 @@ export const CONDUIT_REGISTRY = `0x${'6'.repeat(40)}`;
 
 export const NATIVE_ADDRESS = `0x${'0'.repeat(40)}`;
 
-export const CURRENCY = { address: CURRENCY_ADDRESS, symbol: 'WETH', decimals: 18 };
+export const CURRENCY = { address: CURRENCY_ADDRESS, symbol: 'USDG', decimals: 6 };
 
 export const OTHER_CURRENCY = { address: `0x${'8'.repeat(40)}`, symbol: 'USDC', decimals: 6 };
 
@@ -147,28 +147,14 @@ export function approvalWire(over: Record<string, unknown> = {}): Record<string,
     };
 }
 
-export function preparedOfferTermsWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-        maker: BUYER,
-        kind: MarketOfferKind.Item,
-        tokenId: TOKEN_ID,
-        amount: AMOUNT,
-        currency: CURRENCY,
-        counter: COUNTER,
-        startTime: NOW_SECONDS,
-        expirationTime: EXPIRES_AT,
-        ...over,
-    };
-}
-
 export function preparedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
         prepareId: PREPARE_ID,
         expiresAt: INTENT_DEADLINE,
         chainId: LAUNCH_CHAIN_ID,
         protocolAddress: SEAPORT_ADDRESS,
-        offer: preparedOfferTermsWire(),
-        transactions: [],
+        approvals: [],
+        currency: CURRENCY,
         order: seaportOrderWire(),
         ...over,
     };
@@ -191,11 +177,49 @@ export function publishedOfferWire(over: Record<string, unknown> = {}): Record<s
 }
 
 export function submittedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return { offer: publishedOfferWire(over) };
+    return {
+        offer: {
+            orderHash: ORDER_HASH,
+            protocolAddress: SEAPORT_ADDRESS,
+            maker: BUYER,
+            kind: MarketOfferKind.Item,
+            tokenId: TOKEN_ID,
+            price: {
+                currencyAddress: CURRENCY.address,
+                symbol: CURRENCY.symbol,
+                decimals: CURRENCY.decimals,
+                amountBaseUnits: AMOUNT,
+            },
+            startsAt: NOW_SECONDS,
+            expiresAt: EXPIRES_AT,
+            ...over,
+        },
+    };
 }
 
 export function offersPageWire(items: Array<unknown>, nextCursor: string | null): Record<string, unknown> {
-    return { items, nextCursor };
+    return {
+        offers: items.map((raw) => {
+            const offer = raw as Record<string, unknown>;
+            const currency = offer.currency as typeof CURRENCY;
+            return {
+                orderHash: offer.orderHash,
+                protocolAddress: offer.protocolAddress,
+                maker: offer.maker,
+                kind: offer.kind,
+                tokenId: offer.tokenId,
+                price: {
+                    currencyAddress: currency.address,
+                    symbol: currency.symbol,
+                    decimals: currency.decimals,
+                    amountBaseUnits: offer.amount,
+                },
+                startsAt: offer.startTime,
+                expiresAt: offer.expirationTime,
+            };
+        }),
+        cursor: nextCursor,
+    };
 }
 
 export interface RecordedCall {
@@ -252,14 +276,16 @@ export class RoutedMarketTransport implements IMarketTransport {
 }
 
 export class FakeAppConfig implements IAppConfig {
-    private readonly cell: string;
+    private readonly land: string;
+    private readonly usdg: string;
 
-    constructor(cell: string = COLLECTION) {
-        this.cell = cell;
+    constructor(land: string = COLLECTION, usdg: string = CURRENCY_ADDRESS) {
+        this.land = land;
+        this.usdg = usdg;
     }
 
     async load(): Promise<AppConfig> {
-        return { contracts: { cell: this.cell } } as AppConfig;
+        return { contracts: { land: this.land, usdg: this.usdg } } as AppConfig;
     }
 }
 
@@ -270,6 +296,7 @@ export interface FakeWalletOptions {
     counter: bigint | null;
     conduit: string | null;
     protocolReadFails: boolean;
+    usdgBalance: bigint;
 }
 
 export class FakeBuyerWallet implements WalletManager, WalletProvider {
@@ -291,6 +318,7 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
             counter: BigInt(COUNTER),
             conduit: CONDUIT,
             protocolReadFails: false,
+            usdgBalance: BigInt(AMOUNT),
             ...over,
         };
     }
@@ -362,6 +390,9 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
             const conduit = this.options.conduit;
             return conduit === null ? [`0x${'0'.repeat(40)}`, false] : [conduit, true];
         }
+        if (params.functionName === 'balanceOf') {
+            return this.options.usdgBalance;
+        }
 
         if (this.options.counter === null) {
             throw new Error('the node refused the call');
@@ -390,7 +421,7 @@ export function makeOfferHarness(
     const client = new MarketApiClient({ api: transport, logger });
     const service = new MarketOfferService({
         client,
-        profile: new MarketProfileClient({ client, logger }),
+        profile: new MarketProfileClient({ client, chainId: LAUNCH_CHAIN_ID, logger }),
         appConfig,
         wallet,
         network: 'robinhood',

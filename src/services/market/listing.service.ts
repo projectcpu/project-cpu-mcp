@@ -8,7 +8,7 @@ import {
 } from './action.types.js';
 import { narrowInvocationDeadline, waitOnInvocationBudget } from './budget.utils.js';
 import type { IMarketSingleShotClient } from './client.types.js';
-import { MS_PER_SECOND, PROVEN_UNPUBLISHED_MARKET_ERROR_CODES } from './constants.js';
+import { MS_PER_SECOND, PROVEN_UNPUBLISHED_MARKET_ERROR_CODES, USDG_CENT_BASE_UNITS } from './constants.js';
 import { MarketError } from './error.js';
 import { marketActionKey } from './idempotency.utils.js';
 import {
@@ -21,8 +21,8 @@ import {
 } from './listing.constants.js';
 import {
     MarketScanOutcome,
-    prepareListingResponseSchema,
-    submitListingResponseSchema,
+    prepareListingResponseSchemaFor,
+    submitListingResponseSchemaFor,
     type IMarketListingService,
     type ListCellRequest,
     type ListCellResult,
@@ -33,11 +33,9 @@ import {
     type SeaportConsiderationItem,
 } from './listing.types.js';
 import {
-    considerationStartTotal,
     effectiveListingDeadline,
     isEquivalentActiveListing,
     listingActionInputs,
-    recipientConsiderationTotal,
     sameAddress,
     sameOptionalAddress,
     seaportSignableOrder,
@@ -61,6 +59,7 @@ import type { CollectionApprovalCall } from '../../contracts/approval.types.js';
 import { collectionApprovalCall } from '../../contracts/approval.utils.js';
 import { SeaportSpenderReader } from '../../contracts/seaport-spender.reader.js';
 import {
+    OPENSEA_SIGNED_ZONE_V2,
     SEAPORT_ADDRESS,
     SEAPORT_DOMAIN_NAME,
     SEAPORT_DOMAIN_VERSION,
@@ -190,7 +189,7 @@ export class MarketListingService implements IMarketListingService {
                     path: MARKET_LISTING_SUBMIT_PATH,
                     method: 'POST',
                     body: { prepareId: prepared.prepareId, signature: payload.signature },
-                    schema: submitListingResponseSchema,
+                    schema: submitListingResponseSchemaFor(this.wallet.get().getChainId()),
                     stage: MarketActionStage.Submit,
                     label: `Publishing the listing for Cell ${request.tokenId}`,
                 });
@@ -368,23 +367,24 @@ export class MarketListingService implements IMarketListingService {
             body.buyerAddress = request.buyerAddress;
         }
 
-        const collection = await this.requireCellCollection();
+        const contracts = await this.requireMarketContracts();
         const prepared = await this.client.send({
             path: MARKET_LISTING_PREPARE_PATH,
             method: 'POST',
             body,
-            schema: prepareListingResponseSchema,
+            schema: prepareListingResponseSchemaFor(request),
             stage: MarketActionStage.Prepare,
             label: `Preparing the listing for Cell ${request.tokenId}`,
         });
 
-        await this.requireTrustworthyPreparation(request, prepared, collection);
+        this.requireSupportedPricePrecision(request, prepared, contracts.usdg);
+        await this.requireTrustworthyPreparation(request, prepared, contracts.collection);
         return prepared;
     }
 
-    private async requireCellCollection(): Promise<string> {
+    private async requireMarketContracts(): Promise<{ collection: string; usdg: string }> {
         const config = await this.appConfig.load();
-        const collection = config.contracts.cell;
+        const collection = config.contracts.land;
 
         if (!evmAddressSchema.safeParse(collection).success) {
             throw new MarketError({
@@ -399,7 +399,24 @@ export class MarketListingService implements IMarketListingService {
             });
         }
 
-        return collection;
+        return { collection, usdg: config.contracts.usdg };
+    }
+
+    private requireSupportedPricePrecision(
+        request: ListCellRequest,
+        prepared: PrepareListingResponse,
+        usdg: string,
+    ): void {
+        if (
+            evmAddressSchema.safeParse(usdg).success &&
+            sameAddress(prepared.listing.currency.address, usdg) &&
+            BigInt(request.price) % USDG_CENT_BASE_UNITS !== 0n
+        ) {
+            throw this.rejectedInput(
+                `"${request.price}" is not a valid USDG listing price. Pass a positive decimal integer in whole ` +
+                    'cent increments: 10000 base units is $0.01.',
+            );
+        }
     }
 
     private async requireTrustworthyPreparation(
@@ -641,25 +658,24 @@ export class MarketListingService implements IMarketListingService {
         const order = prepared.order;
 
         const reserved = request.buyerAddress !== null;
-        const expected = reserved ? SeaportOrderType.FullRestricted : SeaportOrderType.FullOpen;
+        const openPublic =
+            order.orderType === SeaportOrderType.FullOpen &&
+            sameAddress(order.zone, zeroAddress) &&
+            order.zoneHash === zeroHash;
+        const signedZonePublic =
+            order.orderType === SeaportOrderType.FullRestricted &&
+            sameAddress(order.zone, OPENSEA_SIGNED_ZONE_V2) &&
+            order.zoneHash === zeroHash;
 
-        if (order.orderType !== expected) {
+        if (!reserved && !openPublic && !signedZonePublic) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
-                `the order it asks the wallet to sign is of type ${order.orderType}, while a listing ` +
-                    `${reserved ? 'reserved for one buyer' : 'anyone may buy'} is of type ${expected}`,
+                `the order it asks the wallet to sign is neither a full-open zero-zone listing nor a ` +
+                    `full-restricted listing through the pinned signed zone ${OPENSEA_SIGNED_ZONE_V2}`,
                 request,
             );
         }
-        if (!reserved && (!sameAddress(order.zone, zeroAddress) || order.zoneHash !== zeroHash)) {
-            throw this.untrustworthy(
-                MarketErrorCode.InvalidMarketResponse,
-                `the order it asks the wallet to sign hands zone ${order.zone} a say over an order nothing ` +
-                    'restricts',
-                request,
-            );
-        }
-        if (reserved && sameAddress(order.zone, zeroAddress)) {
+        if (reserved && (order.orderType !== SeaportOrderType.FullRestricted || sameAddress(order.zone, zeroAddress))) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 'the order it asks the wallet to sign names no zone, so nothing would hold the sale to the buyer ' +
@@ -688,8 +704,15 @@ export class MarketListingService implements IMarketListingService {
         const order = prepared.order;
         const currency = prepared.listing.currency.address;
         const expected = sameAddress(currency, zeroAddress) ? SeaportItemType.Native : SeaportItemType.Erc20;
+        const payments = [...order.consideration];
 
-        if (order.consideration.length === 0) {
+        if (request.buyerAddress !== null) {
+            const marker = payments.pop();
+            const sold = order.offer[0];
+            this.requirePrivateSaleMarker(request, marker, sold);
+        }
+
+        if (payments.length === 0) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 'the order it asks the wallet to sign pays the seller side nothing at all',
@@ -700,16 +723,16 @@ export class MarketListingService implements IMarketListingService {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 `the order it asks the wallet to sign declares ${order.totalOriginalConsiderationItems} original ` +
-                    `payment items while carrying ${order.consideration.length}`,
+                    `consideration items while carrying ${order.consideration.length}`,
                 request,
             );
         }
 
-        for (const item of order.consideration) {
+        for (const item of payments) {
             this.requireConsiderationItem(request, item, currency, expected);
         }
 
-        const paid = considerationStartTotal(order);
+        const paid = sumBaseUnits(payments.map((item) => item.startAmount));
         if (paid !== prepared.listing.price) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
@@ -719,12 +742,42 @@ export class MarketListingService implements IMarketListingService {
             );
         }
 
-        const kept = recipientConsiderationTotal(order, this.walletAddress());
+        const kept = sumBaseUnits(
+            payments
+                .filter((item) => sameAddress(item.recipient, this.walletAddress()))
+                .map((item) => item.startAmount),
+        );
         if (BigInt(kept) < BigInt(prepared.fees.estimatedProceeds)) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 `the order it asks the wallet to sign pays this wallet ${kept} while its fee preview promises ` +
                     `${prepared.fees.estimatedProceeds}`,
+                request,
+            );
+        }
+    }
+
+    private requirePrivateSaleMarker(
+        request: ListCellRequest,
+        marker: SeaportConsiderationItem | undefined,
+        sold: PrepareListingResponse['order']['offer'][number] | undefined,
+    ): void {
+        const buyer = request.buyerAddress;
+        const exactMarker =
+            buyer !== null &&
+            marker !== undefined &&
+            sold !== undefined &&
+            marker.itemType === sold.itemType &&
+            sameAddress(marker.token, sold.token) &&
+            marker.identifierOrCriteria === sold.identifierOrCriteria &&
+            marker.startAmount === sold.startAmount &&
+            marker.endAmount === sold.endAmount &&
+            sameAddress(marker.recipient, buyer);
+
+        if (!exactMarker) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                'its last consideration item is not the exact offered Cell delivered to the reserved buyer',
                 request,
             );
         }

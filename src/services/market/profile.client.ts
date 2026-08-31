@@ -3,8 +3,8 @@ import type { z } from 'zod';
 import { MARKET_MY_LISTINGS_PATH, MARKET_MY_OFFERS_PATH, MARKET_MY_OFFERS_RECEIVED_PATH } from './constants.js';
 import { MarketError } from './error.js';
 import {
-    marketListingPageSchema,
-    marketOfferPageSchema,
+    marketListingPageResponseSchema,
+    marketOfferPageResponseSchema,
     type IMarketProfileReader,
     type MarketListingPage,
     type MarketOfferPage,
@@ -16,26 +16,38 @@ import type { ILogger } from '../../logger/types.js';
 
 export class MarketProfileClient implements IMarketProfileReader {
     private readonly client: IMarketApiClient;
+    private readonly chainId: number;
     private readonly logger: ILogger;
 
     constructor(options: MarketProfileClientOptions) {
         this.client = options.client;
+        this.chainId = options.chainId;
         this.logger = options.logger;
     }
 
     async getMyListings(cursor: string | null): Promise<MarketListingPage> {
-        return this.readPage(MARKET_MY_LISTINGS_PATH, cursor, marketListingPageSchema, 'your Cell listings');
+        return this.readPage(
+            MARKET_MY_LISTINGS_PATH,
+            cursor,
+            marketListingPageResponseSchema(this.chainId),
+            'your Cell listings',
+        );
     }
 
     async getMyOffers(cursor: string | null): Promise<MarketOfferPage> {
-        return this.readPage(MARKET_MY_OFFERS_PATH, cursor, marketOfferPageSchema, 'the offers you made');
+        return this.readPage(
+            MARKET_MY_OFFERS_PATH,
+            cursor,
+            marketOfferPageResponseSchema(this.chainId),
+            'the offers you made',
+        );
     }
 
     async getMyOffersReceived(cursor: string | null): Promise<MarketOfferPage> {
         return this.readPage(
             MARKET_MY_OFFERS_RECEIVED_PATH,
             cursor,
-            marketOfferPageSchema,
+            marketOfferPageResponseSchema(this.chainId),
             'the offers standing on your Cells',
         );
     }

@@ -4,6 +4,7 @@ import { buyCellInputSchema } from './types.js';
 import type { BuyCellRequest } from '../../../services/market/purchase.types.js';
 import type { AppContext } from '../../../types.js';
 import { ToolEventType } from '../../types.js';
+import { buyCellOutputSchema } from '../output.types.js';
 import type { MarketToolDefinition } from '../types.js';
 
 export function createBuyCellTool(context: AppContext): MarketToolDefinition {
@@ -11,6 +12,7 @@ export function createBuyCellTool(context: AppContext): MarketToolDefinition {
         name: 'cpu_buy_cell',
         description: BUY_CELL_DESCRIPTION,
         inputSchema: buyCellInputSchema,
+        outputSchema: buyCellOutputSchema,
         handler: async (args) => {
             const input = args as BuyCellRequest;
             const result = await context.marketPurchase.buyCell({
@@ -18,12 +20,14 @@ export function createBuyCellTool(context: AppContext): MarketToolDefinition {
                 expectedOrderHash: input.expectedOrderHash,
                 maxAmount: input.maxAmount,
             });
+            const output = { ...result, eventType: ToolEventType.CellBought };
 
             return {
                 content: [
                     { type: 'text', text: summarizeBoughtCell(result) },
-                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.CellBought }) },
+                    { type: 'text', text: JSON.stringify(output) },
                 ],
+                structuredContent: output,
             };
         },
     };

@@ -18,6 +18,8 @@ export const MARKET_RETRY_BUDGET_MS = 60_000;
 
 export const MS_PER_SECOND = 1_000;
 
+export const USDG_CENT_BASE_UNITS = 10_000n;
+
 export const MARKET_BACKOFF_BASE_MS = 250;
 
 export const MARKET_BACKOFF_FACTOR = 2;
@@ -31,6 +33,8 @@ export const HTTP_SUCCESS_MIN = 200;
 export const HTTP_SUCCESS_MAX = 299;
 
 export const PROVEN_UNPUBLISHED_MARKET_ERROR_CODES: ReadonlySet<MarketErrorCode> = new Set([
+    MarketErrorCode.UpstreamRejected,
+    MarketErrorCode.InvalidRequest,
     MarketErrorCode.InvalidInput,
     MarketErrorCode.SignatureMismatch,
     MarketErrorCode.PreparedIntentFlowMismatch,
@@ -39,6 +43,7 @@ export const PROVEN_UNPUBLISHED_MARKET_ERROR_CODES: ReadonlySet<MarketErrorCode>
 
 export const RETRYABLE_MARKET_ERROR_CODES: ReadonlySet<MarketErrorCode> = new Set([
     MarketErrorCode.UpstreamRateLimited,
+    MarketErrorCode.UpstreamUnavailable,
     MarketErrorCode.PreparedIntentInProgress,
     MarketErrorCode.OutcomeUnknown,
     MarketErrorCode.UnresolvedCapacityFull,

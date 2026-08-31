@@ -70,8 +70,6 @@ export const PRICE = '1000000000000000000';
 
 export const MAX_AMOUNT = '1200000000000000000';
 
-export const PREPARE_ID = 'a'.repeat(64);
-
 export const ORDER_HASH = `0x${'e'.repeat(64)}`;
 
 export const OTHER_ORDER_HASH = `0x${'d'.repeat(64)}`;
@@ -79,8 +77,6 @@ export const OTHER_ORDER_HASH = `0x${'d'.repeat(64)}`;
 export const NOW_SECONDS = 1_800_000_000;
 
 export const EXPIRES_AT = NOW_SECONDS + 86_400;
-
-export const INTENT_DEADLINE = NOW_SECONDS + 900;
 
 export const PREPARE_PATH = '/api/v1/market/purchases/prepare';
 
@@ -127,7 +123,7 @@ export function listingWire(over: Record<string, unknown> = {}): Record<string, 
 
 export function fulfilmentWire(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
-        kind: MarketTransactionKind.Fulfilment,
+        kind: MarketTransactionKind.Fulfillment,
         to: SEAPORT_ADDRESS,
         data: FULFILMENT_CALLDATA,
         value: PRICE,
@@ -148,14 +144,29 @@ export function approvalWire(over: Record<string, unknown> = {}): Record<string,
 }
 
 export function preparedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
+    const listing = (over.listing ?? listingWire()) as ReturnType<typeof listingWire>;
+    const currency = listing.currency as typeof NATIVE_CURRENCY;
+    const transactions = (over.transactions ?? [fulfilmentWire()]) as Array<Record<string, unknown>>;
+
     return {
-        prepareId: PREPARE_ID,
-        expiresAt: INTENT_DEADLINE,
-        chainId: LAUNCH_CHAIN_ID,
-        protocolAddress: SEAPORT_ADDRESS,
-        listing: listingWire(),
-        transactions: [fulfilmentWire()],
-        ...over,
+        listing: {
+            orderHash: listing.orderHash,
+            protocolAddress: listing.protocolAddress,
+            maker: listing.maker,
+            tokenId: listing.tokenId,
+            price: {
+                currencyAddress: currency.address,
+                symbol: currency.symbol,
+                decimals: currency.decimals,
+                amountBaseUnits: listing.price,
+            },
+            startsAt: listing.startTime,
+            expiresAt: listing.expirationTime,
+        },
+        transactions: transactions.map((transaction) => ({
+            ...transaction,
+            kind: transaction.kind,
+        })),
     };
 }
 
@@ -265,10 +276,10 @@ export function transportOf(...replies: Array<FakeReply | Error>): FakeMarketTra
 }
 
 export class FakeAppConfig implements IAppConfig {
-    constructor(private readonly cell: string = COLLECTION) {}
+    constructor(private readonly land: string = COLLECTION) {}
 
     async load(): Promise<AppConfig> {
-        return { contracts: { cell: this.cell } } as AppConfig;
+        return { contracts: { land: this.land } } as AppConfig;
     }
 }
 
@@ -389,6 +400,9 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
 
         if (this.options.readFails) {
             throw new Error('the collection contract could not be read');
+        }
+        if (params.functionName === 'ownerOf') {
+            return this.options.owner;
         }
         return { owner: this.options.owner };
     }

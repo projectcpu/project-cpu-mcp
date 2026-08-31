@@ -3,11 +3,9 @@ import { z } from 'zod';
 import type { IMarketRecoveryStore, IMarketSingleFlight } from './action.types.js';
 import type { IMarketSingleShotClient } from './client.types.js';
 import type { IMarketFulfilmentProof } from './fulfilment-proof.types.js';
+import { marketOfferFromWire, marketOfferWireSchema } from './snapshot.schemas.js';
 import {
-    bytes32Schema,
     cellTokenIdSchema,
-    marketOfferSchema,
-    marketPreparedIntentSchema,
     marketTransactionSchema,
     type MarketActionStage,
     type MarketActionStatus,
@@ -18,14 +16,18 @@ import type { ILogger } from '../../logger/types.js';
 import type { WalletProvider } from '../../wallet/types.js';
 import type { IAppConfig } from '../types.js';
 
-export const prepareAcceptanceResponseSchema = marketPreparedIntentSchema.extend({
-    offer: marketOfferSchema,
-    tokenId: cellTokenIdSchema,
-    conduitKey: bytes32Schema,
-    transactions: z.array(marketTransactionSchema),
-});
+export const prepareAcceptanceResponseSchema = (chainId: number) =>
+    z
+        .object({
+            offer: marketOfferWireSchema.extend({ tokenId: cellTokenIdSchema }),
+            transactions: z.array(marketTransactionSchema),
+        })
+        .transform((prepared) => ({
+            offer: { ...marketOfferFromWire(prepared.offer, chainId), tokenId: prepared.offer.tokenId },
+            transactions: prepared.transactions,
+        }));
 
-export type PrepareAcceptanceResponse = z.infer<typeof prepareAcceptanceResponseSchema>;
+export type PrepareAcceptanceResponse = z.infer<ReturnType<typeof prepareAcceptanceResponseSchema>>;
 
 export interface AcceptCellOfferRequest {
     orderHash: string;

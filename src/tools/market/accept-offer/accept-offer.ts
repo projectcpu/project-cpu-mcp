@@ -3,6 +3,7 @@ import { summarizeSoldCell } from './format.utils.js';
 import { acceptCellOfferInputSchema, type AcceptCellOfferContext } from './types.js';
 import type { AcceptCellOfferRequest } from '../../../services/market/acceptance.types.js';
 import { ToolEventType } from '../../types.js';
+import { acceptCellOfferOutputSchema } from '../output.types.js';
 import type { MarketToolDefinition } from '../types.js';
 
 export function createAcceptCellOfferTool(context: AcceptCellOfferContext): MarketToolDefinition {
@@ -10,18 +11,21 @@ export function createAcceptCellOfferTool(context: AcceptCellOfferContext): Mark
         name: 'cpu_accept_cell_offer',
         description: ACCEPT_CELL_OFFER_DESCRIPTION,
         inputSchema: acceptCellOfferInputSchema,
+        outputSchema: acceptCellOfferOutputSchema,
         handler: async (args) => {
             const input = args as AcceptCellOfferRequest;
             const result = await context.marketAcceptance.acceptCellOffer({
                 orderHash: input.orderHash,
                 tokenId: input.tokenId,
             });
+            const output = { ...result, eventType: ToolEventType.CellOfferAccepted };
 
             return {
                 content: [
                     { type: 'text', text: summarizeSoldCell(result) },
-                    { type: 'text', text: JSON.stringify({ ...result, eventType: ToolEventType.CellOfferAccepted }) },
+                    { type: 'text', text: JSON.stringify(output) },
                 ],
+                structuredContent: output,
             };
         },
     };

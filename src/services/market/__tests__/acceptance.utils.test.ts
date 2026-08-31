@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { PrepareAcceptanceResponse } from '../acceptance.types.js';
 import {
     acceptanceActionInputs,
     acceptanceApprovals,
@@ -14,14 +15,8 @@ function transaction(kind: MarketTransactionKind, data: string): MarketTransacti
     return { kind, to: `0x${'1'.repeat(40)}`, data, value: '0', chainId: 4663 };
 }
 
-function prepared(over: Record<string, unknown> = {}) {
+function prepared(over: Partial<PrepareAcceptanceResponse> = {}): PrepareAcceptanceResponse {
     return {
-        prepareId: 'a'.repeat(64),
-        expiresAt: 1_000,
-        chainId: 4663,
-        protocolAddress: `0x${'2'.repeat(40)}`,
-        tokenId: '1234',
-        conduitKey: `0x${'7'.repeat(64)}`,
         transactions: [],
         offer: {
             orderHash: ORDER_HASH,
@@ -36,7 +31,7 @@ function prepared(over: Record<string, unknown> = {}) {
             expirationTime: 2_000,
         },
         ...over,
-    } as Parameters<typeof effectiveAcceptanceDeadline>[0];
+    };
 }
 
 describe('the acceptance intent identity', () => {
@@ -53,12 +48,13 @@ describe('the acceptance intent identity', () => {
 });
 
 describe('the acceptance deadline', () => {
-    it('stops at the prepared intent when it expires first', () => {
-        expect(effectiveAcceptanceDeadline(prepared())).toBe(1_000);
+    it('uses the offer expiry because the canonical response has no separate prepared-intent deadline', () => {
+        expect(effectiveAcceptanceDeadline(prepared())).toBe(2_000);
     });
 
-    it('stops at the offer expiry when it expires first', () => {
-        expect(effectiveAcceptanceDeadline(prepared({ expiresAt: 9_000 }))).toBe(2_000);
+    it('tracks an earlier offer expiry', () => {
+        const initial = prepared();
+        expect(effectiveAcceptanceDeadline(prepared({ offer: { ...initial.offer, expirationTime: 500 } }))).toBe(500);
     });
 });
 
@@ -66,7 +62,7 @@ describe('the acceptance transactions', () => {
     it('separates the collection approvals from the one fulfilment', () => {
         const transactions = [
             transaction(MarketTransactionKind.CollectionApproval, '0xa1'),
-            transaction(MarketTransactionKind.Fulfilment, '0xf1'),
+            transaction(MarketTransactionKind.Fulfillment, '0xf1'),
         ];
 
         const intent = prepared({ transactions });
@@ -77,8 +73,8 @@ describe('the acceptance transactions', () => {
 
     it('refuses to name a fulfilment when more than one is offered', () => {
         const transactions = [
-            transaction(MarketTransactionKind.Fulfilment, '0xf1'),
-            transaction(MarketTransactionKind.Fulfilment, '0xf2'),
+            transaction(MarketTransactionKind.Fulfillment, '0xf1'),
+            transaction(MarketTransactionKind.Fulfillment, '0xf2'),
         ];
 
         expect(acceptanceFulfilment(prepared({ transactions }))).toBeNull();

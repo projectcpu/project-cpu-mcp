@@ -99,7 +99,7 @@ export class ApiClient {
             init.body = JSON.stringify(body);
         }
 
-        this.logger.debug('api request', { method, path });
+        this.logger.debug('api request', { method, path, body });
 
         let response: Response;
         try {
@@ -131,7 +131,7 @@ export class ApiClient {
         if (trackHealth) {
             this.setReachable(true, null);
         }
-        this.logger.debug('api response', { method, path, status: response.status });
+        this.logger.debug('api response', { method, path, status: response.status, body: data });
 
         return { status: response.status, headers: response.headers, data };
     }

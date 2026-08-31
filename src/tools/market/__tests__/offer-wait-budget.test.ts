@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { LAUNCH_CHAIN_ID } from '../../../config/constants.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { errorWire } from '../../../services/market/__tests__/fixtures.js';
 import { MarketApiClient } from '../../../services/market/client.js';
 import { MARKET_RETRY_BUDGET_MS } from '../../../services/market/constants.js';
 import { MarketError } from '../../../services/market/error.js';
@@ -29,7 +31,7 @@ function makeOfferHandler(transport: RoutedMarketTransport): ToolHandler {
     const client = new MarketApiClient({ api: transport, logger });
     const service = new MarketOfferService({
         client,
-        profile: new MarketProfileClient({ client, logger }),
+        profile: new MarketProfileClient({ client, chainId: LAUNCH_CHAIN_ID, logger }),
         appConfig: new FakeAppConfig(),
         wallet: new FakeBuyerWallet(),
         network: 'robinhood',
@@ -67,12 +69,12 @@ describe('the automatic wait budget of one offer tool invocation', () => {
     it('covers the wait for the read snapshot to advance, which opens no budget of its own', async () => {
         const transport = new RoutedMarketTransport({
             [MarketRoute.MyOffers]: [
-                reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '27' }),
-                reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '27' }),
+                reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '27' }),
+                reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '27' }),
                 reply(200, offersPageWire([], null)),
             ],
             [MarketRoute.Prepare]: [reply(200, preparedWire())],
-            [MarketRoute.Submit]: [reply(429, { code: 'upstreamRateLimited', message: 'slow down' })],
+            [MarketRoute.Submit]: [reply(429, errorWire('upstreamRateLimited', 'slow down'))],
         });
         const handler = makeOfferHandler(transport);
         const startedAt = Date.now();
@@ -88,7 +90,7 @@ describe('the automatic wait budget of one offer tool invocation', () => {
         const transport = new RoutedMarketTransport({
             [MarketRoute.MyOffers]: [reply(200, offersPageWire([], null))],
             [MarketRoute.Prepare]: [reply(200, preparedWire({ expiresAt: NOW_SECONDS + 3 }))],
-            [MarketRoute.Submit]: [reply(503, { code: 'x', message: 'down' })],
+            [MarketRoute.Submit]: [reply(503, errorWire('x', 'down'))],
         });
         const handler = makeOfferHandler(transport);
         const startedAt = Date.now();

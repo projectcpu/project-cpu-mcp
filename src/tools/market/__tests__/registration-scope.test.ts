@@ -11,6 +11,7 @@ type MarketRegistration = (server: ToolRegistrar, context: AppContext) => void;
 interface ObservedRegistration {
     name: string;
     ranInsideBudget: boolean;
+    hasOutputSchema: boolean;
 }
 
 const MARKETPLACE_TOOL_NAMES = [
@@ -46,10 +47,16 @@ async function observeRegistration(register: MarketRegistration): Promise<Observ
 
     let name: string | null = null;
     let handler: ToolHandler | null = null;
+    let hasOutputSchema = false;
     const server = {
-        registerTool(registeredName: string, _definition: unknown, registeredHandler: ToolHandler): void {
+        registerTool(
+            registeredName: string,
+            definition: { outputSchema: unknown },
+            registeredHandler: ToolHandler,
+        ): void {
             name = registeredName;
             handler = registeredHandler;
+            hasOutputSchema = definition.outputSchema !== undefined;
         },
     } as unknown as ToolRegistrar;
 
@@ -69,7 +76,7 @@ async function observeRegistration(register: MarketRegistration): Promise<Observ
     });
     await Promise.resolve(registeredHandler(args)).catch(() => null);
 
-    return { name: registeredName, ranInsideBudget };
+    return { name: registeredName, ranInsideBudget, hasOutputSchema };
 }
 
 async function observeEveryRegistration(): Promise<Array<ObservedRegistration>> {
@@ -94,5 +101,11 @@ describe('the marketplace tool registration seam', () => {
         const observed = await observeEveryRegistration();
 
         expect(observed.map((entry) => entry.name).sort()).toEqual([...MARKETPLACE_TOOL_NAMES].sort());
+    });
+
+    it('publishes an output schema for every marketplace tool', async () => {
+        const observed = await observeEveryRegistration();
+
+        expect(observed.filter((entry) => !entry.hasOutputSchema).map((entry) => entry.name)).toEqual([]);
     });
 });

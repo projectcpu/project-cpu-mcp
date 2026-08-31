@@ -159,32 +159,48 @@ export function approvalWire(to: string, over: Record<string, unknown> = {}): Re
     };
 }
 
+export const priceWire = (amountBaseUnits: string, currency = CURRENCY): Record<string, unknown> => ({
+    currencyAddress: currency.address,
+    symbol: currency.symbol,
+    decimals: currency.decimals,
+    amountBaseUnits,
+});
+
 export function preparedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
         prepareId: PREPARE_ID,
         expiresAt: INTENT_DEADLINE,
         chainId: LAUNCH_CHAIN_ID,
         protocolAddress: SEAPORT_ADDRESS,
-        listing: {
-            maker: SELLER,
-            tokenId: TOKEN_ID,
-            price: PRICE,
-            currency: CURRENCY,
-            startTime: NOW_SECONDS,
-            expirationTime: EXPIRES_AT,
-            buyerAddress: null,
+        approvals: [],
+        fees: {
+            grossPrice: priceWire(PRICE),
+            platformFee: priceWire(PLATFORM_FEE),
+            creatorFee: priceWire(CREATOR_FEE),
+            estimatedProceeds: priceWire(PROCEEDS),
         },
-        fees: { platformFee: PLATFORM_FEE, creatorFee: CREATOR_FEE, estimatedProceeds: PROCEEDS },
-        transactions: [],
         order: seaportOrderWire(),
         ...over,
     };
 }
 
+export function privateSaleMarkerWire(over: Record<string, unknown> = {}): Record<string, unknown> {
+    const [sold] = seaportOrderWire().offer as Array<Record<string, unknown>>;
+    return { ...sold, recipient: RESERVED_BUYER, ...over };
+}
+
 export function reservedPreparedWire(orderOver: Record<string, unknown> = {}): Record<string, unknown> {
+    const order = seaportOrderWire();
+    const consideration = [...(order.consideration as Array<Record<string, unknown>>), privateSaleMarkerWire()];
+
     return preparedWire({
-        listing: { ...(preparedWire().listing as object), buyerAddress: RESERVED_BUYER },
-        order: seaportOrderWire({ orderType: 2, zone: ZONE, ...orderOver }),
+        order: seaportOrderWire({
+            orderType: 2,
+            zone: ZONE,
+            consideration,
+            totalOriginalConsiderationItems: consideration.length,
+            ...orderOver,
+        }),
     });
 }
 
@@ -204,11 +220,42 @@ export function publishedListingWire(over: Record<string, unknown> = {}): Record
 }
 
 export function submittedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return { listing: publishedListingWire(over) };
+    return {
+        listing: {
+            orderHash: ORDER_HASH,
+            protocolAddress: SEAPORT_ADDRESS,
+            maker: SELLER,
+            tokenId: TOKEN_ID,
+            price: priceWire(PRICE),
+            startsAt: NOW_SECONDS,
+            expiresAt: EXPIRES_AT,
+            ...over,
+        },
+    };
 }
 
 export function listingsPageWire(items: Array<unknown>, nextCursor: string | null): Record<string, unknown> {
-    return { items, nextCursor };
+    return {
+        listings: items.map((raw) => {
+            const listing = raw as Record<string, unknown>;
+            const currency = listing.currency as typeof CURRENCY;
+            return {
+                orderHash: listing.orderHash,
+                protocolAddress: listing.protocolAddress,
+                maker: listing.maker,
+                tokenId: listing.tokenId,
+                price: {
+                    currencyAddress: currency.address,
+                    symbol: currency.symbol,
+                    decimals: currency.decimals,
+                    amountBaseUnits: listing.price,
+                },
+                startsAt: listing.startTime,
+                expiresAt: listing.expirationTime,
+            };
+        }),
+        cursor: nextCursor,
+    };
 }
 
 export interface RecordedCall {
@@ -265,14 +312,16 @@ export class RoutedMarketTransport implements IMarketTransport {
 }
 
 export class FakeAppConfig implements IAppConfig {
-    private readonly cell: string;
+    private readonly land: string;
+    private readonly usdg: string;
 
-    constructor(cell: string = COLLECTION) {
-        this.cell = cell;
+    constructor(land: string = COLLECTION, usdg: string = CURRENCY_ADDRESS) {
+        this.land = land;
+        this.usdg = usdg;
     }
 
     async load(): Promise<AppConfig> {
-        return { contracts: { cell: this.cell } } as AppConfig;
+        return { contracts: { land: this.land, usdg: this.usdg } } as AppConfig;
     }
 }
 
@@ -394,7 +443,7 @@ export function listCellHarness(
     const client = new MarketApiClient({ api: transport, logger });
     const service = new MarketListingService({
         client,
-        profile: new MarketProfileClient({ client, logger }),
+        profile: new MarketProfileClient({ client, chainId: LAUNCH_CHAIN_ID, logger }),
         appConfig,
         wallet,
         network: 'robinhood',

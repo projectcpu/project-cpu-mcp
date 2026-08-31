@@ -27,7 +27,11 @@ export function createMarketServices(options: MarketServicesOptions): MarketServ
         transactions: new WalletTransactionReader({ wallet, logger: logger.child('market:chain') }),
         logger: logger.child('market:proof'),
     });
-    const profile = new MarketProfileClient({ client, logger: logger.child('market:profile') });
+    const profile = new MarketProfileClient({
+        client,
+        chainId: wallet.get().getChainId(),
+        logger: logger.child('market:profile'),
+    });
 
     return {
         market: new MarketService({ client, logger: logger.child('market') }),

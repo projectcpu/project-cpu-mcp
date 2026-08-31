@@ -3,9 +3,8 @@ import { z } from 'zod';
 import type { IMarketRecoveryStore, IMarketSingleFlight } from './action.types.js';
 import type { IMarketSingleShotClient } from './client.types.js';
 import type { IMarketFulfilmentProof } from './fulfilment-proof.types.js';
+import { marketListingFromWire, marketListingWireSchema } from './snapshot.schemas.js';
 import {
-    marketListingSchema,
-    marketPreparedIntentSchema,
     marketTransactionSchema,
     type MarketActionStage,
     type MarketActionStatus,
@@ -15,12 +14,18 @@ import type { ILogger } from '../../logger/types.js';
 import type { WalletProvider } from '../../wallet/types.js';
 import type { IAppConfig } from '../types.js';
 
-export const preparePurchaseResponseSchema = marketPreparedIntentSchema.extend({
-    listing: marketListingSchema,
-    transactions: z.array(marketTransactionSchema),
-});
+export const preparePurchaseResponseSchema = (chainId: number) =>
+    z
+        .object({
+            listing: marketListingWireSchema,
+            transactions: z.array(marketTransactionSchema),
+        })
+        .transform((prepared) => ({
+            listing: marketListingFromWire(prepared.listing, chainId),
+            transactions: prepared.transactions,
+        }));
 
-export type PreparePurchaseResponse = z.infer<typeof preparePurchaseResponseSchema>;
+export type PreparePurchaseResponse = z.infer<ReturnType<typeof preparePurchaseResponseSchema>>;
 
 export interface BuyCellRequest {
     tokenId: string;

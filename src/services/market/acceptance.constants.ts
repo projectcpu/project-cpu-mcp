@@ -1,6 +1,6 @@
 import { MARKET_BASE_PATH } from './constants.js';
 
-export const MARKET_ACCEPTANCE_PREPARE_PATH = `${MARKET_BASE_PATH}/acceptances/prepare`;
+export const MARKET_ACCEPTANCE_PREPARE_PATH = `${MARKET_BASE_PATH}/offers/accept/prepare`;
 
 export const ACCEPTANCE_START_TIME_SKEW_SECONDS = 300;
 

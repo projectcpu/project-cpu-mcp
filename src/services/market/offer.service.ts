@@ -23,11 +23,13 @@ import {
     OFFER_SUBMIT_MAX_ATTEMPTS,
 } from './offer.constants.js';
 import {
-    prepareOfferResponseSchema,
-    submitOfferResponseSchema,
+    prepareOfferResponseSchemaFor,
+    submitOfferResponseSchemaFor,
+    usdgOfferAmountSchema,
     type IMarketOfferService,
     type MakeCellOfferRequest,
     type MakeCellOfferResult,
+    type MarketOfferContracts,
     type MarketOfferScan,
     type MarketOfferServiceOptions,
     type OfferRecoveryPayload,
@@ -49,13 +51,13 @@ import {
     MarketErrorCode,
     MarketOfferKind,
     MarketTransactionKind,
-    positiveBaseUnitAmountSchema,
     unixSecondsSchema,
     type MarketOffer,
     type MarketTransaction,
 } from './types.js';
 import type { CurrencyApprovalCall } from '../../contracts/approval.types.js';
 import { currencyApprovalCall } from '../../contracts/approval.utils.js';
+import { ERC20_ABI } from '../../contracts/erc20.abi.js';
 import { SeaportSpenderReader } from '../../contracts/seaport-spender.reader.js';
 import {
     SEAPORT_ADDRESS,
@@ -139,7 +141,9 @@ export class MarketOfferService implements IMarketOfferService {
                 );
             }
 
-            const prepared = await this.prepare(request);
+            const contracts = await this.requireMarketContracts();
+            await this.requireSufficientUsdgBalance(request, contracts.usdg);
+            const prepared = await this.prepare(request, contracts);
             payload = { prepared, signature: null, approvalTxHashes: [] };
             this.reserve(key, MarketActionStage.Prepare, payload);
 
@@ -172,6 +176,10 @@ export class MarketOfferService implements IMarketOfferService {
             return this.reconcileExpired(key, request, prepared);
         }
 
+        const contracts = await this.requireMarketContracts();
+        this.requireConfiguredCurrency(request, prepared, contracts.usdg);
+        await this.requireSufficientUsdgBalance(request, contracts.usdg);
+
         if (payload.signature === null) {
             const resumed = { ...payload, approvalTxHashes: await this.broadcastApprovals(prepared) };
             const signed = { ...resumed, signature: await this.sign(prepared) };
@@ -203,7 +211,7 @@ export class MarketOfferService implements IMarketOfferService {
                     path: MARKET_OFFER_SUBMIT_PATH,
                     method: 'POST',
                     body: { prepareId: prepared.prepareId, signature: payload.signature },
-                    schema: submitOfferResponseSchema,
+                    schema: submitOfferResponseSchemaFor(this.wallet.get().getChainId()),
                     stage: MarketActionStage.Submit,
                     label: `Publishing the offer for Cell ${request.tokenId}`,
                 });
@@ -398,8 +406,10 @@ export class MarketOfferService implements IMarketOfferService {
         }
     }
 
-    private async prepare(request: MakeCellOfferRequest): Promise<PrepareOfferResponse> {
-        const collection = await this.requireCellCollection();
+    private async prepare(
+        request: MakeCellOfferRequest,
+        contracts: MarketOfferContracts,
+    ): Promise<PrepareOfferResponse> {
         const counter = await this.currentCounter();
 
         const prepared = await this.client.send({
@@ -411,12 +421,12 @@ export class MarketOfferService implements IMarketOfferService {
                 expirationTime: request.expirationTime,
                 counter,
             },
-            schema: prepareOfferResponseSchema,
+            schema: prepareOfferResponseSchemaFor(request, counter),
             stage: MarketActionStage.Prepare,
             label: `Preparing the offer for Cell ${request.tokenId}`,
         });
 
-        await this.requireTrustworthyPreparation(request, prepared, counter, collection);
+        await this.requireTrustworthyPreparation(request, prepared, counter, contracts);
         return prepared;
     }
 
@@ -459,9 +469,10 @@ export class MarketOfferService implements IMarketOfferService {
         return counter.toString();
     }
 
-    private async requireCellCollection(): Promise<string> {
+    private async requireMarketContracts(): Promise<MarketOfferContracts> {
         const config = await this.appConfig.load();
-        const collection = config.contracts.cell;
+        const collection = config.contracts.land;
+        const usdg = config.contracts.usdg;
 
         if (!evmAddressSchema.safeParse(collection).success) {
             throw new MarketError({
@@ -476,14 +487,27 @@ export class MarketOfferService implements IMarketOfferService {
             });
         }
 
-        return collection;
+        if (!evmAddressSchema.safeParse(usdg).success) {
+            throw new MarketError({
+                code: MarketErrorCode.InvalidMarketResponse,
+                message:
+                    'USDG is not configured for this network, so this wallet cannot verify the currency or fund ' +
+                    'an offer safely.',
+                retryable: false,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Prepare,
+                txHash: null,
+            });
+        }
+
+        return { collection, usdg };
     }
 
     private async requireTrustworthyPreparation(
         request: MakeCellOfferRequest,
         prepared: PrepareOfferResponse,
         counter: string,
-        collection: string,
+        contracts: MarketOfferContracts,
     ): Promise<void> {
         const wallet = this.walletAddress();
         const chainId = this.wallet.get().getChainId();
@@ -512,9 +536,10 @@ export class MarketOfferService implements IMarketOfferService {
 
         this.requireRequestedTerms(request, prepared, counter);
         this.requireSpendableCurrency(request, prepared);
+        this.requireConfiguredCurrency(request, prepared, contracts.usdg);
         await this.requireCurrencyApprovalsOnly(request, prepared);
         this.requireOfferedAmount(request, prepared);
-        this.requireRequestedCell(request, prepared, collection);
+        this.requireRequestedCell(request, prepared, contracts.collection);
         this.requireOrderShape(request, prepared);
     }
 
@@ -577,6 +602,70 @@ export class MarketOfferService implements IMarketOfferService {
                     `The prepared offer for Cell ${request.tokenId} is priced in the chain's own currency, which ` +
                     'cannot be escrowed by an off-chain offer. An offer must be made in a token the marketplace ' +
                     'can pull when a seller accepts it.',
+                retryable: false,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Prepare,
+                txHash: null,
+            });
+        }
+    }
+
+    private requireConfiguredCurrency(
+        request: MakeCellOfferRequest,
+        prepared: PrepareOfferResponse,
+        usdg: string,
+    ): void {
+        if (!sameAddress(prepared.offer.currency.address, usdg)) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                `it is priced in ${prepared.offer.currency.address} instead of the configured USDG ${usdg}`,
+                request,
+            );
+        }
+    }
+
+    private async requireSufficientUsdgBalance(request: MakeCellOfferRequest, usdg: string): Promise<void> {
+        const wallet = this.wallet.get();
+        let balance: unknown;
+
+        try {
+            balance = await wallet.readContract({
+                address: usdg as Address,
+                abi: ERC20_ABI,
+                functionName: 'balanceOf',
+                args: [wallet.getAddress()],
+            });
+        } catch (error) {
+            throw new MarketError({
+                code: MarketErrorCode.NetworkFailure,
+                message:
+                    `The USDG contract ${usdg} did not answer this wallet's balance, so the offer was not ` +
+                    `prepared: ${errorMessage(error)}.`,
+                retryable: true,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Prepare,
+                txHash: null,
+            });
+        }
+
+        if (typeof balance !== 'bigint') {
+            throw new MarketError({
+                code: MarketErrorCode.InvalidMarketResponse,
+                message: `The USDG contract ${usdg} returned a non-integer balance, so the offer was not prepared.`,
+                retryable: false,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Prepare,
+                txHash: null,
+            });
+        }
+
+        const required = BigInt(request.amount);
+        if (balance < required) {
+            throw new MarketError({
+                code: MarketErrorCode.InsufficientBalance,
+                message:
+                    `The wallet has ${balance.toString()} USDG base units but needs ${request.amount} to make ` +
+                    `the offer for Cell ${request.tokenId}. Nothing was approved, signed or published.`,
                 retryable: false,
                 retryAfterSeconds: null,
                 stage: MarketActionStage.Prepare,
@@ -964,11 +1053,11 @@ export class MarketOfferService implements IMarketOfferService {
             );
         }
 
-        const amount = positiveBaseUnitAmountSchema.safeParse(request.amount);
+        const amount = usdgOfferAmountSchema.safeParse(request.amount);
         if (!amount.success) {
             throw this.rejectedInput(
-                `"${request.amount}" is not an offer amount. Pass what you bid as a positive decimal integer of the ` +
-                    'currency base units, never a decimal fraction.',
+                `"${request.amount}" is not a valid USDG offer amount. Pass a positive decimal integer in whole ` +
+                    'cent increments: 10000 base units is $0.01.',
             );
         }
 

@@ -18,7 +18,7 @@ import {
     cancelledOrders,
     seaportOrderHash,
 } from '../cancel.utils.js';
-import { MarketTransactionKind, type MarketTransaction } from '../types.js';
+import { MarketOrderKind, MarketTransactionKind, type MarketTransaction } from '../types.js';
 
 const MAKER = `0x${'1'.repeat(40)}`;
 
@@ -183,7 +183,14 @@ describe('reading a prepared cancellation from its own bytes', () => {
 
         const decoded = cancelledOrders(cancelCalldata([order]));
 
-        expect(decoded).toEqual([{ offerer: MAKER, orderHash: seaportOrderHash(order) }]);
+        expect(decoded).toEqual([
+            {
+                offerer: MAKER,
+                orderHash: seaportOrderHash(order),
+                kind: MarketOrderKind.Listing,
+                tokenId: '1234',
+            },
+        ]);
     });
 
     it('gives a different order hash for a different order of the same maker', () => {
@@ -227,7 +234,7 @@ describe('the one transaction a cancellation may send', () => {
     it('refuses an empty sequence, a second cancellation, or another kind', () => {
         expect(cancellationTransaction([])).toBeNull();
         expect(cancellationTransaction([transaction(), transaction()])).toBeNull();
-        expect(cancellationTransaction([transaction({ kind: MarketTransactionKind.Fulfilment })])).toBeNull();
+        expect(cancellationTransaction([transaction({ kind: MarketTransactionKind.Fulfillment })])).toBeNull();
     });
 });
 

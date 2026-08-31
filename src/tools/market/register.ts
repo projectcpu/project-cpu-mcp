@@ -22,7 +22,11 @@ function bindMarketTool(server: ToolRegistrar, definition: MarketToolDefinition)
 
     server.registerTool(
         definition.name,
-        { description: definition.description, inputSchema: definition.inputSchema },
+        {
+            description: definition.description,
+            inputSchema: definition.inputSchema,
+            outputSchema: definition.outputSchema,
+        },
         async (args: unknown) => runWithMarketWaitBudget(async () => definition.handler(shape.parse(args ?? {}))),
     );
 }

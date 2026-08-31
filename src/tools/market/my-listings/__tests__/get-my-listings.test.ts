@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
+    backendListingPageWire,
     FakeMarketTransport,
     listingWireFor,
     marketProfileClientOver,
-    pageWire,
     reply,
 } from '../../../../services/market/__tests__/fixtures.js';
 import { MARKET_MY_LISTINGS_PATH } from '../../../../services/market/constants.js';
@@ -46,7 +46,7 @@ describe('cpu_get_my_listings', () => {
     });
 
     it('reads the caller-scoped listings route on the first page', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([LISTING_A], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendListingPageWire([LISTING_A], null))]);
 
         await handlerOver(transport)({ cursor: null } as never);
 
@@ -54,7 +54,7 @@ describe('cpu_get_my_listings', () => {
     });
 
     it('forwards a subsequent cursor to the same route', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([LISTING_B], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendListingPageWire([LISTING_B], null))]);
 
         await handlerOver(transport)({ cursor: 'page-2' } as never);
 
@@ -62,7 +62,7 @@ describe('cpu_get_my_listings', () => {
     });
 
     it('returns a short page that still carries another cursor', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([LISTING_A], 'page-2'))]);
+        const transport = new FakeMarketTransport([reply(200, backendListingPageWire([LISTING_A], 'page-2'))]);
 
         const result = await handlerOver(transport)({ cursor: null } as never);
 
@@ -72,7 +72,7 @@ describe('cpu_get_my_listings', () => {
     });
 
     it('reports a final page as a null next cursor', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([LISTING_A, LISTING_B], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendListingPageWire([LISTING_A, LISTING_B], null))]);
 
         const result = await handlerOver(transport)({ cursor: 'page-2' } as never);
 
@@ -81,7 +81,7 @@ describe('cpu_get_my_listings', () => {
     });
 
     it('reports an empty page as no listings rather than an integration failure', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendListingPageWire([], null))]);
 
         const result = await handlerOver(transport)({ cursor: null } as never);
 
@@ -90,7 +90,7 @@ describe('cpu_get_my_listings', () => {
     });
 
     it('preserves base-unit prices, order hashes, protocol addresses and Unix-second times verbatim', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([LISTING_A], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendListingPageWire([LISTING_A], null))]);
 
         const result = await handlerOver(transport)({ cursor: null } as never);
 
@@ -98,7 +98,7 @@ describe('cpu_get_my_listings', () => {
     });
 
     it('surfaces an invalid page as a terminal market error', async () => {
-        const transport = new FakeMarketTransport([reply(200, { items: [LISTING_A] })]);
+        const transport = new FakeMarketTransport([reply(200, { listings: [LISTING_A] })]);
 
         const error = (await handlerOver(transport)({ cursor: null } as never).catch((e: unknown) => e)) as MarketError;
 

@@ -2,7 +2,7 @@ import { cellTokenIdSchema, orderHashSchema, positiveBaseUnitAmountSchema } from
 
 export const buyCellInputSchema = {
     tokenId: cellTokenIdSchema.describe(
-        'The Cell the listing sells, as a decimal token id with no leading zeroes (e.g. "1234", never "01234").',
+        'The Cell the listing sells, as a decimal token id with no leading zeroes (e.g. "0" or "1234", never "01234").',
     ),
     expectedOrderHash: orderHashSchema.describe(
         'The exact 32-byte 0x-prefixed `orderHash` of the listing you decided to buy, copied from ' +

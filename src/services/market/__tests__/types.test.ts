@@ -10,6 +10,7 @@ import {
     evmAddressSchema,
     hexDataSchema,
     marketCurrencySchema,
+    marketLookupTokenIdSchema,
     MarketActionStage,
     MarketActionStatus,
     MarketOfferKind,
@@ -99,10 +100,18 @@ describe('amount schemas', () => {
     });
 
     it('keeps one identity per Cell', () => {
+        expect(accepts(cellTokenIdSchema, '0')).toBe(true);
         expect(accepts(cellTokenIdSchema, '1234')).toBe(true);
+        expect(accepts(cellTokenIdSchema, '2147483647')).toBe(true);
         expect(accepts(cellTokenIdSchema, '01234')).toBe(false);
-        expect(accepts(cellTokenIdSchema, '0')).toBe(false);
+        expect(accepts(cellTokenIdSchema, '2147483648')).toBe(false);
         expect(accepts(cellTokenIdSchema, 1234)).toBe(false);
+    });
+
+    it('matches the broader backend bound for a market snapshot route parameter', () => {
+        expect(accepts(marketLookupTokenIdSchema, '0')).toBe(true);
+        expect(accepts(marketLookupTokenIdSchema, '9223372036854775807')).toBe(true);
+        expect(accepts(marketLookupTokenIdSchema, '9223372036854775808')).toBe(false);
     });
 });
 
@@ -110,11 +119,13 @@ describe('time, chain and currency schemas', () => {
     it('accepts only non-negative whole Unix seconds', () => {
         expect(accepts(unixSecondsSchema, 0)).toBe(true);
         expect(accepts(unixSecondsSchema, 1_800_000_000)).toBe(true);
+        expect(accepts(unixSecondsSchema, 253_402_300_799)).toBe(true);
 
         expect(accepts(unixSecondsSchema, -1)).toBe(false);
         expect(accepts(unixSecondsSchema, 1.5)).toBe(false);
         expect(accepts(unixSecondsSchema, '1800000000')).toBe(false);
         expect(accepts(unixSecondsSchema, Number.NaN)).toBe(false);
+        expect(accepts(unixSecondsSchema, 253_402_300_800)).toBe(false);
     });
 
     it('accepts only a positive whole chain id', () => {
@@ -135,6 +146,7 @@ describe('time, chain and currency schemas', () => {
         expect(accepts(marketCurrencySchema, { ...currency, symbol: '' })).toBe(false);
         expect(accepts(marketCurrencySchema, { ...currency, decimals: -1 })).toBe(false);
         expect(accepts(marketCurrencySchema, { ...currency, decimals: 18.5 })).toBe(false);
+        expect(accepts(marketCurrencySchema, { ...currency, decimals: 37 })).toBe(false);
         expect(accepts(marketCurrencySchema, { ...currency, decimals: '18' })).toBe(false);
         expect(accepts(marketCurrencySchema, { address: ADDRESS, symbol: 'WETH' })).toBe(false);
         expect(accepts(marketCurrencySchema, {})).toBe(false);
@@ -236,7 +248,7 @@ describe('market enums', () => {
         expect(Object.values(MarketTransactionKind)).toEqual([
             'collectionApproval',
             'currencyApproval',
-            'fulfilment',
+            'fulfillment',
             'cancellation',
         ]);
         expect(Object.values(MarketActionStatus)).toEqual(['completed', 'already_completed']);

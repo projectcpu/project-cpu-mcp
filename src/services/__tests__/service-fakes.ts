@@ -74,6 +74,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
         chainId: 1,
         contracts: {
             land: LAND,
+            usdg: '',
             cpuToken,
             cpuHook: CPU_HOOK,
             cell: CELL,

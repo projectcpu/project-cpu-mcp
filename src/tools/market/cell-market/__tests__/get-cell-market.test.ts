@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import {
+    backendOrderFrom,
+    backendSnapshotWire,
     emptySnapshotWire,
+    errorWire,
     FakeMarketTransport,
     marketServiceOver,
     offerWire,
@@ -61,7 +64,7 @@ describe('cpu_get_cell_market', () => {
     });
 
     it('returns the same Cell plus its best listing and best offer', async () => {
-        const result = await handlerOver(new FakeMarketTransport([reply(200, snapshotWire)]))({
+        const result = await handlerOver(new FakeMarketTransport([reply(200, backendSnapshotWire)]))({
             tokenId: '1234',
         } as never);
 
@@ -73,7 +76,7 @@ describe('cpu_get_cell_market', () => {
     });
 
     it('calls the tool with the arguments the schema produced, not a rewritten Cell id', async () => {
-        const transport = new FakeMarketTransport([reply(200, snapshotWire)]);
+        const transport = new FakeMarketTransport([reply(200, backendSnapshotWire)]);
         await handlerOver(transport)({ tokenId: '1234' } as never);
 
         expect(transport.calls[0]?.path).toBe('/api/v1/market/cells/1234');
@@ -93,7 +96,10 @@ describe('cpu_get_cell_market', () => {
         for (const kind of Object.values(MarketOfferKind)) {
             const tokenId = kind === MarketOfferKind.Item ? '1234' : null;
             const transport = new FakeMarketTransport([
-                reply(200, { ...snapshotWire, bestOffer: offerWire(kind, tokenId) }),
+                reply(200, {
+                    ...backendSnapshotWire,
+                    bestOffer: { ...backendOrderFrom(offerWire(kind, tokenId)), kind },
+                }),
             ]);
 
             const result = await handlerOver(transport)({ tokenId: '1234' } as never);
@@ -106,7 +112,7 @@ describe('cpu_get_cell_market', () => {
 
     it('surfaces invalid wire data as a terminal market error instead of a half-parsed snapshot', async () => {
         const transport = new FakeMarketTransport([
-            reply(200, { ...snapshotWire, bestOffer: { ...snapshotWire.bestOffer, kind: 'bundle' } }),
+            reply(200, { ...backendSnapshotWire, bestOffer: { ...backendSnapshotWire.bestOffer, kind: 'bundle' } }),
         ]);
 
         const error = (await handlerOver(transport)({ tokenId: '1234' } as never).catch(
@@ -122,7 +128,7 @@ describe('cpu_get_cell_market', () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport(
             [],
-            reply(429, { code: 'upstreamRateLimited', message: 'rate limited upstream' }, { 'retry-after': '3600' }),
+            reply(429, errorWire('upstreamRateLimited', 'rate limited upstream'), { 'retry-after': '3600' }),
         );
 
         const error = (await settle(handlerOver(transport)({ tokenId: '1234' } as never))) as MarketError;
@@ -146,7 +152,7 @@ describe('cpu_get_cell_market', () => {
     });
 
     it('reports a 401 that survived reauthentication as terminal', async () => {
-        const transport = new FakeMarketTransport([reply(401, { code: 'unauthorized', message: 'sign in' })]);
+        const transport = new FakeMarketTransport([reply(401, errorWire('unauthorized', 'sign in'))]);
 
         const error = (await handlerOver(transport)({ tokenId: '1234' } as never).catch(
             (e: unknown) => e,
@@ -159,8 +165,8 @@ describe('cpu_get_cell_market', () => {
     it('rides out a short 5xx inside one call', async () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport([
-            reply(502, { code: 'x', message: 'bad gateway' }),
-            reply(200, snapshotWire),
+            reply(502, errorWire('x', 'bad gateway')),
+            reply(200, backendSnapshotWire),
         ]);
 
         const result = (await settle(handlerOver(transport)({ tokenId: '1234' } as never))) as {
@@ -173,7 +179,7 @@ describe('cpu_get_cell_market', () => {
 
     it('gives up inside the one cumulative wait budget when the 5xx never clears', async () => {
         vi.useFakeTimers();
-        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+        const transport = new FakeMarketTransport([], reply(503, errorWire('x', 'down')));
         const startedAt = Date.now();
 
         const error = (await settle(handlerOver(transport)({ tokenId: '1234' } as never))) as MarketError;

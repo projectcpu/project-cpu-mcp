@@ -13,7 +13,7 @@ export const CANCEL_ORDER_DESCRIPTION = [
     "Success is proven, not assumed: the receipt must carry the protocol's own cancellation event for that exact",
     'order, naming your wallet as the maker, and the transaction must have been sent by your wallet. An order that',
     'merely stopped being active is NEVER reported as cancelled — it may have been filled or expired instead, so an',
-    'order that is gone without that proof fails with ORDER_UNAVAILABLE and no other order is touched.',
+    'order that is gone without that proof fails with `staleListing` or `staleOffer` and no other order is touched.',
     'Retrying is safe: a repeated call re-checks the transaction it already sent instead of cancelling again, and',
     'can never bind another order. At worst a retry spends gas on a transaction the protocol rejects.',
     'The result reports `status` (`completed`, or `already_completed` when the cancellation proved to be done',

@@ -10,11 +10,11 @@ import {
     FakeTransactionReader,
     MAKER,
     NOW_SECONDS,
+    OFFER_ORDER_HASH,
     offerPreparedWire,
     orderCancelledLog,
     orderComponents,
     ORDER_HASH,
-    orderWire,
     OTHER_CONTRACT,
     OTHER_ORDER_HASH,
     parsed,
@@ -28,6 +28,7 @@ import {
     txHash,
 } from './fixtures.js';
 import { SEAPORT_ADDRESS } from '../../../../contracts/seaport.constants.js';
+import { errorWire } from '../../../../services/market/__tests__/fixtures.js';
 import { SEAPORT_CANCEL_ABI } from '../../../../services/market/cancel.abi.js';
 import { MarketError } from '../../../../services/market/error.js';
 import { MarketRecoveryStore } from '../../../../services/market/recovery.store.js';
@@ -76,13 +77,14 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('cancels the maker own offer through the very same action and inputs', async () => {
-            const harness = cancelOrderHarness(transportOf(reply(200, offerPreparedWire())));
+            const wallet = new FakeMakerWallet({ logs: [orderCancelledLog({ orderHash: OFFER_ORDER_HASH })] });
+            const harness = cancelOrderHarness(transportOf(reply(200, offerPreparedWire())), { wallet });
 
-            const result = parsed(await harness.handler(cancelOrderArgs()));
+            const result = parsed(await harness.handler(cancelOrderArgs({ orderHash: OFFER_ORDER_HASH })));
 
             expect(result.status).toBe(MarketActionStatus.Completed);
             expect(result.orderKind).toBe(MarketOrderKind.Offer);
-            expect(result.tokenId).toBeNull();
+            expect(result.tokenId).toBe(TOKEN_ID);
             expect(result.cancellationTxHash).toBe(txHash(1));
         });
 
@@ -116,12 +118,21 @@ describe('cancelling one exact Market order', () => {
     describe('the maker is enforced before anything is broadcast', () => {
         it('refuses to cancel an order another wallet made', async () => {
             const harness = cancelOrderHarness(
-                transportOf(reply(200, preparedWire({ order: orderWire({ maker: STRANGER }) }))),
+                transportOf(
+                    reply(
+                        200,
+                        preparedWire({
+                            transaction: cancellationWire({
+                                data: cancelData([orderComponents({ offerer: STRANGER })]),
+                            }),
+                        }),
+                    ),
+                ),
             );
 
             const error = await failure(harness.handler(cancelOrderArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.WrongOwner);
+            expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
             expect(error.retryable).toBe(false);
             expect(error.stage).toBe(MarketActionStage.Prepare);
             expect(error.message).toContain(STRANGER);
@@ -130,7 +141,7 @@ describe('cancelling one exact Market order', () => {
 
         it('refuses calldata that cancels an order another wallet signed', async () => {
             const foreign = cancelData([orderComponents({ offerer: STRANGER })]);
-            const wire = preparedWire({ transactions: [cancellationWire({ data: foreign })] });
+            const wire = preparedWire({ transaction: cancellationWire({ data: foreign }) });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -143,7 +154,7 @@ describe('cancelling one exact Market order', () => {
 
     describe('validating the prepared cancellation before it is sent', () => {
         it('refuses a preparation for another chain', async () => {
-            const wire = preparedWire({ chainId: 1, order: orderWire({ chainId: 1 }) });
+            const wire = preparedWire({ transaction: cancellationWire({ chainId: 1 }) });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -153,7 +164,7 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('refuses a transaction that would be sent on another chain', async () => {
-            const wire = preparedWire({ transactions: [cancellationWire({ chainId: 8453 })] });
+            const wire = preparedWire({ transaction: cancellationWire({ chainId: 8453 }) });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -174,7 +185,7 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('refuses an order summary naming another protocol deployment', async () => {
-            const wire = preparedWire({ order: orderWire({ protocolAddress: OTHER_CONTRACT }) });
+            const wire = preparedWire({ protocolAddress: OTHER_CONTRACT });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -184,7 +195,7 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('refuses a transaction addressed anywhere but the pinned protocol contract', async () => {
-            const wire = preparedWire({ transactions: [cancellationWire({ to: OTHER_CONTRACT })] });
+            const wire = preparedWire({ transaction: cancellationWire({ to: OTHER_CONTRACT }) });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -196,7 +207,7 @@ describe('cancelling one exact Market order', () => {
 
         it('refuses a transaction kind a cancellation never needs', async () => {
             const wire = preparedWire({
-                transactions: [cancellationWire({ kind: MarketTransactionKind.CollectionApproval })],
+                transaction: cancellationWire({ kind: MarketTransactionKind.CollectionApproval }),
             });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
@@ -208,7 +219,7 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('refuses more than one cancellation transaction', async () => {
-            const wire = preparedWire({ transactions: [cancellationWire(), cancellationWire()] });
+            const wire = preparedWire({ transaction: [cancellationWire(), cancellationWire()] });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -218,7 +229,7 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('refuses a preparation with no transaction at all', async () => {
-            const harness = cancelOrderHarness(transportOf(reply(200, preparedWire({ transactions: [] }))));
+            const harness = cancelOrderHarness(transportOf(reply(200, preparedWire({ transaction: undefined }))));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
 
@@ -236,7 +247,7 @@ describe('cancelling one exact Market order', () => {
             ],
             ['cancels another order of the same maker', { data: cancelData([orderComponents({ salt: 77n })]) }],
         ])('refuses prepared calldata that %s', async (_label, over) => {
-            const wire = preparedWire({ transactions: [cancellationWire(over)] });
+            const wire = preparedWire({ transaction: cancellationWire(over) });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -248,7 +259,7 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('refuses a cancellation that would send native value', async () => {
-            const wire = preparedWire({ transactions: [cancellationWire({ value: '1' })] });
+            const wire = preparedWire({ transaction: cancellationWire({ value: '1' }) });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -256,20 +267,11 @@ describe('cancelling one exact Market order', () => {
             expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
             expect(harness.wallet.sendCount).toBe(0);
         });
-
-        it('refuses a prepared intent that is already past its deadline', async () => {
-            const harness = cancelOrderHarness(transportOf(reply(200, preparedWire({ expiresAt: NOW_SECONDS - 1 }))));
-
-            const error = await failure(harness.handler(cancelOrderArgs()));
-
-            expect(error.code).toBe(MarketErrorCode.PreparedIntentExpired);
-            expect(harness.wallet.sendCount).toBe(0);
-        });
     });
 
     describe('never cancelling another order', () => {
         it('refuses a preparation answering with a different order hash', async () => {
-            const wire = preparedWire({ order: orderWire({ orderHash: OTHER_ORDER_HASH }) });
+            const wire = preparedWire({ orderHash: OTHER_ORDER_HASH });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -281,12 +283,12 @@ describe('cancelling one exact Market order', () => {
 
         it('reports an unavailable order from the game API without cancelling anything else', async () => {
             const harness = cancelOrderHarness(
-                transportOf(reply(404, { code: MarketErrorCode.OrderUnavailable, message: 'that order is gone' })),
+                transportOf(reply(404, errorWire(MarketErrorCode.StaleListing, 'that order is gone'))),
             );
 
             const error = await failure(harness.handler(cancelOrderArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
+            expect(error.code).toBe(MarketErrorCode.StaleListing);
             expect(error.retryable).toBe(false);
             expect(harness.transport.calls).toHaveLength(1);
             expect(harness.wallet.sendCount).toBe(0);
@@ -448,14 +450,14 @@ describe('cancelling one exact Market order', () => {
         it('reports a later unavailable order rather than claiming it cancelled it again', async () => {
             const transport = transportOf(
                 reply(200, preparedWire()),
-                reply(404, { code: MarketErrorCode.OrderUnavailable, message: 'that order is gone' }),
+                reply(404, errorWire(MarketErrorCode.StaleListing, 'that order is gone')),
             );
             const harness = cancelOrderHarness(transport);
 
             await harness.handler(cancelOrderArgs());
             const error = await failure(harness.handler(cancelOrderArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
+            expect(error.code).toBe(MarketErrorCode.StaleListing);
             expect(harness.wallet.sendCount).toBe(1);
         });
 
@@ -475,7 +477,7 @@ describe('cancelling one exact Market order', () => {
         it('does not share an operation between different orders', async () => {
             const transport = transportOf(
                 reply(200, preparedWire()),
-                reply(200, preparedWire({ order: orderWire({ orderHash: OTHER_ORDER_HASH }) })),
+                reply(200, preparedWire({ orderHash: OTHER_ORDER_HASH })),
             );
             const harness = cancelOrderHarness(transport, { singleFlight: new MarketSingleFlight() });
 
@@ -513,17 +515,13 @@ describe('cancelling one exact Market order', () => {
         it('keeps a rate limit carrying a terminal code terminal on this path', async () => {
             const harness = cancelOrderHarness(
                 transportOf(
-                    reply(
-                        429,
-                        { code: MarketErrorCode.OrderUnavailable, message: 'that order is gone' },
-                        { 'retry-after': '30' },
-                    ),
+                    reply(429, errorWire(MarketErrorCode.StaleListing, 'that order is gone'), { 'retry-after': '30' }),
                 ),
             );
 
             const error = await failure(harness.handler(cancelOrderArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
+            expect(error.code).toBe(MarketErrorCode.StaleListing);
             expect(error.retryable).toBe(false);
             expect(error.retryAfterSeconds).toBe(30);
             expect(harness.transport.calls).toHaveLength(1);
@@ -552,7 +550,7 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('reports a refused session without sending anything', async () => {
-            const harness = cancelOrderHarness(transportOf(reply(401, { code: 'UNAUTHORIZED', message: 'nope' })));
+            const harness = cancelOrderHarness(transportOf(reply(401, errorWire('UNAUTHORIZED', 'nope'))));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
 
@@ -561,7 +559,9 @@ describe('cancelling one exact Market order', () => {
         });
 
         it('names the stage every failure reached', async () => {
-            const wire = preparedWire({ order: orderWire({ maker: STRANGER }) });
+            const wire = preparedWire({
+                transaction: cancellationWire({ data: cancelData([orderComponents({ offerer: STRANGER })]) }),
+            });
             const harness = cancelOrderHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(cancelOrderArgs()));
@@ -584,7 +584,8 @@ describe('cancelling one exact Market order', () => {
 
             expect(harness.description).toContain('listing');
             expect(harness.description).toContain('offer');
-            expect(harness.description).toContain('ORDER_UNAVAILABLE');
+            expect(harness.description).toContain('staleListing');
+            expect(harness.description).toContain('staleOffer');
         });
 
         it('summarizes the cancellation beside the machine-readable result', async () => {

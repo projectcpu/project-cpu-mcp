@@ -1,19 +1,20 @@
-import type { ZodRawShape } from 'zod';
+import type { ZodRawShape, ZodType } from 'zod';
 
-import { cellTokenIdSchema, cursorSchema } from '../../services/market/types.js';
+import { cursorSchema, marketLookupTokenIdSchema } from '../../services/market/types.js';
 import type { ToolHandler } from '../types.js';
 
 export interface MarketToolDefinition {
     name: string;
     description: string;
     inputSchema: ZodRawShape;
+    outputSchema: ZodType;
     handler: ToolHandler;
 }
 
 export const getCellMarketInputSchema = {
-    tokenId: cellTokenIdSchema.describe(
+    tokenId: marketLookupTokenIdSchema.describe(
         'The Cell token id to inspect on the public NFT marketplace, as a decimal string with no leading zeroes ' +
-            '(e.g. "1234", never "01234"). One Cell per call.',
+            '(e.g. "0" or "1234", never "01234"). One Cell per call.',
     ),
 };
 

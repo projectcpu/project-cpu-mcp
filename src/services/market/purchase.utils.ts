@@ -9,7 +9,7 @@ export function purchaseActionInputs(request: BuyCellRequest): Array<string | nu
 }
 
 export function effectivePurchaseDeadline(prepared: PreparePurchaseResponse): number {
-    return Math.min(prepared.expiresAt, prepared.listing.expirationTime);
+    return prepared.listing.expirationTime;
 }
 
 export function isNativeCurrency(address: string): boolean {
@@ -22,7 +22,7 @@ export function purchaseApprovals(prepared: PreparePurchaseResponse): Array<Mark
 
 export function purchaseFulfilment(prepared: PreparePurchaseResponse): MarketTransaction | null {
     const fulfilments = prepared.transactions.filter(
-        (transaction) => transaction.kind === MarketTransactionKind.Fulfilment,
+        (transaction) => transaction.kind === MarketTransactionKind.Fulfillment,
     );
 
     return fulfilments.length === 1 ? (fulfilments[0] ?? null) : null;

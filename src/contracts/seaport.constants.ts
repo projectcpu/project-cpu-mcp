@@ -5,6 +5,10 @@ import { parseAbi, type Address } from 'viem';
 // produces a signature the protocol rejects.
 export const SEAPORT_ADDRESS: Address = '0x0000000000000068F116a894984e2DB1123eB395';
 
+// OpenSea Signed Zone V2. Public listings may be full-restricted through this pinned zone even
+// though they do not name a reserved buyer.
+export const OPENSEA_SIGNED_ZONE_V2: Address = '0x000056f7000000ece9003ca63978907a00ffd100';
+
 export const SEAPORT_DOMAIN_NAME = 'Seaport';
 
 export const SEAPORT_DOMAIN_VERSION = '1.6';

@@ -7,7 +7,7 @@ import {
 
 export const listCellInputSchema = {
     tokenId: cellTokenIdSchema.describe(
-        'The Cell to sell, as a decimal token id with no leading zeroes (e.g. "1234", never "01234"). ' +
+        'The Cell to sell, as a decimal token id with no leading zeroes (e.g. "0" or "1234", never "01234"). ' +
             'You must own it.',
     ),
     price: positiveBaseUnitAmountSchema.describe(

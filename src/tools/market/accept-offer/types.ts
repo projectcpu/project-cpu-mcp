@@ -15,7 +15,7 @@ export const acceptCellOfferInputSchema = {
         .nullable()
         .default(null)
         .describe(
-            'The one Cell of yours to sell, as a decimal token id with no leading zeroes (e.g. "1234", never ' +
+            'The one Cell of yours to sell, as a decimal token id with no leading zeroes (e.g. "0" or "1234", never ' +
                 '"01234"). REQUIRED for a trait or collection offer, because such an offer names a set of Cells ' +
                 'and never picks one for you. For an item offer you may omit it (or pass null) and the Cell the ' +
                 'offer bids for is used; if you do pass it, it must be that same Cell.',

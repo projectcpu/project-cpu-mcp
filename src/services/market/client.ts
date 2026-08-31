@@ -60,12 +60,12 @@ export class MarketApiClient implements IMarketSingleShotClient {
             }
 
             if (response.status >= HTTP_INTERNAL_SERVER_ERROR) {
-                await this.waitOrGiveUp(
-                    budgeted,
-                    attempt,
+                const failure = this.responseFailure(
+                    response,
                     MarketErrorCode.ServiceUnavailable,
                     `${input.label} answered HTTP ${response.status}`,
                 );
+                await this.waitOrGiveUp(budgeted, attempt, failure.code, failure.message);
                 continue;
             }
 
@@ -136,24 +136,20 @@ export class MarketApiClient implements IMarketSingleShotClient {
     ): MarketError {
         const retryAfterSeconds = retryAfterSecondsFrom(response.headers);
 
-        if (response.status !== HttpStatus.TooManyRequests) {
-            return new MarketError({
-                code: MarketErrorCode.ServiceUnavailable,
-                message: `${input.label} answered HTTP ${response.status}.`,
-                retryable: true,
-                retryAfterSeconds,
-                stage: input.stage,
-                txHash: null,
-            });
-        }
-
-        const body = marketErrorBodySchema.safeParse(response.data);
-        const code = (body.success ? toMarketErrorCode(body.data.code) : null) ?? MarketErrorCode.UpstreamRateLimited;
+        const fallbackCode =
+            response.status === HttpStatus.TooManyRequests
+                ? MarketErrorCode.UpstreamRateLimited
+                : MarketErrorCode.ServiceUnavailable;
+        const fallbackMessage =
+            response.status === HttpStatus.TooManyRequests
+                ? `${input.label} is rate limited upstream.`
+                : `${input.label} answered HTTP ${response.status}.`;
+        const failure = this.responseFailure(response, fallbackCode, fallbackMessage);
 
         return new MarketError({
-            code,
-            message: body.success ? body.data.message : `${input.label} is rate limited upstream.`,
-            retryable: isRetryableMarketCode(code),
+            code: failure.code,
+            message: failure.message,
+            retryable: isRetryableMarketCode(failure.code),
             retryAfterSeconds,
             stage: input.stage,
             txHash: null,
@@ -198,6 +194,18 @@ export class MarketApiClient implements IMarketSingleShotClient {
             stage: input.stage,
             txHash: null,
         });
+    }
+
+    private responseFailure(
+        response: ApiResponse<unknown>,
+        fallbackCode: MarketErrorCode,
+        fallbackMessage: string,
+    ): { code: MarketErrorCode; message: string } {
+        const body = marketErrorBodySchema.safeParse(response.data);
+        return {
+            code: (body.success ? toMarketErrorCode(body.data.code) : null) ?? fallbackCode,
+            message: body.success ? body.data.message : fallbackMessage,
+        };
     }
 
     private budgetFor(): IMarketWaitBudget {

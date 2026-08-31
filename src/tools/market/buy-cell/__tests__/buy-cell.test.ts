@@ -39,6 +39,7 @@ import {
 } from './fixtures.js';
 import { ERC20_ABI } from '../../../../contracts/erc20.abi.js';
 import { SEAPORT_ADDRESS } from '../../../../contracts/seaport.constants.js';
+import { errorWire } from '../../../../services/market/__tests__/fixtures.js';
 import { MarketError } from '../../../../services/market/error.js';
 import { MarketRecoveryStore } from '../../../../services/market/recovery.store.js';
 import { MarketSingleFlight } from '../../../../services/market/single-flight.js';
@@ -98,7 +99,7 @@ describe('buying one exact Cell listing', () => {
                 `receipt:${txHash(1)}`,
                 `send:${SEAPORT_ADDRESS}:0`,
                 `receipt:${txHash(2)}`,
-                'read:getCell',
+                'read:ownerOf',
             ]);
             expect(result.approvalTxHashes).toEqual([txHash(1)]);
             expect(result.fulfilmentTxHash).toBe(txHash(2));
@@ -117,6 +118,16 @@ describe('buying one exact Cell listing', () => {
             expect(native.wallet.sent.map((tx) => tx.value)).toEqual([BigInt(PRICE)]);
         });
 
+        it('accepts the canonical purchase wire returned by the game API', async () => {
+            const harness = buyCellHarness(transportOf(reply(200, preparedWire())));
+
+            const result = parsed(await harness.handler(buyCellArgs()));
+
+            expect(result.status).toBe(MarketActionStatus.Completed);
+            expect(result.orderHash).toBe(ORDER_HASH);
+            expect(harness.wallet.sent).toHaveLength(1);
+        });
+
         it('asks the game API to prepare exactly the pinned order, once per attempt', async () => {
             const harness = buyCellHarness();
 
@@ -125,7 +136,11 @@ describe('buying one exact Cell listing', () => {
             expect(harness.transport.calls).toHaveLength(1);
             expect(harness.transport.calls[0]?.path).toBe(PREPARE_PATH);
             expect(harness.transport.calls[0]?.method).toBe('POST');
-            expect(harness.transport.calls[0]?.body).toEqual({ tokenId: TOKEN_ID, orderHash: ORDER_HASH });
+            expect(harness.transport.calls[0]?.body).toEqual({
+                tokenId: TOKEN_ID,
+                expectedOrderHash: ORDER_HASH,
+                maxAmount: MAX_AMOUNT,
+            });
         });
     });
 
@@ -217,12 +232,12 @@ describe('buying one exact Cell listing', () => {
 
         it('reports an unavailable order from the game API without looking for a replacement', async () => {
             const harness = buyCellHarness(
-                transportOf(reply(404, { code: MarketErrorCode.OrderUnavailable, message: 'that order is gone' })),
+                transportOf(reply(404, errorWire(MarketErrorCode.StaleListing, 'that order is gone'))),
             );
 
             const error = await failure(harness.handler(buyCellArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
+            expect(error.code).toBe(MarketErrorCode.StaleListing);
             expect(error.retryable).toBe(false);
             expect(harness.transport.calls).toHaveLength(1);
             expect(harness.wallet.sendCount).toBe(0);
@@ -240,16 +255,6 @@ describe('buying one exact Cell listing', () => {
     });
 
     describe('validating the prepared work before signing anything away', () => {
-        it('refuses a preparation for another chain', async () => {
-            const wire = preparedWire({ chainId: 1, listing: listingWire({ chainId: 1 }) });
-            const harness = buyCellHarness(transportOf(reply(200, wire)));
-
-            const error = await failure(harness.handler(buyCellArgs()));
-
-            expect(error.code).toBe(MarketErrorCode.ChainMismatch);
-            expect(harness.wallet.sendCount).toBe(0);
-        });
-
         it('refuses a transaction that would be sent on another chain', async () => {
             const wire = preparedWire({ transactions: [fulfilmentWire({ chainId: 8453 })] });
             const harness = buyCellHarness(transportOf(reply(200, wire)));
@@ -261,7 +266,7 @@ describe('buying one exact Cell listing', () => {
         });
 
         it('refuses a preparation naming another protocol deployment', async () => {
-            const wire = preparedWire({ protocolAddress: OTHER_CONTRACT });
+            const wire = preparedWire({ listing: listingWire({ protocolAddress: OTHER_CONTRACT }) });
             const harness = buyCellHarness(transportOf(reply(200, wire)));
 
             const error = await failure(harness.handler(buyCellArgs()));
@@ -411,16 +416,6 @@ describe('buying one exact Cell listing', () => {
             expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
             expect(harness.wallet.sendCount).toBe(0);
         });
-
-        it('refuses a prepared intent that is already past its deadline', async () => {
-            const wire = preparedWire({ expiresAt: NOW_SECONDS - 1 });
-            const harness = buyCellHarness(transportOf(reply(200, wire)));
-
-            const error = await failure(harness.handler(buyCellArgs()));
-
-            expect(error.code).toBe(MarketErrorCode.PreparedIntentExpired);
-            expect(harness.wallet.sendCount).toBe(0);
-        });
     });
 
     describe('proving the purchase from the receipt', () => {
@@ -487,7 +482,7 @@ describe('buying one exact Cell listing', () => {
             await harness.handler(buyCellArgs());
 
             expect(harness.wallet.reads[0]?.address.toLowerCase()).toBe(COLLECTION.toLowerCase());
-            expect(harness.wallet.reads[0]?.functionName).toBe('getCell');
+            expect(harness.wallet.reads[0]?.functionName).toBe('ownerOf');
             expect(harness.wallet.reads[0]?.args).toEqual([BigInt(TOKEN_ID)]);
         });
 
@@ -577,10 +572,9 @@ describe('buying one exact Cell listing', () => {
 
             expect(result.status).toBe(MarketActionStatus.Completed);
             expect(result.orderHash).toBe(ORDER_HASH);
-            expect(transport.calls.map((call) => (call.body as { orderHash: string }).orderHash)).toEqual([
-                ORDER_HASH,
-                ORDER_HASH,
-            ]);
+            expect(
+                transport.calls.map((call) => (call.body as { expectedOrderHash: string }).expectedOrderHash),
+            ).toEqual([ORDER_HASH, ORDER_HASH]);
         });
 
         it('keeps the outcome open when the fulfilment receipt cannot be read', async () => {
@@ -687,17 +681,13 @@ describe('buying one exact Cell listing', () => {
         it('keeps a rate limit carrying a terminal code terminal on this money path', async () => {
             const harness = buyCellHarness(
                 transportOf(
-                    reply(
-                        429,
-                        { code: MarketErrorCode.OrderUnavailable, message: 'that order is gone' },
-                        { 'retry-after': '30' },
-                    ),
+                    reply(429, errorWire(MarketErrorCode.StaleListing, 'that order is gone'), { 'retry-after': '30' }),
                 ),
             );
 
             const error = await failure(harness.handler(buyCellArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
+            expect(error.code).toBe(MarketErrorCode.StaleListing);
             expect(error.retryable).toBe(false);
             expect(error.retryAfterSeconds).toBe(30);
             expect(harness.transport.calls).toHaveLength(1);
@@ -726,7 +716,7 @@ describe('buying one exact Cell listing', () => {
         });
 
         it('reports a refused session without sending anything', async () => {
-            const harness = buyCellHarness(transportOf(reply(401, { code: 'UNAUTHORIZED', message: 'nope' })));
+            const harness = buyCellHarness(transportOf(reply(401, errorWire('UNAUTHORIZED', 'nope'))));
 
             const error = await failure(harness.handler(buyCellArgs()));
 
@@ -757,7 +747,8 @@ describe('buying one exact Cell listing', () => {
         it('tells the agent it will never substitute another listing', () => {
             const harness = buyCellHarness();
 
-            expect(harness.tool.description).toContain('ORDER_UNAVAILABLE');
+            expect(harness.tool.description).toContain('staleListing');
+            expect(harness.tool.description).toContain('unfulfillable');
             expect(harness.tool.description).toContain('never substitutes');
         });
 

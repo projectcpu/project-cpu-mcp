@@ -6,7 +6,6 @@ import {
     type IMarketSingleFlight,
     type MarketRecoveryRecord,
 } from './action.types.js';
-import { narrowInvocationDeadline } from './budget.utils.js';
 import {
     CANCELLATION_NO_VALUE,
     CANCELLATION_SINGLE_ORDER,
@@ -24,7 +23,6 @@ import {
 } from './cancel.types.js';
 import { cancellationActionInputs, cancellationTransaction, cancelledOrders } from './cancel.utils.js';
 import type { IMarketSingleShotClient } from './client.types.js';
-import { MS_PER_SECOND } from './constants.js';
 import { MarketError } from './error.js';
 import type { IMarketFulfilmentProof } from './fulfilment-proof.types.js';
 import { marketActionKey } from './idempotency.utils.js';
@@ -222,42 +220,30 @@ export class MarketCancelService implements IMarketCancelService {
 
     private requireTrustworthyPreparation(request: CancelOrderRequest, prepared: PrepareCancellationResponse): void {
         const chainId = this.wallet.get().getChainId();
-        const order = prepared.order;
+        const transaction = this.requireCancellationTransaction(request, prepared);
 
-        if (prepared.chainId !== chainId || order.chainId !== chainId) {
+        if (transaction.chainId !== chainId) {
             throw this.untrustworthy(
                 MarketErrorCode.ChainMismatch,
-                `it targets chain ${prepared.chainId} while this wallet cancels on chain ${chainId}`,
+                `it targets chain ${transaction.chainId} while this wallet cancels on chain ${chainId}`,
                 request,
             );
         }
-        if (
-            !sameAddress(prepared.protocolAddress, SEAPORT_ADDRESS) ||
-            !sameAddress(order.protocolAddress, SEAPORT_ADDRESS)
-        ) {
+        if (!sameAddress(prepared.protocolAddress, SEAPORT_ADDRESS)) {
             throw this.untrustworthy(
                 MarketErrorCode.ProtocolAddressMismatch,
                 `it names protocol contract ${prepared.protocolAddress} instead of the pinned ${SEAPORT_ADDRESS}`,
                 request,
             );
         }
-        if (!sameOrderHash(order.orderHash, request.orderHash)) {
+        if (!sameOrderHash(prepared.orderHash, request.orderHash)) {
             throw this.unavailable(
                 request,
-                `the marketplace answered with order ${order.orderHash} instead of the order you pinned`,
+                `the marketplace answered with order ${prepared.orderHash} instead of the order you pinned`,
             );
         }
-        if (!sameAddress(order.maker, this.walletAddress())) {
-            throw this.untrustworthy(
-                MarketErrorCode.WrongOwner,
-                `order ${order.orderHash} was made by ${order.maker}, not by this wallet ${this.walletAddress()} — ` +
-                    'only the maker may cancel it',
-                request,
-            );
-        }
-
-        this.requireWithinDeadline(prepared);
-        this.requireCancellationTransaction(request, prepared);
+        // The canonical backend DTO no longer repeats maker/order metadata outside the transaction.
+        // requireCancellationTransaction validates the same security boundary from the calldata that is sent.
     }
 
     private requireCancellationTransaction(
@@ -265,13 +251,14 @@ export class MarketCancelService implements IMarketCancelService {
         prepared: PrepareCancellationResponse,
     ): MarketTransaction {
         const chainId = this.wallet.get().getChainId();
-        const transaction = cancellationTransaction(prepared.transactions);
+        const transactions = [prepared.transaction];
+        const transaction = cancellationTransaction(transactions);
 
         if (transaction === null) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 'cancelling one order takes exactly one cancellation transaction, and it asks to send ' +
-                    `${this.describeTransactions(prepared.transactions)}`,
+                    `${this.describeTransactions(transactions)}`,
                 request,
             );
         }
@@ -339,31 +326,19 @@ export class MarketCancelService implements IMarketCancelService {
                 request,
             );
         }
+        if (only.kind === null) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                'its calldata does not carry the Cell on exactly one side of the order',
+                request,
+            );
+        }
     }
 
     private describeTransactions(transactions: ReadonlyArray<MarketTransaction>): string {
         return transactions.length === 0
             ? 'nothing at all'
             : `${transactions.length} transaction(s): ${transactions.map((transaction) => transaction.kind).join(', ')}`;
-    }
-
-    private requireWithinDeadline(prepared: PrepareCancellationResponse): void {
-        narrowInvocationDeadline(prepared.expiresAt);
-
-        if (this.nowSeconds() < prepared.expiresAt) {
-            return;
-        }
-
-        throw new MarketError({
-            code: MarketErrorCode.PreparedIntentExpired,
-            message:
-                'This prepared cancellation is past its own deadline, so it can no longer be sent. Nothing was ' +
-                'cancelled. Call the tool again for the same exact order.',
-            retryable: false,
-            retryAfterSeconds: null,
-            stage: MarketActionStage.Prepare,
-            txHash: null,
-        });
     }
 
     private async send(transaction: MarketTransaction): Promise<string> {
@@ -433,7 +408,16 @@ export class MarketCancelService implements IMarketCancelService {
         payload: CancellationRecoveryPayload,
         hash: string,
     ): CancelOrderResult {
-        const order = this.requirePrepared(payload).order;
+        const prepared = this.requirePrepared(payload);
+        const order = (cancelledOrders(prepared.transaction.data) ?? [])[0] as CancelledOrderCall | undefined;
+
+        if (order === undefined || order.kind === null) {
+            throw this.untrustworthy(
+                MarketErrorCode.InvalidMarketResponse,
+                'the confirmed cancellation no longer describes one listing or offer',
+                request,
+            );
+        }
 
         this.logger.info('the Market order cancellation is confirmed', {
             status,
@@ -509,9 +493,5 @@ export class MarketCancelService implements IMarketCancelService {
 
     private walletAddress(): string {
         return this.wallet.get().getAddress();
-    }
-
-    private nowSeconds(): number {
-        return Math.floor(Date.now() / MS_PER_SECOND);
     }
 }

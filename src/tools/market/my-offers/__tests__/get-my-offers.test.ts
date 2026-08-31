@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    backendOfferPageWire,
     FakeMarketTransport,
     MAKER,
     marketProfileClientOver,
     offerWireFrom,
-    pageWire,
     reply,
 } from '../../../../services/market/__tests__/fixtures.js';
 import { MARKET_MY_OFFERS_PATH } from '../../../../services/market/constants.js';
@@ -34,7 +34,7 @@ describe('cpu_get_my_offers', () => {
     });
 
     it('reads the caller-scoped offers route on the first page', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendOfferPageWire([], null))]);
 
         await handlerOver(transport)({ cursor: null } as never);
 
@@ -42,7 +42,7 @@ describe('cpu_get_my_offers', () => {
     });
 
     it('forwards a subsequent cursor to the same route', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendOfferPageWire([], null))]);
 
         await handlerOver(transport)({ cursor: 'page-7' } as never);
 
@@ -55,7 +55,7 @@ describe('cpu_get_my_offers', () => {
             offerWireFrom(MarketOfferKind.Trait, null, MAKER),
             offerWireFrom(MarketOfferKind.Collection, null, MAKER),
         ];
-        const transport = new FakeMarketTransport([reply(200, pageWire(items, null))]);
+        const transport = new FakeMarketTransport([reply(200, backendOfferPageWire(items, null))]);
 
         const result = await handlerOver(transport)({ cursor: null } as never);
 
@@ -70,7 +70,7 @@ describe('cpu_get_my_offers', () => {
 
     it('returns a short page that still carries another cursor', async () => {
         const transport = new FakeMarketTransport([
-            reply(200, pageWire([offerWireFrom(MarketOfferKind.Item, '1234', MAKER)], 'page-2')),
+            reply(200, backendOfferPageWire([offerWireFrom(MarketOfferKind.Item, '1234', MAKER)], 'page-2')),
         ]);
 
         const result = await handlerOver(transport)({ cursor: null } as never);
@@ -80,7 +80,7 @@ describe('cpu_get_my_offers', () => {
     });
 
     it('reports a final empty page as no offers rather than an integration failure', async () => {
-        const transport = new FakeMarketTransport([reply(200, pageWire([], null))]);
+        const transport = new FakeMarketTransport([reply(200, backendOfferPageWire([], null))]);
 
         const result = await handlerOver(transport)({ cursor: 'page-9' } as never);
 
@@ -90,7 +90,10 @@ describe('cpu_get_my_offers', () => {
 
     it('surfaces an unknown offer kind as a terminal market error', async () => {
         const transport = new FakeMarketTransport([
-            reply(200, pageWire([{ ...offerWireFrom(MarketOfferKind.Item, '1234', MAKER), kind: 'bundle' }], null)),
+            reply(
+                200,
+                backendOfferPageWire([{ ...offerWireFrom(MarketOfferKind.Item, '1234', MAKER), kind: 'bundle' }], null),
+            ),
         ]);
 
         const error = (await handlerOver(transport)({ cursor: null } as never).catch((e: unknown) => e)) as MarketError;

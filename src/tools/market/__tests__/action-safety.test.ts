@@ -39,7 +39,6 @@ import {
     cancelOrderArgs,
     cancelOrderHarness,
     FakeMakerWallet,
-    orderWire,
     preparedWire as cancelPreparedWire,
     reply as cancelReply,
     transportOf as cancelTransportOf,
@@ -240,8 +239,21 @@ describe('the wire fields an action refuses to loosen', () => {
         expect(harness.wallet.sent).toEqual([]);
     });
 
-    it('rejects a prepared conduit key that is not 32 bytes', async () => {
-        const harness = acceptOfferHarness(transportOf(reply(200, preparedWire({ conduitKey: '0x1234' }))));
+    it('rejects currency decimals outside the backend wire bound', async () => {
+        const offered = offerWire();
+        const harness = acceptOfferHarness(
+            transportOf(
+                reply(
+                    200,
+                    preparedWire({
+                        offer: {
+                            ...offered,
+                            price: { ...(offered.price as Record<string, unknown>), decimals: 37 },
+                        },
+                    }),
+                ),
+            ),
+        );
 
         const error = await failure(harness.handler(acceptOfferArgs()));
 
@@ -249,9 +261,9 @@ describe('the wire fields an action refuses to loosen', () => {
         expect(harness.wallet.sent).toEqual([]);
     });
 
-    it('rejects a cancellable order whose maker is not an address', async () => {
+    it('rejects a cancellation whose protocol address is malformed', async () => {
         const harness = cancelOrderHarness(
-            cancelTransportOf(cancelReply(200, cancelPreparedWire({ order: orderWire({ maker: 'not-an-address' }) }))),
+            cancelTransportOf(cancelReply(200, cancelPreparedWire({ protocolAddress: 'not-an-address' }))),
         );
 
         const error = await failure(harness.handler(cancelOrderArgs()));

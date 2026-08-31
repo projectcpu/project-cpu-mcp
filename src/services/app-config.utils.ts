@@ -134,6 +134,7 @@ export function parseAppConfig(raw: unknown): AppConfig {
         chainId: data.chainId,
         contracts: {
             land: data.contracts.land,
+            usdg: data.contracts.usdg,
             cpuToken: data.contracts.cpuToken,
             cpuHook: data.contracts.cpuHook,
             cell: data.contracts.cell,

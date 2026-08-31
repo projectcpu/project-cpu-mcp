@@ -51,7 +51,7 @@ import {
 } from './types.js';
 import type { CurrencyApprovalCall } from '../../contracts/approval.types.js';
 import { currencyApprovalCall } from '../../contracts/approval.utils.js';
-import { CELL_ABI } from '../../contracts/cell.abi.js';
+import { ERC721_OWNERSHIP_ABI } from '../../contracts/erc721.abi.js';
 import { SeaportSpenderReader } from '../../contracts/seaport-spender.reader.js';
 import { SEAPORT_ADDRESS } from '../../contracts/seaport.constants.js';
 import { SeaportSpenderOutcome, type ISeaportSpenderReader } from '../../contracts/seaport.types.js';
@@ -257,13 +257,12 @@ export class MarketPurchaseService implements IMarketPurchaseService {
 
         let owner: string;
         try {
-            const cell = (await this.wallet.get().readContract({
+            owner = (await this.wallet.get().readContract({
                 address: collection as Address,
-                abi: CELL_ABI,
-                functionName: 'getCell',
+                abi: ERC721_OWNERSHIP_ABI,
+                functionName: 'ownerOf',
                 args: [BigInt(request.tokenId)],
-            })) as { owner: string };
-            owner = cell.owner;
+            })) as string;
         } catch (error) {
             throw new MarketError({
                 code: MarketErrorCode.OutcomeUnknown,
@@ -299,8 +298,12 @@ export class MarketPurchaseService implements IMarketPurchaseService {
         const prepared = await this.client.sendOnce({
             path: MARKET_PURCHASE_PREPARE_PATH,
             method: 'POST',
-            body: { tokenId: request.tokenId, orderHash: request.expectedOrderHash },
-            schema: preparePurchaseResponseSchema,
+            body: {
+                tokenId: request.tokenId,
+                expectedOrderHash: request.expectedOrderHash,
+                maxAmount: request.maxAmount,
+            },
+            schema: preparePurchaseResponseSchema(this.wallet.get().getChainId()),
             stage: MarketActionStage.Prepare,
             label: `Preparing the purchase of order ${request.expectedOrderHash}`,
         });
@@ -316,20 +319,17 @@ export class MarketPurchaseService implements IMarketPurchaseService {
         const wallet = this.walletAddress();
         const chainId = this.wallet.get().getChainId();
 
-        if (prepared.chainId !== chainId || prepared.listing.chainId !== chainId) {
+        if (prepared.listing.chainId !== chainId) {
             throw this.untrustworthy(
                 MarketErrorCode.ChainMismatch,
-                `it targets chain ${prepared.chainId} while this wallet buys on chain ${chainId}`,
+                `it targets chain ${prepared.listing.chainId} while this wallet buys on chain ${chainId}`,
                 request,
             );
         }
-        if (
-            !sameAddress(prepared.protocolAddress, SEAPORT_ADDRESS) ||
-            !sameAddress(prepared.listing.protocolAddress, SEAPORT_ADDRESS)
-        ) {
+        if (!sameAddress(prepared.listing.protocolAddress, SEAPORT_ADDRESS)) {
             throw this.untrustworthy(
                 MarketErrorCode.ProtocolAddressMismatch,
-                `it names protocol contract ${prepared.protocolAddress} instead of the pinned ${SEAPORT_ADDRESS}`,
+                `it names protocol contract ${prepared.listing.protocolAddress} instead of the pinned ${SEAPORT_ADDRESS}`,
                 request,
             );
         }
@@ -401,7 +401,7 @@ export class MarketPurchaseService implements IMarketPurchaseService {
         const transactions = prepared.transactions;
         const last = transactions.at(-1) ?? null;
 
-        if (last === null || last.kind !== MarketTransactionKind.Fulfilment) {
+        if (last === null || last.kind !== MarketTransactionKind.Fulfillment) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
                 'it does not end with the one fulfilment transaction that buys the Cell',
@@ -587,7 +587,7 @@ export class MarketPurchaseService implements IMarketPurchaseService {
 
     private async requireCellCollection(stage: MarketActionStage): Promise<string> {
         const config = await this.appConfig.load();
-        const collection = config.contracts.cell;
+        const collection = config.contracts.land;
 
         if (!evmAddressSchema.safeParse(collection).success) {
             throw new MarketError({

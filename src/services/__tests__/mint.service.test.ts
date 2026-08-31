@@ -119,6 +119,7 @@ function makeConfig(contracts: Partial<AppContracts> = {}): AppConfig {
         chainId: BASE_CHAIN_ID,
         contracts: {
             land: LAND,
+            usdg: '',
             cpuToken: '',
             cpuHook: '',
             cell: '',

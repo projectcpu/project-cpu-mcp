@@ -122,6 +122,7 @@ const CONFIG: AppConfig = {
     chainId: 4663,
     contracts: {
         land: '0xland',
+        usdg: '0xusdg',
         cpuToken: '0xcpu',
         cpuHook: '0x4444444444444444444444444444444444444444',
         cell: '0x5555555555555555555555555555555555555555',

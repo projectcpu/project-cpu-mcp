@@ -25,7 +25,7 @@ import { MarketFulfilmentProof } from '../../../../services/market/fulfilment-pr
 import type { IFulfilmentTransactionReader } from '../../../../services/market/fulfilment-proof.types.js';
 import { MarketRecoveryStore } from '../../../../services/market/recovery.store.js';
 import { MarketSingleFlight } from '../../../../services/market/single-flight.js';
-import { MarketOrderKind, MarketTransactionKind, type IMarketTransport } from '../../../../services/market/types.js';
+import { MarketTransactionKind, type IMarketTransport } from '../../../../services/market/types.js';
 import {
     TxStatus,
     type GasEstimateRequest,
@@ -57,13 +57,9 @@ export const TOKEN_ID = '1234';
 
 export const PRICE = '1000000000000000000';
 
-export const PREPARE_ID = 'a'.repeat(64);
-
 export const NOW_SECONDS = 1_800_000_000;
 
-export const INTENT_DEADLINE = NOW_SECONDS + 900;
-
-export const PREPARE_PATH = '/api/v1/market/cancellations/prepare';
+export const PREPARE_PATH = '/api/v1/market/orders/cancel/prepare';
 
 export interface OrderComponentsOver {
     offerer: string;
@@ -114,6 +110,21 @@ export const ORDER_HASH = orderHashOf(orderComponents());
 
 export const OTHER_ORDER_HASH = orderHashOf(orderComponents({ salt: 77n }));
 
+export function offerOrderComponents(): Record<string, unknown> {
+    const listing = orderComponents();
+    const [cell] = listing.offer as Array<Record<string, unknown>>;
+    const payment = (listing.consideration as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const { recipient: _recipient, ...paymentItem } = payment;
+
+    return {
+        ...listing,
+        offer: [paymentItem],
+        consideration: [{ ...cell, recipient: MAKER }],
+    };
+}
+
+export const OFFER_ORDER_HASH = orderHashOf(offerOrderComponents());
+
 export function cancelData(orders: Array<Record<string, unknown>> = [orderComponents()]): Hex {
     return encodeFunctionData({
         abi: SEAPORT_CANCEL_ABI as unknown as Abi,
@@ -147,32 +158,22 @@ export function cancellationWire(over: Record<string, unknown> = {}): Record<str
     };
 }
 
-export function orderWire(over: Record<string, unknown> = {}): Record<string, unknown> {
+export function preparedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
         orderHash: ORDER_HASH,
         protocolAddress: SEAPORT_ADDRESS,
-        chainId: LAUNCH_CHAIN_ID,
-        maker: MAKER,
-        kind: MarketOrderKind.Listing,
-        tokenId: TOKEN_ID,
-        ...over,
-    };
-}
-
-export function preparedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-        prepareId: PREPARE_ID,
-        expiresAt: INTENT_DEADLINE,
-        chainId: LAUNCH_CHAIN_ID,
-        protocolAddress: SEAPORT_ADDRESS,
-        order: orderWire(),
-        transactions: [cancellationWire()],
+        transaction: cancellationWire(),
         ...over,
     };
 }
 
 export function offerPreparedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return preparedWire({ order: orderWire({ kind: MarketOrderKind.Offer, tokenId: null }), ...over });
+    return {
+        orderHash: OFFER_ORDER_HASH,
+        protocolAddress: SEAPORT_ADDRESS,
+        transaction: cancellationWire({ data: cancelData([offerOrderComponents()]) }),
+        ...over,
+    };
 }
 
 export interface CancelledLogOver {

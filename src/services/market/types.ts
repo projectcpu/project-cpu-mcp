@@ -4,6 +4,25 @@ import type { HttpMethod, RequestOptions } from '../../api/client.js';
 import type { ApiResponse } from '../../api/types.js';
 import type { ILogger } from '../../logger/types.js';
 
+const MAX_BASE_UNITS = 2n ** 256n - 1n;
+const MAX_LAND_TOKEN_ID = 2_147_483_647n;
+const MAX_MARKET_LOOKUP_TOKEN_ID = 9_223_372_036_854_775_807n;
+const MAX_MARKET_TIMESTAMP = 253_402_300_799;
+const MAX_MARKET_CURSOR_LENGTH = 512;
+const CANONICAL_INTEGER_PATTERN = /^(0|[1-9][0-9]*)$/;
+
+const canonicalIntegerStringSchema = (minimum: bigint, maximum: bigint, label: string) =>
+    z
+        .string()
+        .regex(CANONICAL_INTEGER_PATTERN, `${label} must be a canonical non-negative decimal integer string.`)
+        .refine((value) => {
+            if (!CANONICAL_INTEGER_PATTERN.test(value)) {
+                return false;
+            }
+            const integer = BigInt(value);
+            return integer >= minimum && integer <= maximum;
+        }, `${label} is outside the supported range.`);
+
 export enum MarketOfferKind {
     Item = 'item',
     Trait = 'trait',
@@ -18,7 +37,7 @@ export enum MarketOrderKind {
 export enum MarketTransactionKind {
     CollectionApproval = 'collectionApproval',
     CurrencyApproval = 'currencyApproval',
-    Fulfilment = 'fulfilment',
+    Fulfillment = 'fulfillment',
     Cancellation = 'cancellation',
 }
 
@@ -40,7 +59,15 @@ export enum MarketActionStage {
 }
 
 export enum MarketErrorCode {
+    StaleListing = 'staleListing',
+    StaleOffer = 'staleOffer',
+    Unfulfillable = 'unfulfillable',
+    NotOwner = 'notOwner',
+    CurrencyNotConfigured = 'currencyNotConfigured',
     UpstreamRateLimited = 'upstreamRateLimited',
+    UpstreamRejected = 'upstreamRejected',
+    UpstreamUnavailable = 'upstreamUnavailable',
+    InvalidRequest = 'invalidRequest',
     PreparedIntentInProgress = 'preparedIntentInProgress',
     PreparedIntentNotFound = 'preparedIntentNotFound',
     PreparedIntentFlowMismatch = 'preparedIntentFlowMismatch',
@@ -50,6 +77,7 @@ export enum MarketErrorCode {
     OutcomeUnknown = 'OUTCOME_UNKNOWN',
     UnresolvedCapacityFull = 'UNRESOLVED_CAPACITY_FULL',
     InvalidInput = 'INVALID_INPUT',
+    InsufficientBalance = 'INSUFFICIENT_BALANCE',
     InvalidMarketResponse = 'INVALID_MARKET_RESPONSE',
     WrongOwner = 'WRONG_OWNER',
     CurrencyUnsupported = 'CURRENCY_UNSUPPORTED',
@@ -63,17 +91,17 @@ export enum MarketErrorCode {
     MarketRequestFailed = 'MARKET_REQUEST_FAILED',
 }
 
-export const cellTokenIdSchema = z
-    .string()
-    .regex(/^[1-9][0-9]*$/, 'Cell token id must be a decimal integer without leading zeroes.');
+export const cellTokenIdSchema = canonicalIntegerStringSchema(0n, MAX_LAND_TOKEN_ID, 'Cell token id');
 
-export const baseUnitAmountSchema = z
-    .string()
-    .regex(/^(0|[1-9][0-9]*)$/, 'Amounts are non-negative decimal integer base-unit strings.');
+export const marketLookupTokenIdSchema = canonicalIntegerStringSchema(
+    0n,
+    MAX_MARKET_LOOKUP_TOKEN_ID,
+    'Market Cell lookup token id',
+);
 
-export const positiveBaseUnitAmountSchema = z
-    .string()
-    .regex(/^[1-9][0-9]*$/, 'Amounts are positive decimal integer base-unit strings.');
+export const baseUnitAmountSchema = canonicalIntegerStringSchema(0n, MAX_BASE_UNITS, 'Base-unit amount');
+
+export const positiveBaseUnitAmountSchema = canonicalIntegerStringSchema(1n, MAX_BASE_UNITS, 'Base-unit amount');
 
 export const evmAddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Expected a 20-byte 0x-prefixed address.');
 
@@ -89,16 +117,16 @@ export const prepareIdSchema = z
     .string()
     .regex(/^[0-9a-f]{64}$/, 'A prepare id is 64 lowercase hex characters without a 0x prefix.');
 
-export const unixSecondsSchema = z.number().int().nonnegative();
+export const unixSecondsSchema = z.number().int().min(0).max(MAX_MARKET_TIMESTAMP);
 
 export const chainIdSchema = z.number().int().positive();
 
-export const cursorSchema = z.string().min(1);
+export const cursorSchema = z.string().min(1).max(MAX_MARKET_CURSOR_LENGTH);
 
 export const marketCurrencySchema = z.object({
     address: evmAddressSchema,
     symbol: z.string().min(1),
-    decimals: z.number().int().nonnegative(),
+    decimals: z.number().int().min(0).max(36),
 });
 
 export const marketListingSchema = z.object({
@@ -154,7 +182,7 @@ export const marketPreparedIntentSchema = z.object({
 });
 
 export const seaportOfferItemSchema = z.object({
-    itemType: z.number().int().nonnegative(),
+    itemType: z.number().int().min(0).max(5),
     token: evmAddressSchema,
     identifierOrCriteria: baseUnitAmountSchema,
     startAmount: baseUnitAmountSchema,
@@ -168,7 +196,7 @@ export const seaportOrderComponentsSchema = z.object({
     zone: evmAddressSchema,
     offer: z.array(seaportOfferItemSchema),
     consideration: z.array(seaportConsiderationItemSchema),
-    orderType: z.number().int().nonnegative(),
+    orderType: z.number().int().min(0).max(5),
     startTime: baseUnitAmountSchema,
     endTime: baseUnitAmountSchema,
     zoneHash: bytes32Schema,
@@ -181,7 +209,40 @@ export const seaportOrderParametersSchema = seaportOrderComponentsSchema.extend(
     totalOriginalConsiderationItems: z.number().int().nonnegative(),
 });
 
-export const marketErrorBodySchema = z.object({ code: z.string().min(1), message: z.string() }).passthrough();
+const safeMarketErrorMessageSchema = z
+    .string()
+    .min(1)
+    .max(512)
+    .regex(/^[^\u0000-\u001f\u007f-\u009f]*$/, 'Market errors must be one printable line.');
+
+const marketErrorDiagnosticIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+
+export const marketErrorBodySchema = z
+    .union([
+        z.object({
+            success: z.literal(false),
+            error: z.string().min(1),
+            message: safeMarketErrorMessageSchema,
+            reqId: marketErrorDiagnosticIdSchema,
+        }),
+        z.object({
+            statusCode: z.literal(400),
+            error: z.literal('Bad Request'),
+            message: z.array(safeMarketErrorMessageSchema).min(1).max(32),
+        }),
+    ])
+    .transform((body) => {
+        if ('success' in body) {
+            return {
+                code: body.error,
+                message: `${body.message} Diagnostic id: ${body.reqId}.`,
+            };
+        }
+        return {
+            code: MarketErrorCode.InvalidInput,
+            message: `Request validation failed: ${body.message.join('; ')}.`,
+        };
+    });
 
 export function marketPageSchema<TItem extends z.ZodTypeAny>(item: TItem) {
     return z.object({ items: z.array(item), nextCursor: cursorSchema.nullable() });

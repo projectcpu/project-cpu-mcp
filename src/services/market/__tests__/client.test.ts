@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import { FakeMarketTransport, reply } from './fixtures.js';
+import { errorWire, FakeMarketTransport, reply } from './fixtures.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
 import { currentMarketWaitBudget, runWithMarketWaitBudget } from '../budget.scope.js';
 import { MarketApiClient } from '../client.js';
@@ -68,7 +68,7 @@ describe('MarketApiClient', () => {
     it('waits the structured rate limit out and succeeds on the retry, spending the delay from Retry-After', async () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport([
-            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '5' }),
+            reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '5' }),
             reply(200, { ok: true }),
         ]);
         const startedAt = Date.now();
@@ -100,7 +100,7 @@ describe('MarketApiClient', () => {
     it('returns immediately when Retry-After is longer than the remaining automatic-wait budget', async () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport([
-            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '600' }),
+            reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '600' }),
         ]);
         const startedAt = Date.now();
 
@@ -114,7 +114,7 @@ describe('MarketApiClient', () => {
     it('names the spent wait budget in the error when it refuses to wait out the delay it was asked for', async () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport([
-            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '600' }),
+            reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '600' }),
         ]);
 
         const error = (await settle(clientOver(transport).send(request()))) as MarketError;
@@ -127,21 +127,18 @@ describe('MarketApiClient', () => {
 
     it('reads Retry-After off the response headers, since the structured 429 body carries no numeric delay', async () => {
         vi.useFakeTimers();
-        const body = { code: 'upstreamRateLimited', message: 'slow down' };
+        const body = errorWire('upstreamRateLimited', 'slow down');
         const transport = new FakeMarketTransport([reply(429, body, { 'retry-after': '900' })]);
 
         const error = (await settle(clientOver(transport).send(request()))) as MarketError;
 
         expect(error.retryAfterSeconds).toBe(900);
-        expect(Object.keys(body)).toEqual(['code', 'message']);
+        expect(Object.keys(body)).toEqual(['success', 'error', 'message', 'reqId']);
     });
 
     it('retries a 5xx with bounded backoff and succeeds once the service recovers', async () => {
         vi.useFakeTimers();
-        const transport = new FakeMarketTransport([
-            reply(503, { code: 'x', message: 'down' }),
-            reply(200, { ok: true }),
-        ]);
+        const transport = new FakeMarketTransport([reply(503, errorWire('x', 'down')), reply(200, { ok: true })]);
 
         const outcome = await settle(clientOver(transport).send(request()));
 
@@ -161,7 +158,7 @@ describe('MarketApiClient', () => {
 
     it('never spends more than the cumulative 60-second budget across a run of failures', async () => {
         vi.useFakeTimers();
-        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+        const transport = new FakeMarketTransport([], reply(503, errorWire('x', 'down')));
         const startedAt = Date.now();
 
         const error = (await settle(clientOver(transport).send(request()))) as MarketError;
@@ -173,9 +170,23 @@ describe('MarketApiClient', () => {
         expect(transport.calls.length).toBeGreaterThan(1);
     });
 
+    it('preserves the backend upstream-unavailable code and message on a single-shot 503', async () => {
+        const transport = new FakeMarketTransport([
+            reply(503, errorWire('upstreamUnavailable', 'OpenSea is unavailable')),
+        ]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST' })
+            .catch((caught: unknown) => caught)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.UpstreamUnavailable);
+        expect(error.message).toContain('OpenSea is unavailable');
+        expect(error.retryable).toBe(true);
+    });
+
     it('does not let a run of rate limits reset or extend the one budget', async () => {
         vi.useFakeTimers();
-        const rateLimited = reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '20' });
+        const rateLimited = reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '20' });
         const transport = new FakeMarketTransport([], rateLimited);
         const startedAt = Date.now();
 
@@ -187,7 +198,7 @@ describe('MarketApiClient', () => {
 
     it('spends one budget across every request of an invocation instead of opening a fresh one per request', async () => {
         vi.useFakeTimers();
-        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+        const transport = new FakeMarketTransport([], reply(503, errorWire('x', 'down')));
         const client = clientOver(transport);
         const startedAt = Date.now();
 
@@ -207,7 +218,7 @@ describe('MarketApiClient', () => {
 
     it('does not let a run of rate limits across several requests reset or extend the one budget', async () => {
         vi.useFakeTimers();
-        const rateLimited = reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '25' });
+        const rateLimited = reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '25' });
         const transport = new FakeMarketTransport([], rateLimited);
         const client = clientOver(transport);
         const startedAt = Date.now();
@@ -250,7 +261,7 @@ describe('MarketApiClient', () => {
     it('refuses a backoff wait that would outlast the effective deadline instead of overrunning it', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_800_000_000_000);
-        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+        const transport = new FakeMarketTransport([], reply(503, errorWire('x', 'down')));
         const client = clientOver(transport);
         const startedAt = Date.now();
 
@@ -268,7 +279,7 @@ describe('MarketApiClient', () => {
     });
 
     it('reports a 401 that survived the transport reauthentication as terminal', async () => {
-        const transport = new FakeMarketTransport([reply(401, { code: 'unauthorized', message: 'no' })]);
+        const transport = new FakeMarketTransport([reply(401, errorWire('unauthorized', 'no'))]);
 
         const error = await clientOver(transport)
             .send(request())
@@ -280,9 +291,7 @@ describe('MarketApiClient', () => {
     });
 
     it('carries the stable code and stage of a structured terminal market failure', async () => {
-        const transport = new FakeMarketTransport([
-            reply(409, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }),
-        ]);
+        const transport = new FakeMarketTransport([reply(409, errorWire('preparedIntentFlowMismatch', 'wrong flow'))]);
 
         const error = (await clientOver(transport)
             .send({ ...request(), stage: MarketActionStage.Submit })
@@ -295,10 +304,79 @@ describe('MarketApiClient', () => {
         expect(error.message).toMatch(/"submit"/);
     });
 
-    it('marks a structured retryable market code as safe to repeat', async () => {
+    it('preserves the backend invalid-request code instead of replacing it with a generic client code', async () => {
         const transport = new FakeMarketTransport([
-            reply(409, { code: 'preparedIntentInProgress', message: 'in flight' }),
+            reply(400, errorWire('invalidRequest', 'The order payload is invalid.')),
         ]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST' })
+            .catch((caught: unknown) => caught)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.InvalidRequest);
+        expect(error.message).toContain('The order payload is invalid.');
+        expect(error.retryable).toBe(false);
+    });
+
+    it('normalizes the production error envelope and preserves its safe diagnostic id', async () => {
+        const transport = new FakeMarketTransport([
+            reply(422, {
+                success: false,
+                error: 'upstreamRejected',
+                message: 'The wallet has too little USDG to publish this offer.',
+                reqId: 'request-123',
+            }),
+        ]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST', stage: MarketActionStage.Submit })
+            .catch((caught: unknown) => caught)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.UpstreamRejected);
+        expect(error.retryable).toBe(false);
+        expect(error.message).toContain('The wallet has too little USDG to publish this offer.');
+        expect(error.message).toContain('Diagnostic id: request-123.');
+    });
+
+    it('surfaces the documented DTO validation envelope as an invalid input with its field issues', async () => {
+        const transport = new FakeMarketTransport([
+            reply(400, {
+                statusCode: 400,
+                error: 'Bad Request',
+                message: ['expectedOrderHash: Required', 'maxAmount: Required'],
+            }),
+        ]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST', stage: MarketActionStage.Prepare })
+            .catch((caught: unknown) => caught)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.InvalidInput);
+        expect(error.retryable).toBe(false);
+        expect(error.message).toContain('expectedOrderHash: Required');
+        expect(error.message).toContain('maxAmount: Required');
+    });
+
+    it('does not reflect an unsafe production error envelope', async () => {
+        const transport = new FakeMarketTransport([
+            reply(422, {
+                success: false,
+                error: 'upstreamRejected',
+                message: 'forged\r\nlog line',
+                reqId: 'request-123',
+            }),
+        ]);
+
+        const error = (await clientOver(transport)
+            .sendOnce({ ...request(), method: 'POST' })
+            .catch((caught: unknown) => caught)) as MarketError;
+
+        expect(error.code).toBe(MarketErrorCode.MarketRequestFailed);
+        expect(error.message).not.toContain('forged');
+    });
+
+    it('marks a structured retryable market code as safe to repeat', async () => {
+        const transport = new FakeMarketTransport([reply(409, errorWire('preparedIntentInProgress', 'in flight'))]);
 
         const error = (await clientOver(transport)
             .send(request())
@@ -314,7 +392,7 @@ describe('MarketApiClient', () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport(
             [],
-            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '0' }),
+            reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '0' }),
         );
         const startedAt = Date.now();
 
@@ -349,7 +427,7 @@ describe('MarketApiClient', () => {
     it('never calls a terminal market failure carried inside a 429 safe to repeat', async () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport([
-            reply(429, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }, { 'retry-after': '5' }),
+            reply(429, errorWire('preparedIntentFlowMismatch', 'wrong flow'), { 'retry-after': '5' }),
         ]);
         const startedAt = Date.now();
 
@@ -381,7 +459,7 @@ describe('MarketApiClient', () => {
 
     it('never repeats a single-shot call the service answers with a 5xx', async () => {
         vi.useFakeTimers();
-        const transport = new FakeMarketTransport([], reply(503, { code: 'x', message: 'down' }));
+        const transport = new FakeMarketTransport([], reply(503, errorWire('x', 'down')));
 
         const error = (await settle(clientOver(transport).sendOnce({ ...request(), method: 'POST' }))) as MarketError;
 
@@ -394,7 +472,7 @@ describe('MarketApiClient', () => {
         vi.useFakeTimers();
         const transport = new FakeMarketTransport(
             [],
-            reply(429, { code: 'upstreamRateLimited', message: 'slow down' }, { 'retry-after': '5' }),
+            reply(429, errorWire('upstreamRateLimited', 'slow down'), { 'retry-after': '5' }),
         );
         const startedAt = Date.now();
 
@@ -408,9 +486,7 @@ describe('MarketApiClient', () => {
     });
 
     it('carries the terminal code of a single-shot failure through unchanged', async () => {
-        const transport = new FakeMarketTransport([
-            reply(409, { code: 'preparedIntentFlowMismatch', message: 'wrong flow' }),
-        ]);
+        const transport = new FakeMarketTransport([reply(409, errorWire('preparedIntentFlowMismatch', 'wrong flow'))]);
 
         const error = (await clientOver(transport)
             .sendOnce({ ...request(), method: 'POST', stage: MarketActionStage.Submit })
@@ -423,7 +499,7 @@ describe('MarketApiClient', () => {
     });
 
     it('reports a single-shot 401 as terminal, since the transport already re-sent it once', async () => {
-        const transport = new FakeMarketTransport([reply(401, { code: 'unauthorized', message: 'no' })]);
+        const transport = new FakeMarketTransport([reply(401, errorWire('unauthorized', 'no'))]);
 
         const error = (await clientOver(transport)
             .sendOnce({ ...request(), method: 'POST' })

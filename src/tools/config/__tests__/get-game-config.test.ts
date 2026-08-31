@@ -41,6 +41,7 @@ const CONFIG: AppConfig = {
     chainId: 4663,
     contracts: {
         land: '0xland',
+        usdg: '0xusdg',
         cpuToken: '0xcpu',
         cpuHook: '0x4444444444444444444444444444444444444444',
         cell: '0x5555555555555555555555555555555555555555',
@@ -337,6 +338,7 @@ describe('get_game_config tool — the static every agent reads once', () => {
         expect(text).toMatch(/Network robinhood \(chainId 4663\)/);
         expect(section).toContain('5:Iron');
         expect(section).toContain('101:Concrete');
+        expect(section).toContain('USDG 0xusdg');
         expect(section).toContain('cell 0x5555555555555555555555555555555555555555');
         expect(section).toContain('transport 0x7777777777777777777777777777777777777777');
         expect(section).toContain('1% sale burn');

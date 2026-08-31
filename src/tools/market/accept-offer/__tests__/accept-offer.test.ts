@@ -20,7 +20,6 @@ import {
     NOW_SECONDS,
     offerWire,
     orderFulfilledLog,
-    OTHER_CONDUIT_KEY,
     OTHER_CONTRACT,
     OTHER_ORDER_HASH,
     OTHER_TOKEN_ID,
@@ -39,6 +38,7 @@ import {
 } from './fixtures.js';
 import { ERC721_OPERATOR_ABI } from '../../../../contracts/erc721.abi.js';
 import { SEAPORT_ADDRESS } from '../../../../contracts/seaport.constants.js';
+import { errorWire } from '../../../../services/market/__tests__/fixtures.js';
 import { MarketError } from '../../../../services/market/error.js';
 import { MarketRecoveryStore } from '../../../../services/market/recovery.store.js';
 import { MarketSingleFlight } from '../../../../services/market/single-flight.js';
@@ -103,21 +103,25 @@ describe('accepting one exact Cell offer', () => {
         });
 
         it('refuses a trait offer with no Cell selected, before sending anything', async () => {
-            const harness = acceptOfferHarness(transportOf(reply(200, preparedWire({ offer: traitOfferWire() }))));
+            const harness = acceptOfferHarness(
+                transportOf(reply(400, errorWire(MarketErrorCode.InvalidRequest, 'tokenId is required'))),
+            );
 
             const error = await failure(harness.handler(acceptOfferArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.InvalidInput);
+            expect(error.code).toBe(MarketErrorCode.InvalidRequest);
             expect(error.stage).toBe(MarketActionStage.Prepare);
             expect(harness.wallet.sendCount).toBe(0);
         });
 
         it('refuses a collection offer with no Cell selected, before sending anything', async () => {
-            const harness = acceptOfferHarness(transportOf(reply(200, preparedWire({ offer: collectionOfferWire() }))));
+            const harness = acceptOfferHarness(
+                transportOf(reply(400, errorWire(MarketErrorCode.InvalidRequest, 'tokenId is required'))),
+            );
 
             const error = await failure(harness.handler(acceptOfferArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.InvalidInput);
+            expect(error.code).toBe(MarketErrorCode.InvalidRequest);
             expect(harness.wallet.sendCount).toBe(0);
         });
 
@@ -161,14 +165,14 @@ describe('accepting one exact Cell offer', () => {
             const result = parsed(await harness.handler(acceptOfferArgs()));
 
             expect(harness.wallet.log).toEqual([
-                'read:getCell',
+                'read:ownerOf',
                 'read:information',
-                'read:getConduit',
+                'read:getKey',
                 `send:${COLLECTION}:0`,
                 `receipt:${txHash(1)}`,
                 `send:${SEAPORT_ADDRESS}:0`,
                 `receipt:${txHash(2)}`,
-                'read:getCell',
+                'read:ownerOf',
             ]);
             expect(result.approvalTxHashes).toEqual([txHash(1)]);
             expect(result.fulfilmentTxHash).toBe(txHash(2));
@@ -241,12 +245,12 @@ describe('accepting one exact Cell offer', () => {
 
         it('reports an unavailable offer from the game API without looking for a replacement', async () => {
             const harness = acceptOfferHarness(
-                transportOf(reply(404, { code: MarketErrorCode.OrderUnavailable, message: 'that offer is gone' })),
+                transportOf(reply(404, errorWire(MarketErrorCode.StaleOffer, 'that offer is gone'))),
             );
 
             const error = await failure(harness.handler(acceptOfferArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
+            expect(error.code).toBe(MarketErrorCode.StaleOffer);
             expect(error.retryable).toBe(false);
             expect(harness.transport.calls).toHaveLength(1);
             expect(harness.wallet.sendCount).toBe(0);
@@ -287,14 +291,13 @@ describe('accepting one exact Cell offer', () => {
     });
 
     describe('validating the prepared work before approving anything', () => {
-        it('refuses a preparation for another chain', async () => {
-            const wire = preparedWire({ chainId: 1, offer: offerWire({ chainId: 1 }) });
-            const harness = acceptOfferHarness(transportOf(reply(200, wire)));
+        it('injects the wallet chain because the canonical preparation wire carries no chain on the offer', async () => {
+            const harness = acceptOfferHarness();
 
-            const error = await failure(harness.handler(acceptOfferArgs()));
+            const result = parsed(await harness.handler(acceptOfferArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.ChainMismatch);
-            expect(harness.wallet.sendCount).toBe(0);
+            expect((result.offer as { chainId: number }).chainId).toBe(harness.wallet.getChainId());
+            expect(offerWire()).not.toHaveProperty('chainId');
         });
 
         it('refuses a transaction that would be sent on another chain', async () => {
@@ -406,15 +409,15 @@ describe('accepting one exact Cell offer', () => {
             expect(harness.wallet.sendCount).toBe(0);
         });
 
-        it('refuses an approval whose conduit key the protocol registry disowns', async () => {
-            const harness = acceptOfferHarness(
-                transportOf(reply(200, preparedWire({ conduitKey: OTHER_CONDUIT_KEY }))),
-            );
+        it('refuses an approval whose operator the protocol registry disowns', async () => {
+            const harness = acceptOfferHarness(transportOf(), {
+                wallet: new FakeSellerWallet({ conduitKnown: false }),
+            });
 
             const error = await failure(harness.handler(acceptOfferArgs()));
 
             expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
-            expect(error.message).toContain(OTHER_CONDUIT_KEY);
+            expect(error.message).toContain(CONDUIT);
             expect(harness.wallet.sendCount).toBe(0);
         });
 
@@ -430,12 +433,12 @@ describe('accepting one exact Cell offer', () => {
             expect(harness.wallet.sendCount).toBe(0);
         });
 
-        it('refuses a prepared intent that is already past its deadline', async () => {
+        it('refuses a prepared response whose offer is already expired', async () => {
             const harness = acceptOfferHarness(transportOf(reply(200, preparedWire({ expiresAt: NOW_SECONDS - 1 }))));
 
             const error = await failure(harness.handler(acceptOfferArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.PreparedIntentExpired);
+            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
             expect(harness.wallet.sendCount).toBe(0);
         });
 
@@ -512,7 +515,7 @@ describe('accepting one exact Cell offer', () => {
 
             await harness.handler(acceptOfferArgs());
 
-            const cellReads = harness.wallet.reads.filter((read) => read.functionName === 'getCell');
+            const cellReads = harness.wallet.reads.filter((read) => read.functionName === 'ownerOf');
             expect(cellReads).toHaveLength(2);
             expect(cellReads[1]?.address.toLowerCase()).toBe(COLLECTION.toLowerCase());
             expect(cellReads[1]?.args).toEqual([BigInt(TOKEN_ID)]);
@@ -714,17 +717,13 @@ describe('accepting one exact Cell offer', () => {
         it('keeps a rate limit carrying a terminal code terminal on this money path', async () => {
             const harness = acceptOfferHarness(
                 transportOf(
-                    reply(
-                        429,
-                        { code: MarketErrorCode.OrderUnavailable, message: 'that offer is gone' },
-                        { 'retry-after': '30' },
-                    ),
+                    reply(429, errorWire(MarketErrorCode.StaleOffer, 'that offer is gone'), { 'retry-after': '30' }),
                 ),
             );
 
             const error = await failure(harness.handler(acceptOfferArgs()));
 
-            expect(error.code).toBe(MarketErrorCode.OrderUnavailable);
+            expect(error.code).toBe(MarketErrorCode.StaleOffer);
             expect(error.retryable).toBe(false);
             expect(error.retryAfterSeconds).toBe(30);
             expect(harness.transport.calls).toHaveLength(1);
@@ -742,7 +741,7 @@ describe('accepting one exact Cell offer', () => {
         });
 
         it('reports a refused session without sending anything', async () => {
-            const harness = acceptOfferHarness(transportOf(reply(401, { code: 'UNAUTHORIZED', message: 'nope' })));
+            const harness = acceptOfferHarness(transportOf(reply(401, errorWire('UNAUTHORIZED', 'nope'))));
 
             const error = await failure(harness.handler(acceptOfferArgs()));
 
@@ -773,7 +772,8 @@ describe('accepting one exact Cell offer', () => {
         it('tells the agent a criteria offer needs an explicit Cell and no order is substituted', () => {
             const harness = acceptOfferHarness();
 
-            expect(harness.description).toContain('ORDER_UNAVAILABLE');
+            expect(harness.description).toContain('staleOffer');
+            expect(harness.description).toContain('unfulfillable');
             expect(harness.description).toContain('never substitutes');
         });
 
@@ -794,7 +794,9 @@ describe('accepting one exact Cell offer', () => {
 
             const result = parsed(await harness.handler(acceptOfferArgs({ tokenId: TOKEN_ID })));
 
-            expect(result.offer).toEqual({ ...collectionOfferWire(), tokenId: null });
+            const acceptedOffer = result.offer as { tokenId: string; kind: string };
+            expect(acceptedOffer.tokenId).toBe(TOKEN_ID);
+            expect(acceptedOffer.kind).toBe(collectionOfferWire().kind);
             expect(result.tokenId).toBe(TOKEN_ID);
         });
     });

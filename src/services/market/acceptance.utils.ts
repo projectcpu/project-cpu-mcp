@@ -6,7 +6,7 @@ export function acceptanceActionInputs(request: AcceptCellOfferRequest): Array<s
 }
 
 export function effectiveAcceptanceDeadline(prepared: PrepareAcceptanceResponse): number {
-    return Math.min(prepared.expiresAt, prepared.offer.expirationTime);
+    return prepared.offer.expirationTime;
 }
 
 export function acceptanceApprovals(prepared: PrepareAcceptanceResponse): Array<MarketTransaction> {
@@ -15,7 +15,7 @@ export function acceptanceApprovals(prepared: PrepareAcceptanceResponse): Array<
 
 export function acceptanceFulfilment(prepared: PrepareAcceptanceResponse): MarketTransaction | null {
     const fulfilments = prepared.transactions.filter(
-        (transaction) => transaction.kind === MarketTransactionKind.Fulfilment,
+        (transaction) => transaction.kind === MarketTransactionKind.Fulfillment,
     );
 
     return fulfilments.length === 1 ? (fulfilments[0] ?? null) : null;

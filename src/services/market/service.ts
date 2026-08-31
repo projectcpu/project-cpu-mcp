@@ -1,8 +1,8 @@
 import { MARKET_CELL_PATH } from './constants.js';
 import { MarketError } from './error.js';
+import { cellMarketSnapshotResponseSchema } from './snapshot.schemas.js';
 import {
-    cellMarketSnapshotSchema,
-    cellTokenIdSchema,
+    marketLookupTokenIdSchema,
     MarketActionStage,
     MarketErrorCode,
     MarketOfferKind,
@@ -11,6 +11,7 @@ import {
     type IMarketService,
     type MarketServiceOptions,
 } from './types.js';
+import { LAUNCH_CHAIN_ID } from '../../config/constants.js';
 import type { ILogger } from '../../logger/types.js';
 
 export class MarketService implements IMarketService {
@@ -31,7 +32,7 @@ export class MarketService implements IMarketService {
             path: `${MARKET_CELL_PATH}/${canonical}`,
             method: 'GET',
             body: null,
-            schema: cellMarketSnapshotSchema,
+            schema: cellMarketSnapshotResponseSchema(LAUNCH_CHAIN_ID),
             stage: MarketActionStage.Read,
             label: `The marketplace snapshot for Cell ${canonical}`,
         });
@@ -76,7 +77,7 @@ export class MarketService implements IMarketService {
     }
 
     private requireCanonicalTokenId(tokenId: string): string {
-        const parsed = cellTokenIdSchema.safeParse(tokenId);
+        const parsed = marketLookupTokenIdSchema.safeParse(tokenId);
         if (parsed.success) {
             return parsed.data;
         }

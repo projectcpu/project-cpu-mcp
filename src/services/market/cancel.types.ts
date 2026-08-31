@@ -4,10 +4,7 @@ import type { IMarketRecoveryStore, IMarketSingleFlight } from './action.types.j
 import type { IMarketSingleShotClient } from './client.types.js';
 import type { IMarketFulfilmentProof } from './fulfilment-proof.types.js';
 import {
-    cellTokenIdSchema,
-    chainIdSchema,
     evmAddressSchema,
-    marketPreparedIntentSchema,
     marketTransactionSchema,
     orderHashSchema,
     MarketOrderKind,
@@ -17,21 +14,11 @@ import {
 import type { ILogger } from '../../logger/types.js';
 import type { WalletProvider } from '../../wallet/types.js';
 
-export const cancellableOrderSchema = z.object({
+export const prepareCancellationResponseSchema = z.object({
     orderHash: orderHashSchema,
     protocolAddress: evmAddressSchema,
-    chainId: chainIdSchema,
-    maker: evmAddressSchema,
-    kind: z.nativeEnum(MarketOrderKind),
-    tokenId: cellTokenIdSchema.nullable(),
+    transaction: marketTransactionSchema,
 });
-
-export const prepareCancellationResponseSchema = marketPreparedIntentSchema.extend({
-    order: cancellableOrderSchema,
-    transactions: z.array(marketTransactionSchema),
-});
-
-export type CancellableOrder = z.infer<typeof cancellableOrderSchema>;
 
 export type PrepareCancellationResponse = z.infer<typeof prepareCancellationResponseSchema>;
 
@@ -58,6 +45,8 @@ export interface CancellationRecoveryPayload {
 export interface CancelledOrderCall {
     offerer: string;
     orderHash: string;
+    kind: MarketOrderKind | null;
+    tokenId: string | null;
 }
 
 export interface MarketCancelServiceOptions {

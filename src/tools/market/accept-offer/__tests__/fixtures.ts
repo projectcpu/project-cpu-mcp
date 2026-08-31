@@ -68,8 +68,6 @@ export const OTHER_TOKEN_ID = '4321';
 
 export const AMOUNT = '900000000000000000';
 
-export const PREPARE_ID = 'a'.repeat(64);
-
 export const ORDER_HASH = `0x${'e'.repeat(64)}`;
 
 export const OTHER_ORDER_HASH = `0x${'d'.repeat(64)}`;
@@ -78,9 +76,7 @@ export const NOW_SECONDS = 1_800_000_000;
 
 export const EXPIRES_AT = NOW_SECONDS + 86_400;
 
-export const INTENT_DEADLINE = NOW_SECONDS + 900;
-
-export const PREPARE_PATH = '/api/v1/market/acceptances/prepare';
+export const PREPARE_PATH = '/api/v1/market/offers/accept/prepare';
 
 export const FULFILMENT_CALLDATA = '0xe7acab24';
 
@@ -109,32 +105,40 @@ export function reply(status: number, data: unknown, headers: Record<string, str
 }
 
 export function offerWire(over: Record<string, unknown> = {}): Record<string, unknown> {
+    const amount = typeof over.amount === 'string' ? over.amount : AMOUNT;
+    const startsAt = typeof over.startTime === 'number' ? over.startTime : NOW_SECONDS - 60;
+    const expiresAt = typeof over.expirationTime === 'number' ? over.expirationTime : EXPIRES_AT;
+    const { amount: _amount, startTime: _startTime, expirationTime: _expirationTime, ...wireOver } = over;
+
     return {
         orderHash: ORDER_HASH,
         protocolAddress: SEAPORT_ADDRESS,
-        chainId: LAUNCH_CHAIN_ID,
         maker: BUYER,
         kind: MarketOfferKind.Item,
         tokenId: TOKEN_ID,
-        amount: AMOUNT,
-        currency: CURRENCY,
-        startTime: NOW_SECONDS - 60,
-        expirationTime: EXPIRES_AT,
-        ...over,
+        price: {
+            currencyAddress: CURRENCY_ADDRESS,
+            symbol: CURRENCY.symbol,
+            decimals: CURRENCY.decimals,
+            amountBaseUnits: amount,
+        },
+        startsAt,
+        expiresAt,
+        ...wireOver,
     };
 }
 
 export function traitOfferWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return offerWire({ kind: MarketOfferKind.Trait, tokenId: null, ...over });
+    return offerWire({ kind: MarketOfferKind.Trait, tokenId: TOKEN_ID, ...over });
 }
 
 export function collectionOfferWire(over: Record<string, unknown> = {}): Record<string, unknown> {
-    return offerWire({ kind: MarketOfferKind.Collection, tokenId: null, ...over });
+    return offerWire({ kind: MarketOfferKind.Collection, tokenId: TOKEN_ID, ...over });
 }
 
 export function fulfilmentWire(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
-        kind: MarketTransactionKind.Fulfilment,
+        kind: 'fulfillment',
         to: SEAPORT_ADDRESS,
         data: FULFILMENT_CALLDATA,
         value: '0',
@@ -155,16 +159,20 @@ export function approvalWire(over: Record<string, unknown> = {}): Record<string,
 }
 
 export function preparedWire(over: Record<string, unknown> = {}): Record<string, unknown> {
+    const baseOffer = (over.offer as Record<string, unknown> | undefined) ?? offerWire();
+    const offer = {
+        ...baseOffer,
+        ...(typeof over.tokenId === 'string' || over.tokenId === null ? { tokenId: over.tokenId } : {}),
+        ...(typeof over.protocolAddress === 'string' ? { protocolAddress: over.protocolAddress } : {}),
+        ...(typeof over.expiresAt === 'number' ? { expiresAt: over.expiresAt } : {}),
+    };
+
     return {
-        prepareId: PREPARE_ID,
-        expiresAt: INTENT_DEADLINE,
-        chainId: LAUNCH_CHAIN_ID,
-        protocolAddress: SEAPORT_ADDRESS,
-        offer: offerWire(),
-        tokenId: TOKEN_ID,
-        conduitKey: CONDUIT_KEY,
-        transactions: [approvalWire(), fulfilmentWire()],
-        ...over,
+        offer,
+        transactions: (over.transactions as Array<Record<string, unknown>> | undefined) ?? [
+            approvalWire(),
+            fulfilmentWire(),
+        ],
     };
 }
 
@@ -274,10 +282,10 @@ export function transportOf(...replies: Array<FakeReply | Error>): FakeMarketTra
 }
 
 export class FakeAppConfig implements IAppConfig {
-    constructor(private readonly cell: string = COLLECTION) {}
+    constructor(private readonly land: string = COLLECTION) {}
 
     async load(): Promise<AppConfig> {
-        return { contracts: { cell: this.cell } } as AppConfig;
+        return { contracts: { land: this.land } } as AppConfig;
     }
 }
 
@@ -411,8 +419,15 @@ export class FakeSellerWallet implements WalletManager, WalletProvider {
             }
             return ['1.6', `0x${'0'.repeat(64)}`, CONDUIT_REGISTRY];
         }
-        if (params.functionName === 'getConduit') {
-            return this.options.conduitKnown && params.args[0] === CONDUIT_KEY ? [CONDUIT, true] : [zeroAddress, false];
+        if (params.functionName === 'getKey') {
+            if (
+                this.options.conduitKnown &&
+                typeof params.args[0] === 'string' &&
+                params.args[0].toLowerCase() === CONDUIT.toLowerCase()
+            ) {
+                return CONDUIT_KEY;
+            }
+            throw new Error('the operator is not registered');
         }
 
         this.cellReads += 1;
@@ -421,7 +436,7 @@ export class FakeSellerWallet implements WalletManager, WalletProvider {
         }
 
         const tokenId = String(params.args[0]);
-        return { owner: this.owners.get(tokenId) ?? this.options.owner };
+        return this.owners.get(tokenId) ?? this.options.owner;
     }
 
     async signTypedData(_request: SignTypedDataRequest): Promise<Hex> {
