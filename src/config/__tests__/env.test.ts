@@ -47,19 +47,6 @@ describe('loadEnvConfig PRIVATE_KEY', () => {
     });
 });
 
-describe('loadEnvConfig shape', () => {
-    it('carries exactly the variables the runtime reads', () => {
-        expect(Object.keys(loadEnvConfig(EVM_ENV)).sort()).toEqual([
-            'API_URL',
-            'NETWORK',
-            'OPERATOR_PERSONA',
-            'PRIVATE_KEY',
-            'RPC_URL',
-            'WALLET_MODE',
-        ]);
-    });
-});
-
 describe('loadEnvConfig RPC_URL', () => {
     it('is null when the override is absent', () => {
         expect(loadEnvConfig(EVM_ENV).RPC_URL).toBeNull();

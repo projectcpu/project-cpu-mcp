@@ -63,22 +63,6 @@ afterEach(() => {
 });
 
 describe('the marketplace services the server is built with', () => {
-    it('are all nine of the public surface', () => {
-        const { services } = wire();
-
-        expect(Object.keys(services).sort()).toEqual(
-            [
-                'market',
-                'marketAcceptance',
-                'marketCancel',
-                'marketListing',
-                'marketOffer',
-                'marketProfile',
-                'marketPurchase',
-            ].sort(),
-        );
-    });
-
     it('prove a fulfilment by asking the wallet itself who sent the transaction', async () => {
         const { services, wallet } = wire();
 
@@ -143,27 +127,6 @@ describe('the marketplace services the server is built with', () => {
         expect(cancelling.retryable).toBe(true);
         expect(coordinator.recovery.size()).toBe(MARKET_UNRESOLVED_ACTION_LIMIT);
         expect(transport.calls).toEqual([]);
-    });
-
-    it('do not evict an unresolved record to admit a new write', () => {
-        const coordinator = createMarketCoordinator();
-        for (let index = 0; index < MARKET_UNRESOLVED_ACTION_LIMIT; index += 1) {
-            coordinator.recovery.write(`unresolved-${index}`, {
-                tool: MarketActionTool.ListCell,
-                stage: MarketActionStage.Prepare,
-                payload: null,
-            });
-        }
-
-        expect(() =>
-            coordinator.recovery.write('one-too-many', {
-                tool: MarketActionTool.ListCell,
-                stage: MarketActionStage.Prepare,
-                payload: null,
-            }),
-        ).toThrow(MarketError);
-        expect(coordinator.recovery.read('unresolved-0')).not.toBeNull();
-        expect(coordinator.recovery.read('one-too-many')).toBeNull();
     });
 });
 

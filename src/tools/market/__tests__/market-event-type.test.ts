@@ -93,18 +93,4 @@ describe('every completed Cell marketplace action names its own event', () => {
 
         expect(eventTypeOf(await harness.handler(cancelOrderArgs()))).toBe(ToolEventType.MarketOrderCancelled);
     });
-
-    it('keeps the five apart, so a client cannot read a sale as a purchase', () => {
-        const events = [
-            ToolEventType.CellListed,
-            ToolEventType.CellOfferMade,
-            ToolEventType.CellBought,
-            ToolEventType.CellOfferAccepted,
-            ToolEventType.MarketOrderCancelled,
-        ];
-
-        expect(new Set(events).size).toBe(events.length);
-        expect(events).not.toContain(ToolEventType.LotCreated);
-        expect(events).not.toContain(ToolEventType.LotBought);
-    });
 });

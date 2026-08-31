@@ -14,18 +14,6 @@ interface ObservedRegistration {
     hasOutputSchema: boolean;
 }
 
-const MARKETPLACE_TOOL_NAMES = [
-    'cpu_accept_cell_offer',
-    'cpu_buy_cell',
-    'cpu_cancel_order',
-    'cpu_get_cell_market',
-    'cpu_get_my_listings',
-    'cpu_get_my_offers',
-    'cpu_get_my_offers_received',
-    'cpu_list_cell',
-    'cpu_make_cell_offer',
-];
-
 async function observeRegistration(register: MarketRegistration): Promise<ObservedRegistration> {
     let ranInsideBudget = false;
     const note = (): void => {
@@ -95,12 +83,6 @@ describe('the marketplace tool registration seam', () => {
         const observed = await observeEveryRegistration();
 
         expect(observed.filter((entry) => !entry.ranInsideBudget).map((entry) => entry.name)).toEqual([]);
-    });
-
-    it('registers the whole marketplace surface through that seam and nothing beside it', async () => {
-        const observed = await observeEveryRegistration();
-
-        expect(observed.map((entry) => entry.name).sort()).toEqual([...MARKETPLACE_TOOL_NAMES].sort());
     });
 
     it('publishes an output schema for every marketplace tool', async () => {

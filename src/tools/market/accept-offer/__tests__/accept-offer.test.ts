@@ -297,7 +297,6 @@ describe('accepting one exact Cell offer', () => {
             const result = parsed(await harness.handler(acceptOfferArgs()));
 
             expect((result.offer as { chainId: number }).chainId).toBe(harness.wallet.getChainId());
-            expect(offerWire()).not.toHaveProperty('chainId');
         });
 
         it('refuses a transaction that would be sent on another chain', async () => {

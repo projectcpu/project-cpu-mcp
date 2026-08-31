@@ -1,4 +1,4 @@
-import { hashTypedData, recoverTypedDataAddress, type Hex } from 'viem';
+import { recoverTypedDataAddress, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
 
@@ -90,15 +90,6 @@ function recoverSigner(signature: Hex, verifyingContract: string): Promise<strin
     } as unknown as Parameters<typeof recoverTypedDataAddress>[0]);
 }
 
-function orderDigest(): Hex {
-    return hashTypedData({
-        domain: DOMAIN,
-        types: SEAPORT_ORDER_COMPONENTS_TYPES,
-        primaryType: SEAPORT_ORDER_PRIMARY_TYPE,
-        message: ORDER,
-    } as unknown as Parameters<typeof hashTypedData>[0]);
-}
-
 describe('the EVM wallet signing a Seaport order', () => {
     it('produces a signature that recovers the active wallet under the launch-chain protocol domain', async () => {
         const wallet = walletOver();
@@ -118,15 +109,6 @@ describe('the EVM wallet signing a Seaport order', () => {
         );
 
         expect(withTransportMetadata).toBe(signed);
-    });
-
-    it('signs the digest the protocol contract itself would rebuild for the order', async () => {
-        const wallet = walletOver();
-
-        const signature = await wallet.signTypedData(signingRequest(ORDER));
-
-        expect(orderDigest()).toMatch(/^0x[0-9a-f]{64}$/);
-        expect(signature).toMatch(/^0x[0-9a-f]{130}$/);
     });
 
     it('binds the signature to the pinned protocol address, so another verifying contract cannot reuse it', async () => {

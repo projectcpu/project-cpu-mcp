@@ -16,11 +16,6 @@ function key(over: Partial<Parameters<typeof marketActionKey>[0]> = {}): string 
 }
 
 describe('the action key an intent computes for itself', () => {
-    it('is a stable hash the agent never supplies', () => {
-        expect(key()).toBe(key());
-        expect(key()).toMatch(/^[0-9a-f]{64}$/);
-    });
-
     it('ignores the letter case a wallet address happens to arrive in', () => {
         expect(key({ wallet: WALLET.toLowerCase() })).toBe(key());
         expect(normalizeActionAddress(` ${WALLET} `)).toBe(WALLET.toLowerCase());

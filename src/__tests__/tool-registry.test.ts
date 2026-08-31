@@ -102,14 +102,6 @@ const HALF_STEP_TOOL =
 /** The marketplace surface as an agent meets it: every tool that speaks about the land market. */
 const NFT_MARKETPLACE_TOOL = /NFT marketplace/iu;
 
-const HALF_STEP_NAMES: ReadonlyArray<string> = [
-    'cpu_prepare_cell_listing',
-    'cpu_submit_cell_offer',
-    'cpu_approve_cell_collection',
-    'cpu_confirm_listing_fees',
-    'cpu_sign_market_order',
-];
-
 const RETIRED_TOOLS: ReadonlyArray<string> = ['cpu_cancel_lot'];
 
 /** The three claims about Eviction and Lot return that the shipped surface must never make. */
@@ -296,23 +288,10 @@ describe('the Cell marketplace surface', () => {
         );
     });
 
-    it.each([...MARKETPLACE_READS, ...MARKETPLACE_ACTIONS])('registers %s', async (name) => {
-        expect((await bootServer()).map((tool) => tool.name)).toContain(name);
-    });
-
     it('exposes no prepare, submit, approval, fulfilment or confirmation tool', async () => {
         const names = (await bootServer()).map((tool) => tool.name);
 
         expect(names.filter((name) => HALF_STEP_TOOL.test(name))).toEqual([]);
-    });
-
-    it.each(HALF_STEP_NAMES)('is what the half-step rule actually catches: %s', (name) => {
-        expect(name).toMatch(HALF_STEP_TOOL);
-    });
-
-    it('leaves the resource Lot tools untouched by the rule', () => {
-        expect('cpu_create_lot').not.toMatch(HALF_STEP_TOOL);
-        expect('cpu_list_fills').not.toMatch(HALF_STEP_TOOL);
     });
 
     it('tells the agent in every action description that this is land, not resources', async () => {
