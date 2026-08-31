@@ -54,7 +54,7 @@ describe('Paybox Cell marketplace flow', () => {
         vi.useRealTimers();
     });
 
-    it('prepares, signs through Paybox, verifies, and submits a listing through the MCP tool', async () => {
+    it('prepares, signs through Paybox, and submits a listing through the MCP tool', async () => {
         const order = seaportOrderWire();
         const consideration = (order.consideration as Array<Record<string, unknown>>).map((item, index) =>
             index === 0 ? { ...item, recipient: account.address } : item,

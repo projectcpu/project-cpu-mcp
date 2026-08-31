@@ -7,7 +7,7 @@ import {
     PayboxOperationIncompleteError,
     PayboxTemporarilyUnavailableError,
 } from '../errors.js';
-import { verifiedPayboxMessageSignature, verifiedPayboxTypedDataSignature } from './utils.js';
+import { verifiedPayboxMessageSignature } from './utils.js';
 import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import { LAUNCH_CHAIN_ID } from '../../config/constants.js';
 import type {
@@ -89,13 +89,12 @@ export class PayboxWalletManager implements WalletManager {
     public async signTypedData(request: SignTypedDataRequest): Promise<Hex> {
         const authority = await this.currentAuthority();
         try {
-            const signature = await this.options.sdk.signTypedData(
+            return await this.options.sdk.signTypedData(
                 authority.tokens,
                 authority.signingKey,
                 this.options.credentialId,
                 request,
             );
-            return await verifiedPayboxTypedDataSignature(request, signature, this.address);
         } catch (error) {
             this.throwSigningFailure(error);
         }

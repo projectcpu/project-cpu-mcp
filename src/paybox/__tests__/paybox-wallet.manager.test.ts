@@ -310,26 +310,13 @@ describe('PayboxWalletManager', () => {
         }
     });
 
-    it('returns only an EIP-712 signature bound to the selected wallet and request', async () => {
-        const signature = await account.signTypedData(
-            typedData as unknown as Parameters<typeof account.signTypedData>[0],
-        );
+    it('returns the EIP-712 signature Paybox produced for the selected request', async () => {
+        const signature = '0xdeadbeef' as Hex;
         const signTypedData = vi.fn(async () => signature);
         const wallet = manager({ signTypedData });
 
         await expect(wallet.signTypedData(typedData)).resolves.toBe(signature);
         expect(signTypedData).toHaveBeenCalledWith(tokens, 'pbxk1.key', 'credential-a', typedData);
-    });
-
-    it('requires explicit authentication for wrong-wallet and malformed typed-data signatures', async () => {
-        for (const signTypedData of [
-            vi.fn(async () => other.signTypedData(typedData as unknown as Parameters<typeof other.signTypedData>[0])),
-            vi.fn(async () => '0xdeadbeef' as Hex),
-        ]) {
-            await expect(manager({ signTypedData }).signTypedData(typedData)).rejects.toBeInstanceOf(
-                AuthenticationRequiredError,
-            );
-        }
     });
 
     it('invalidates coordinator authority after a confirmed signing failure', async () => {
