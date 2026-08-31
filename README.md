@@ -165,9 +165,7 @@ After reloading the harness, call `cpu_persona` first, then `cpu_authenticate`. 
 The server uses one wallet mode to sign actions for the Operator:
 
 - **Paybox (default)** — You do not configure a private key. Call `cpu_authenticate`. The server opens
-  Paybox in your browser, where you select an autonomous EVM wallet grant and approve access. Paybox signs
-  wallet actions, including the EIP-712 orders used by the Cell marketplace; the server verifies every
-  returned signature against the selected wallet before it submits the order.
+  Paybox in your browser, where you select a wallet and approve access. Paybox signs wallet actions.
 - **EVM** — Set `WALLET_MODE=evm` and `PRIVATE_KEY=0x...` in the MCP server environment. The server uses
   that local EVM wallet and signs actions on your machine. Call `cpu_authenticate` to sign in to the game.
 
@@ -188,9 +186,6 @@ Keep `PRIVATE_KEY` secret. Use it only in the MCP server environment. Do not put
 | `DEBUG` | `false` | Set to `true` for debug-level logging on stderr. |
 
 Session state is persisted to `~/.project-cpu/`.
-
-The server needs **no OpenSea API key**, and there is no environment variable for one. Every Cell marketplace
-read and write goes through the authenticated game API, which mediates all OpenSea REST access on your behalf.
 
 ## What the agent can do
 
@@ -250,17 +245,6 @@ Once connected, the server exposes tools grouped by area:
 - **Tokens & land** — `cpu_quote_swap`, `cpu_swap` (trade ETH ↔ $CPU on the token pool), `cpu_withdraw`
   (cash a cell's wCPU out to on-chain $CPU, 1:1), `cpu_quote_mint` and `cpu_mint_cell` (preview and mint new
   land cells on the primary market, priced in native ETH by the public drop itself).
-- **Cell marketplace** — the land market, where a Cell is an NFT traded on a public NFT marketplace for a
-  configured currency. It is entirely separate from the in-game resource Lots above: a Cell listing and a Cell
-  offer are Market orders, not Lots, and they settle by Market fulfilment, not by a Fill. Four reads:
-  `cpu_get_cell_market` (the best listing and the best offer for one Cell, each independently `null` when
-  there is none), `cpu_get_my_listings`, `cpu_get_my_offers` (bids you made) and `cpu_get_my_offers_received`
-  (bids other wallets made on your Cells) — all cursor-paged. Five complete actions, each one whole player
-  intent: `cpu_list_cell` (sell one Cell, optionally reserved for one buyer), `cpu_make_cell_offer` (bid on
-  one exact Cell), `cpu_buy_cell` (buy one exact listing under a ceiling), `cpu_accept_cell_offer` (sell one
-  exact Cell into one exact offer) and `cpu_cancel_order` (cancel one exact Market order of yours, listing or
-  offer). See [the Cell marketplace guide](./docs/cell-marketplace.md) for gross prices and fees, exact-order
-  safety, base-unit amounts, Unix-second expirations, rate limits and recovery.
 
 Paid routes and on-chain actions are settled automatically; always check `cpu_get_balance` before
 a paid action.

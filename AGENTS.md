@@ -1,6 +1,6 @@
 # Project CPU MCP Server
 
-MCP server for a blockchain game on EVM (Robinhood, chain 4663). Distributed via npm, runs locally via `npx`.
+MCP server for a blockchain game on EVM (Abstract). Distributed via npm, runs locally via `npx`.
 
 Two wallet modes via `WALLET_MODE` (defaults to `paybox`): `paybox` (browser OAuth and remote signing) or `evm` (private key in env, SIWE auth — requires `PRIVATE_KEY`). Session state persists to `~/.project-cpu/session.json`.
 
@@ -46,8 +46,7 @@ src/
 ├── server.ts         # McpServer setup, tool registration
 ├── tools/            # MCP controllers (input → service → output)
 ├── services/         # Business logic, orchestration
-├── wallet/           # WalletManager interface + local EVM implementation
-├── paybox/           # Paybox OAuth, remote wallet signing, and RPC adapter
+├── wallet/           # WalletManager interface + EVM implementation
 ├── api/              # ApiClient (HTTP to the game API, JWT bearer + SIWE re-login)
 ├── session/          # SessionStorage + SessionManager (persist game JWT state)
 └── config/           # env + constants

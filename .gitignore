@@ -7,9 +7,8 @@ coverage
 .env.local
 .idea
 
-# local-only working notes; the published guides listed below are the only tracked exceptions
-docs/*
-!docs/cell-marketplace.md
+# local-only working notes
+docs/
 scratch/
 .e2e-local/
 

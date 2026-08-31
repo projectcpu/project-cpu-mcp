@@ -145,53 +145,7 @@ terms themselves ever blurring together.
   Neither is ever reconstructed by subtracting a demolition's configured length from its end: that length
   can be changed while a demolition is already running, so the arithmetic would produce a confident lie.
 
-## Cell marketplace
-
-The land market, kept strictly apart from the resource trade below. A Cell is an NFT and changes hands on a
-public NFT marketplace for a configured currency; a resource never does. Every term here belongs to that
-market alone, and none of them may be used for a Lot.
-
-- **Market order** — one signed intent to trade one Cell on the NFT marketplace, named by its `orderHash` and
-  by nothing else. It exists off-chain until somebody takes it: signing one moves no Cell and spends no money.
-  Two sides exist and the side is a fact of the order, not a choice the caller makes when acting on it.
-  *Avoid*: lot, listing as the umbrella term (that is only the sell side), trade.
-- **Cell listing** — the sell side of a Market order: the owner offers one exact Cell at a gross price until
-  an expiry. The Cell stays with the owner until Market fulfilment, which is why a duplicate listing is a real
-  hazard and a duplicate transaction is not.
-  *Avoid*: Lot, ask, sale.
-- **Cell offer** — the buy side: a bid on a Cell for a currency amount until an expiry. An **item offer** names
-  one exact Cell; a **trait offer** and a **collection offer** are *criteria offers* — they bid for a set and
-  name no Cell, so accepting one requires the seller to name the Cell explicitly, and one acceptance can leave
-  the offer active for other Cells. This server accepts all three kinds and creates only item offers.
-  *Avoid*: bid on a lot, buy order.
-- **Market fulfilment** — the on-chain transaction that executes a Market order and moves the Cell. It is the
-  only moment money and land actually change hands, and it is proven from the marketplace protocol's own
-  event for that exact order plus the wallet that sent the transaction — never from ownership alone, which
-  says who holds the Cell but not who did it.
-  *Avoid*: Fill (that is a resource lot's executed purchase and belongs to the other market).
-- **Gross price** — what a buyer pays for a listed Cell, before the marketplace and creator fees are taken out
-  of it. Fees are subtracted from this amount, never added on top, so the seller's proceeds are always the
-  smaller number and are reported as an estimate beside the split.
-  *Avoid*: net price, proceeds as an input.
-- **Base-unit amount** — every monetary value on this surface: a decimal integer string in the currency's
-  smallest unit, carrying the currency's address, symbol and decimals beside it. Never a fraction, never a
-  JSON number, and never converted through one.
-  *Avoid*: price in tokens, human-readable amount.
-- **Reserved buyer** — the one address a listing may be restricted to. Only that wallet can fulfil it. The
-  public view of a listing does not disclose it, which is why an otherwise matching active listing is treated
-  as a conflict rather than as the same intent once in-process proof of the reservation is gone.
-- **Exact order** — the discipline every acting tool follows: it works on the `orderHash` given to it or on
-  nothing. An order that has been filled, cancelled, expired or repriced past the caller's ceiling ends the
-  call with `ORDER_UNAVAILABLE`; a replacement is never chosen automatically.
-  *Avoid*: best available order, cheapest listing as a fallback.
-- **Process-local recovery** — the duplicate protection this server offers: an unresolved creation is
-  remembered in memory, resumed with the same prepared intent and the same signature, and bounded at 100
-  unresolved records that are never evicted to admit a new write. It is discarded on restart by design.
-  *Avoid*: idempotency key (the caller supplies none), exactly-once.
-
 ## Trading
-
-The resource market, inside the game, and unrelated to the Cell marketplace above.
 
 - **Eviction** — a hub owner ending somebody else's open lot on that hub without taking or moving its
   goods. The seller keeps the whole remainder in escrow, while the lot stops selling and releases the
