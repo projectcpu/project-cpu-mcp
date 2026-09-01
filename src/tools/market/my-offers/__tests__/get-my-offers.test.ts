@@ -6,6 +6,7 @@ import {
     MAKER,
     marketProfileClientOver,
     offerWireFrom,
+    profileOfferFrom,
     reply,
 } from '../../../../services/market/__tests__/fixtures.js';
 import { MARKET_MY_OFFERS_PATH } from '../../../../services/market/constants.js';
@@ -65,7 +66,7 @@ describe('cpu_get_my_offers', () => {
             MarketOfferKind.Collection,
         ]);
         expect(payload(result).items.map((offer) => offer.tokenId)).toEqual(['1234', null, null]);
-        expect(payload(result).items[0]).toEqual(items[0]);
+        expect(payload(result).items[0]).toEqual(profileOfferFrom(items[0] ?? {}));
     });
 
     it('returns a short page that still carries another cursor', async () => {

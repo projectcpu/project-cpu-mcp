@@ -10,6 +10,8 @@ export const MARKET_MY_OFFERS_PATH = `${MARKET_BASE_PATH}/me/offers`;
 
 export const MARKET_MY_OFFERS_RECEIVED_PATH = `${MARKET_BASE_PATH}/me/offers-received`;
 
+export const MARKET_MY_ORDER_DETAILS_PATH = `${MARKET_BASE_PATH}/me/order-details`;
+
 export const MARKET_CURSOR_PARAM = 'cursor';
 
 export const MARKET_PAGE_SIZE_HINT = 50;

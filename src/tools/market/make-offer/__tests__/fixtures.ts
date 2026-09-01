@@ -75,6 +75,8 @@ export const SUBMIT_PATH = '/api/v1/market/offers/submit';
 
 export const MY_OFFERS_PATH = '/api/v1/market/me/offers';
 
+export const ORDER_DETAILS_PATH = '/api/v1/market/me/order-details';
+
 export function approvalData(amount: string = AMOUNT, spender: string = CONDUIT): Hex {
     return encodeFunctionData({
         abi: ERC20_ABI,
@@ -204,21 +206,17 @@ export function offersPageWire(items: Array<unknown>, nextCursor: string | null)
             const currency = offer.currency as typeof CURRENCY;
             return {
                 orderHash: offer.orderHash,
-                protocolAddress: offer.protocolAddress,
-                maker: offer.maker,
                 kind: offer.kind,
                 tokenId: offer.tokenId,
                 price: {
-                    currencyAddress: currency.address,
                     symbol: currency.symbol,
                     decimals: currency.decimals,
                     amountBaseUnits: offer.amount,
                 },
-                startsAt: offer.startTime,
-                expiresAt: offer.expirationTime,
             };
         }),
         cursor: nextCursor,
+        __details: items,
     };
 }
 
@@ -232,6 +230,7 @@ export enum MarketRoute {
     Prepare = 'prepare',
     Submit = 'submit',
     MyOffers = 'my-offers',
+    OrderDetails = 'order-details',
 }
 
 function routeOf(path: string): MarketRoute {
@@ -241,12 +240,16 @@ function routeOf(path: string): MarketRoute {
     if (path.startsWith(SUBMIT_PATH)) {
         return MarketRoute.Submit;
     }
+    if (path.startsWith(ORDER_DETAILS_PATH)) {
+        return MarketRoute.OrderDetails;
+    }
     return MarketRoute.MyOffers;
 }
 
 export class RoutedMarketTransport implements IMarketTransport {
     readonly calls: Array<RecordedCall> = [];
     private readonly queues: Map<MarketRoute, Array<FakeReply | Error>>;
+    private readonly orderDetails = new Map<string, Record<string, unknown>>();
 
     constructor(routes: Partial<Record<MarketRoute, Array<FakeReply | Error>>>) {
         this.queues = new Map(
@@ -262,6 +265,37 @@ export class RoutedMarketTransport implements IMarketTransport {
         this.calls.push({ path, method: options?.method ?? 'GET', body: options?.body ?? null });
 
         const route = routeOf(path);
+        if (route === MarketRoute.OrderDetails) {
+            const orderHash = path.slice(path.lastIndexOf('/') + 1);
+            const offer = this.orderDetails.get(orderHash);
+            if (offer === undefined) {
+                throw new Error(`no order details configured for ${orderHash}`);
+            }
+            const currency = offer.currency as typeof CURRENCY;
+            return {
+                status: 200,
+                headers: new Headers(),
+                data: {
+                    orderKind: 'offer',
+                    listing: null,
+                    offer: {
+                        orderHash: offer.orderHash,
+                        protocolAddress: offer.protocolAddress,
+                        maker: offer.maker,
+                        kind: offer.kind,
+                        tokenId: offer.tokenId,
+                        price: {
+                            currencyAddress: currency.address,
+                            symbol: currency.symbol,
+                            decimals: currency.decimals,
+                            amountBaseUnits: offer.amount,
+                        },
+                        startsAt: offer.startTime,
+                        expiresAt: offer.expirationTime,
+                    },
+                } as T,
+            };
+        }
         const queue = this.queues.get(route) ?? [];
         const next = queue.length > 1 ? queue.shift() : queue[0];
         if (next === undefined) {
@@ -269,6 +303,11 @@ export class RoutedMarketTransport implements IMarketTransport {
         }
         if (next instanceof Error) {
             throw next;
+        }
+
+        if (route === MarketRoute.MyOffers) {
+            const details = (next.data as { __details: Array<Record<string, unknown>> | undefined }).__details ?? [];
+            details.forEach((offer) => this.orderDetails.set(String(offer.orderHash), offer));
         }
 
         return { status: next.status, headers: new Headers(next.headers), data: next.data as T };

@@ -79,6 +79,8 @@ export const SUBMIT_PATH = '/api/v1/market/listings/submit';
 
 export const MY_LISTINGS_PATH = '/api/v1/market/me/listings';
 
+export const ORDER_DETAILS_PATH = '/api/v1/market/me/order-details';
+
 export interface FakeReply {
     status: number;
     data: unknown;
@@ -241,20 +243,16 @@ export function listingsPageWire(items: Array<unknown>, nextCursor: string | nul
             const currency = listing.currency as typeof CURRENCY;
             return {
                 orderHash: listing.orderHash,
-                protocolAddress: listing.protocolAddress,
-                maker: listing.maker,
                 tokenId: listing.tokenId,
                 price: {
-                    currencyAddress: currency.address,
                     symbol: currency.symbol,
                     decimals: currency.decimals,
                     amountBaseUnits: listing.price,
                 },
-                startsAt: listing.startTime,
-                expiresAt: listing.expirationTime,
             };
         }),
         cursor: nextCursor,
+        __details: items,
     };
 }
 
@@ -268,6 +266,7 @@ export enum MarketRoute {
     Prepare = 'prepare',
     Submit = 'submit',
     MyListings = 'my-listings',
+    OrderDetails = 'order-details',
 }
 
 function routeOf(path: string): MarketRoute {
@@ -277,12 +276,16 @@ function routeOf(path: string): MarketRoute {
     if (path.startsWith(SUBMIT_PATH)) {
         return MarketRoute.Submit;
     }
+    if (path.startsWith(ORDER_DETAILS_PATH)) {
+        return MarketRoute.OrderDetails;
+    }
     return MarketRoute.MyListings;
 }
 
 export class RoutedMarketTransport implements IMarketTransport {
     readonly calls: Array<RecordedCall> = [];
     private readonly queues: Map<MarketRoute, Array<FakeReply | Error>>;
+    private readonly orderDetails = new Map<string, Record<string, unknown>>();
 
     constructor(routes: Partial<Record<MarketRoute, Array<FakeReply | Error>>>) {
         this.queues = new Map(
@@ -298,6 +301,30 @@ export class RoutedMarketTransport implements IMarketTransport {
         this.calls.push({ path, method: options?.method ?? 'GET', body: options?.body ?? null });
 
         const route = routeOf(path);
+        if (route === MarketRoute.OrderDetails) {
+            const orderHash = path.slice(path.lastIndexOf('/') + 1);
+            const listing = this.orderDetails.get(orderHash);
+            if (listing === undefined) {
+                throw new Error(`no order details configured for ${orderHash}`);
+            }
+            return {
+                status: 200,
+                headers: new Headers(),
+                data: {
+                    orderKind: 'listing',
+                    listing: {
+                        orderHash: listing.orderHash,
+                        protocolAddress: listing.protocolAddress,
+                        maker: listing.maker,
+                        tokenId: listing.tokenId,
+                        price: priceWire(listing.price as string, listing.currency as typeof CURRENCY),
+                        startsAt: listing.startTime,
+                        expiresAt: listing.expirationTime,
+                    },
+                    offer: null,
+                } as T,
+            };
+        }
         const queue = this.queues.get(route) ?? [];
         const next = queue.length > 1 ? queue.shift() : queue[0];
         if (next === undefined) {
@@ -305,6 +332,11 @@ export class RoutedMarketTransport implements IMarketTransport {
         }
         if (next instanceof Error) {
             throw next;
+        }
+
+        if (route === MarketRoute.MyListings) {
+            const details = (next.data as { __details: Array<Record<string, unknown>> | undefined }).__details ?? [];
+            details.forEach((listing) => this.orderDetails.set(String(listing.orderHash), listing));
         }
 
         return { status: next.status, headers: new Headers(next.headers), data: next.data as T };

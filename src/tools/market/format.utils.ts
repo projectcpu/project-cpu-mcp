@@ -1,14 +1,8 @@
 import type { ListCellResult } from '../../services/market/listing.types.js';
 import type { MarketListingPage, MarketOfferPage } from '../../services/market/profile.schemas.js';
-import {
-    MarketActionStatus,
-    type CellMarketSnapshot,
-    type MarketCurrency,
-    type MarketListing,
-    type MarketOffer,
-} from '../../services/market/types.js';
+import { MarketActionStatus, type CellMarketSnapshot, type MarketCurrency } from '../../services/market/types.js';
 
-function describeMoney(amount: string, currency: MarketCurrency): string {
+function describeMoney(amount: string, currency: Pick<MarketCurrency, 'symbol' | 'decimals'>): string {
     return `${amount} ${currency.symbol} base units (decimals=${currency.decimals})`;
 }
 
@@ -20,20 +14,14 @@ function describeNextCursor(nextCursor: string | null): string {
     return `more pages remain — call again with cursor "${nextCursor}"`;
 }
 
-function describeListingRow(listing: MarketListing): string {
-    return (
-        `Cell ${listing.tokenId} — ${describeMoney(listing.price, listing.currency)}, ` +
-        `expires at ${listing.expirationTime} (order ${listing.orderHash})`
-    );
+function describeListingRow(listing: MarketListingPage['items'][number]): string {
+    return `Cell ${listing.tokenId} — ${describeMoney(listing.price, listing.currency)} (order ${listing.orderHash})`;
 }
 
-function describeOfferRow(offer: MarketOffer): string {
+function describeOfferRow(offer: MarketOfferPage['items'][number]): string {
     const bound = offer.tokenId === null ? 'no bound Cell (criteria offer)' : `Cell ${offer.tokenId}`;
 
-    return (
-        `[${offer.kind}] ${bound} — ${describeMoney(offer.amount, offer.currency)} from ${offer.maker}, ` +
-        `expires at ${offer.expirationTime} (order ${offer.orderHash})`
-    );
+    return `[${offer.kind}] ${bound} — ${describeMoney(offer.amount, offer.currency)} (order ${offer.orderHash})`;
 }
 
 export function summarizeListingPage(page: MarketListingPage): string {

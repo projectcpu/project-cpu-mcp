@@ -9,17 +9,21 @@ import {
     marketProfileClientOver,
     MAKER,
     offerWireFrom,
-    OTHER_MAKER,
-    pageWire,
+    profileListingFrom,
     reply,
 } from './fixtures.js';
-import { MARKET_MY_LISTINGS_PATH, MARKET_MY_OFFERS_PATH, MARKET_MY_OFFERS_RECEIVED_PATH } from '../constants.js';
+import {
+    MARKET_MY_LISTINGS_PATH,
+    MARKET_MY_OFFERS_PATH,
+    MARKET_MY_OFFERS_RECEIVED_PATH,
+    MARKET_MY_ORDER_DETAILS_PATH,
+} from '../constants.js';
 import { MarketError } from '../error.js';
 import { MarketErrorCode, MarketOfferKind } from '../types.js';
 
 const listingItem = listingWireFor('1234', `0x${'a'.repeat(64)}`);
 const offerItem = offerWireFrom(MarketOfferKind.Item, '1234', MAKER);
-const listingPage = pageWire([listingItem], null);
+const listingPage = { items: [profileListingFrom(listingItem)], nextCursor: null };
 
 describe('market profile reads', () => {
     it('adapts the backend HTTP profile DTO into the MCP page model', async () => {
@@ -28,17 +32,12 @@ describe('market profile reads', () => {
                 listings: [
                     {
                         orderHash: listingWire.orderHash,
-                        protocolAddress: listingWire.protocolAddress,
-                        maker: listingWire.maker,
                         tokenId: listingWire.tokenId,
                         price: {
-                            currencyAddress: listingWire.currency.address,
                             symbol: listingWire.currency.symbol,
                             decimals: listingWire.currency.decimals,
                             amountBaseUnits: listingWire.price,
                         },
-                        startsAt: listingWire.startTime,
-                        expiresAt: listingWire.expirationTime,
                     },
                 ],
                 cursor: null,
@@ -118,13 +117,41 @@ describe('market profile reads', () => {
         expect(page.nextCursor).toBe('page-2');
     });
 
-    it('preserves offers received from makers that are not the caller', async () => {
+    it('hydrates only the selected order hash when reconciliation needs full fields', async () => {
+        const transport = new FakeMarketTransport([
+            reply(200, {
+                orderKind: 'listing',
+                listing: {
+                    orderHash: listingWire.orderHash,
+                    protocolAddress: listingWire.protocolAddress,
+                    maker: listingWire.maker,
+                    tokenId: listingWire.tokenId,
+                    price: {
+                        currencyAddress: listingWire.currency.address,
+                        symbol: listingWire.currency.symbol,
+                        decimals: listingWire.currency.decimals,
+                        amountBaseUnits: listingWire.price,
+                    },
+                    startsAt: listingWire.startTime,
+                    expiresAt: listingWire.expirationTime,
+                },
+                offer: null,
+            }),
+        ]);
+
+        const details = await marketProfileClientOver(transport).getOrderDetails(listingWire.orderHash);
+
+        expect(details).toEqual({ orderKind: 'listing', order: listingWire });
+        expect(transport.calls[0]?.path).toBe(`${MARKET_MY_ORDER_DETAILS_PATH}/${listingWire.orderHash}`);
+    });
+
+    it('preserves item and collection offers received by the caller', async () => {
         const transport = new FakeMarketTransport([
             reply(
                 200,
                 backendOfferPageWire(
                     [
-                        offerWireFrom(MarketOfferKind.Item, '1234', OTHER_MAKER),
+                        offerWireFrom(MarketOfferKind.Item, '1234', MAKER),
                         offerWireFrom(MarketOfferKind.Collection, null, `0x${'3'.repeat(40)}`),
                     ],
                     null,
@@ -134,7 +161,8 @@ describe('market profile reads', () => {
 
         const page = await marketProfileClientOver(transport).getMyOffersReceived(null);
 
-        expect(page.items.map((offer) => offer.maker)).toEqual([OTHER_MAKER, `0x${'3'.repeat(40)}`]);
+        expect(page.items.map((offer) => offer.kind)).toEqual([MarketOfferKind.Item, MarketOfferKind.Collection]);
+        expect(page.items.map((offer) => offer.tokenId)).toEqual(['1234', null]);
     });
 
     it('rejects a page whose rows do not match the wire contract', async () => {

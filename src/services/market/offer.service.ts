@@ -380,9 +380,30 @@ export class MarketOfferService implements IMarketOfferService {
             const offers = await this.profile.getMyOffers(cursor);
             this.lastProfileReadAt = Date.now();
 
-            const match = offers.items.find((offer) => isEquivalentActiveOffer(offer, request, wallet, currency));
-            if (match !== undefined) {
-                return { outcome: MarketScanOutcome.Found, offer: match };
+            const candidates = offers.items.filter(
+                (offer) =>
+                    offer.kind === MarketOfferKind.Item &&
+                    offer.tokenId === request.tokenId &&
+                    offer.amount === request.amount,
+            );
+            for (const candidate of candidates) {
+                try {
+                    const details = await this.profile.getOrderDetails(candidate.orderHash);
+                    if (
+                        details.orderKind === 'offer' &&
+                        isEquivalentActiveOffer(details.order, request, wallet, currency)
+                    ) {
+                        return { outcome: MarketScanOutcome.Found, offer: details.order };
+                    }
+                } catch (error) {
+                    if (
+                        error instanceof MarketError &&
+                        (error.code === MarketErrorCode.StaleListing || error.code === MarketErrorCode.StaleOffer)
+                    ) {
+                        continue;
+                    }
+                    throw error;
+                }
             }
 
             cursor = offers.nextCursor;

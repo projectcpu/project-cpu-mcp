@@ -6,6 +6,7 @@ import {
     FakeMarketTransport,
     listingWireFor,
     marketProfileClientOver,
+    profileListingFrom,
     reply,
 } from '../../../../services/market/__tests__/fixtures.js';
 import { MARKET_MY_LISTINGS_PATH } from '../../../../services/market/constants.js';
@@ -89,12 +90,12 @@ describe('cpu_get_my_listings', () => {
         expect(result.content[0]?.text).toMatch(/no listings/i);
     });
 
-    it('preserves base-unit prices, order hashes, protocol addresses and Unix-second times verbatim', async () => {
+    it('preserves the base-unit price, currency metadata and order hash', async () => {
         const transport = new FakeMarketTransport([reply(200, backendListingPageWire([LISTING_A], null))]);
 
         const result = await handlerOver(transport)({ cursor: null } as never);
 
-        expect(payload(result).items[0]).toEqual(LISTING_A);
+        expect(payload(result).items[0]).toEqual(profileListingFrom(LISTING_A));
     });
 
     it('surfaces an invalid page as a terminal market error', async () => {

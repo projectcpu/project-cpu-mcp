@@ -116,6 +116,32 @@ export function pageWire(items: Array<unknown>, nextCursor: string | null): Reco
     return { items, nextCursor };
 }
 
+function profileCurrencyFrom(item: Record<string, unknown>): Record<string, unknown> {
+    const currency = item.currency as typeof CURRENCY;
+    return { symbol: currency.symbol, decimals: currency.decimals };
+}
+
+export function profileListingFrom(item: Record<string, unknown>): Record<string, unknown> {
+    return {
+        orderHash: item.orderHash,
+        chainId: LAUNCH_CHAIN_ID,
+        tokenId: item.tokenId,
+        price: item.price,
+        currency: profileCurrencyFrom(item),
+    };
+}
+
+export function profileOfferFrom(item: Record<string, unknown>): Record<string, unknown> {
+    return {
+        orderHash: item.orderHash,
+        chainId: LAUNCH_CHAIN_ID,
+        kind: item.kind,
+        tokenId: item.tokenId,
+        amount: item.amount,
+        currency: profileCurrencyFrom(item),
+    };
+}
+
 function backendPriceFrom(item: Record<string, unknown>): Record<string, unknown> {
     const currency = item.currency as typeof CURRENCY;
     return {
@@ -148,14 +174,35 @@ export function backendListingPageWire(
     listings: Array<Record<string, unknown>>,
     cursor: string | null,
 ): Record<string, unknown> {
-    return { listings: listings.map(backendOrderFrom), cursor };
+    return {
+        listings: listings.map((listing) => ({
+            orderHash: listing.orderHash,
+            tokenId: listing.tokenId,
+            price: {
+                ...profileCurrencyFrom(listing),
+                amountBaseUnits: listing.price,
+            },
+        })),
+        cursor,
+    };
 }
 
 export function backendOfferPageWire(
     offers: Array<Record<string, unknown>>,
     cursor: string | null,
 ): Record<string, unknown> {
-    return { offers: offers.map((offer) => ({ ...backendOrderFrom(offer), kind: offer.kind })), cursor };
+    return {
+        offers: offers.map((offer) => ({
+            orderHash: offer.orderHash,
+            kind: offer.kind,
+            tokenId: offer.tokenId,
+            price: {
+                ...profileCurrencyFrom(offer),
+                amountBaseUnits: offer.amount,
+            },
+        })),
+        cursor,
+    };
 }
 
 export function listingWireFor(tokenId: string, orderHash: string): Record<string, unknown> {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { marketListingPageSchema, marketOfferPageSchema } from '../../services/market/profile.schemas.js';
 import {
     baseUnitAmountSchema,
     cellMarketSnapshotSchema,
@@ -8,7 +9,6 @@ import {
     marketCurrencySchema,
     marketListingSchema,
     marketOfferSchema,
-    marketPageSchema,
     MarketActionStage,
     MarketActionStatus,
     MarketOrderKind,
@@ -27,9 +27,9 @@ const approvalHashesSchema = z.array(transactionHashSchema);
 
 export const getCellMarketOutputSchema = cellMarketSnapshotSchema.strict();
 
-export const getMyListingsOutputSchema = marketPageSchema(marketListingSchema).strict();
+export const getMyListingsOutputSchema = marketListingPageSchema.strict();
 
-export const getMyOffersOutputSchema = marketPageSchema(marketOfferSchema).strict();
+export const getMyOffersOutputSchema = marketOfferPageSchema.strict();
 
 export const listCellOutputSchema = actionEnvelopeSchema
     .extend({

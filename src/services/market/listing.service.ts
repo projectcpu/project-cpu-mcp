@@ -331,9 +331,24 @@ export class MarketListingService implements IMarketListingService {
             const listings = await this.profile.getMyListings(cursor);
             this.lastProfileReadAt = Date.now();
 
-            const match = listings.items.find((listing) => isEquivalentActiveListing(listing, request, wallet));
-            if (match !== undefined) {
-                return { outcome: MarketScanOutcome.Found, listing: match };
+            const candidates = listings.items.filter(
+                (listing) => listing.tokenId === request.tokenId && listing.price === request.price,
+            );
+            for (const candidate of candidates) {
+                try {
+                    const details = await this.profile.getOrderDetails(candidate.orderHash);
+                    if (details.orderKind === 'listing' && isEquivalentActiveListing(details.order, request, wallet)) {
+                        return { outcome: MarketScanOutcome.Found, listing: details.order };
+                    }
+                } catch (error) {
+                    if (
+                        error instanceof MarketError &&
+                        (error.code === MarketErrorCode.StaleListing || error.code === MarketErrorCode.StaleOffer)
+                    ) {
+                        continue;
+                    }
+                    throw error;
+                }
             }
 
             cursor = listings.nextCursor;

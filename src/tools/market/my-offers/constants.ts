@@ -10,6 +10,6 @@ export const GET_MY_OFFERS_DESCRIPTION = [
     `when \`nextCursor\` is null — a page with fewer than ${MARKET_PAGE_SIZE_HINT} rows may still have another page,`,
     'so never decide you are done by counting rows.',
     'Every amount is a base-unit decimal integer STRING (never a number), paired with a `currency` carrying the',
-    'address, symbol and decimals you need to read it. Times are Unix seconds. Ordinary map and Cell reads carry',
-    'no marketplace data — ask here.',
+    'symbol and decimals you need to read it. Every row carries the exact `orderHash` needed to cancel it.',
+    'Ordinary map and Cell reads carry no marketplace data — ask here.',
 ].join(' ');

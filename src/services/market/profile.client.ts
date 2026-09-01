@@ -1,17 +1,24 @@
 import type { z } from 'zod';
 
-import { MARKET_MY_LISTINGS_PATH, MARKET_MY_OFFERS_PATH, MARKET_MY_OFFERS_RECEIVED_PATH } from './constants.js';
+import {
+    MARKET_MY_LISTINGS_PATH,
+    MARKET_MY_OFFERS_PATH,
+    MARKET_MY_OFFERS_RECEIVED_PATH,
+    MARKET_MY_ORDER_DETAILS_PATH,
+} from './constants.js';
 import { MarketError } from './error.js';
 import {
     marketListingPageResponseSchema,
+    marketOrderDetailsResponseSchema,
     marketOfferPageResponseSchema,
     type IMarketProfileReader,
     type MarketListingPage,
+    type MarketOrderDetails,
     type MarketOfferPage,
     type MarketProfileClientOptions,
 } from './profile.schemas.js';
 import { pagePath } from './profile.utils.js';
-import { cursorSchema, MarketActionStage, MarketErrorCode, type IMarketApiClient } from './types.js';
+import { cursorSchema, MarketActionStage, MarketErrorCode, orderHashSchema, type IMarketApiClient } from './types.js';
 import type { ILogger } from '../../logger/types.js';
 
 export class MarketProfileClient implements IMarketProfileReader {
@@ -50,6 +57,18 @@ export class MarketProfileClient implements IMarketProfileReader {
             marketOfferPageResponseSchema(this.chainId),
             'the offers standing on your Cells',
         );
+    }
+
+    async getOrderDetails(orderHash: string): Promise<MarketOrderDetails> {
+        const hash = orderHashSchema.parse(orderHash);
+        return this.client.send({
+            path: `${MARKET_MY_ORDER_DETAILS_PATH}/${hash}`,
+            method: 'GET',
+            body: null,
+            schema: marketOrderDetailsResponseSchema(this.chainId),
+            stage: MarketActionStage.Read,
+            label: `The marketplace order ${hash}`,
+        });
     }
 
     private async readPage<TSchema extends z.ZodTypeAny>(

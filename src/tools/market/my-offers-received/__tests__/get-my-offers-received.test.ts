@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
     backendOfferPageWire,
     FakeMarketTransport,
-    MAKER,
     marketProfileClientOver,
     offerWireFrom,
     OTHER_MAKER,
@@ -15,8 +14,6 @@ import type { MarketOfferPage } from '../../../../services/market/profile.schema
 import { MarketErrorCode, MarketOfferKind } from '../../../../services/market/types.js';
 import { captureMarketTool } from '../../__tests__/fixtures.js';
 import { createGetMyOffersReceivedTool } from '../my-offers-received.js';
-
-const THIRD_MAKER = `0x${'3'.repeat(40)}`;
 
 function handlerOver(transport: FakeMarketTransport): (args: never) => Promise<{ content: Array<{ text: string }> }> {
     return captureMarketTool(createGetMyOffersReceivedTool, { marketProfile: marketProfileClientOver(transport) })
@@ -53,22 +50,22 @@ describe('cpu_get_my_offers_received', () => {
         expect(transport.calls[0]?.path).toBe(`${MARKET_MY_OFFERS_RECEIVED_PATH}?cursor=page-3`);
     });
 
-    it('keeps every offer whose maker is another wallet', async () => {
+    it('keeps every received offer kind and its optional bound Cell', async () => {
         const items = [
             offerWireFrom(MarketOfferKind.Item, '1234', OTHER_MAKER),
-            offerWireFrom(MarketOfferKind.Collection, null, THIRD_MAKER),
-            offerWireFrom(MarketOfferKind.Trait, null, MAKER),
+            offerWireFrom(MarketOfferKind.Collection, null, `0x${'3'.repeat(40)}`),
+            offerWireFrom(MarketOfferKind.Trait, null, `0x${'1'.repeat(40)}`),
         ];
         const transport = new FakeMarketTransport([reply(200, backendOfferPageWire(items, null))]);
 
         const result = await handlerOver(transport)({ cursor: null } as never);
 
-        expect(payload(result).items.map((offer) => offer.maker)).toEqual([OTHER_MAKER, THIRD_MAKER, MAKER]);
         expect(payload(result).items.map((offer) => offer.kind)).toEqual([
             MarketOfferKind.Item,
             MarketOfferKind.Collection,
             MarketOfferKind.Trait,
         ]);
+        expect(payload(result).items.map((offer) => offer.tokenId)).toEqual(['1234', null, null]);
     });
 
     it('returns a short page that still carries another cursor', async () => {
