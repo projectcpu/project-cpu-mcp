@@ -8,9 +8,12 @@ import { PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
 import type { AppContext } from '../types.js';
 
 const PUBLIC_TOOLS: ReadonlyArray<string> = [
+    'cpu_accept_cell_offer',
     'cpu_authenticate',
     'cpu_build',
+    'cpu_buy_cell',
     'cpu_buy_lot',
+    'cpu_cancel_order',
     'cpu_claim_craft',
     'cpu_claim_mining',
     'cpu_craft',
@@ -25,6 +28,7 @@ const PUBLIC_TOOLS: ReadonlyArray<string> = [
     'cpu_get_balance',
     'cpu_get_building',
     'cpu_get_cell',
+    'cpu_get_cell_market',
     'cpu_get_changes',
     'cpu_get_craft_status',
     'cpu_get_game_config',
@@ -34,6 +38,9 @@ const PUBLIC_TOOLS: ReadonlyArray<string> = [
     'cpu_get_market_index',
     'cpu_get_markets',
     'cpu_get_mining_status',
+    'cpu_get_my_listings',
+    'cpu_get_my_offers',
+    'cpu_get_my_offers_received',
     'cpu_get_resource',
     'cpu_get_syndicate',
     'cpu_get_syndicate_membership',
@@ -41,12 +48,14 @@ const PUBLIC_TOOLS: ReadonlyArray<string> = [
     'cpu_get_transport_status',
     'cpu_join_syndicate',
     'cpu_leave_syndicate',
+    'cpu_list_cell',
     'cpu_list_fills',
     'cpu_list_lots',
     'cpu_list_my_lots',
     'cpu_list_my_transports',
     'cpu_list_recipes',
     'cpu_list_syndicates',
+    'cpu_make_cell_offer',
     'cpu_mint_cell',
     'cpu_next_hops',
     'cpu_quote_buy',
@@ -66,6 +75,32 @@ const PUBLIC_TOOLS: ReadonlyArray<string> = [
     'cpu_upgrade',
     'cpu_withdraw',
 ];
+
+const MARKETPLACE_READS: ReadonlyArray<string> = [
+    'cpu_get_cell_market',
+    'cpu_get_my_listings',
+    'cpu_get_my_offers',
+    'cpu_get_my_offers_received',
+];
+
+const MARKETPLACE_ACTIONS: ReadonlyArray<string> = [
+    'cpu_list_cell',
+    'cpu_make_cell_offer',
+    'cpu_buy_cell',
+    'cpu_accept_cell_offer',
+    'cpu_cancel_order',
+];
+
+/**
+ * A Cell marketplace action is one player intent: prepare, approval, signature, submit, broadcast,
+ * receipt and verification are stages inside it and never tools of their own. A name matching this
+ * is a half-step through which money could move without the intent being complete.
+ */
+const HALF_STEP_TOOL =
+    /^cpu_(prepare|submit|approve|approval|fulfil|fulfill|confirm|sign)_\w*(cell|order|listing|offer|market)/u;
+
+/** The marketplace surface as an agent meets it: every tool that speaks about the land market. */
+const NFT_MARKETPLACE_TOOL = /NFT marketplace/iu;
 
 const RETIRED_TOOLS: ReadonlyArray<string> = ['cpu_cancel_lot'];
 
@@ -240,5 +275,38 @@ describe('the frozen-hub vocabulary no shipped string may use', () => {
 
         expect(tools.filter((tool) => HUB_CALLED_FROZEN.test(tool.description)).map((tool) => tool.name)).toEqual([]);
         expect(SERVER_INSTRUCTIONS).not.toMatch(HUB_CALLED_FROZEN);
+    });
+});
+
+describe('the Cell marketplace surface', () => {
+    it('is exactly four reads and five complete actions', async () => {
+        const tools = await bootServer();
+        const marketplace = tools.filter((tool) => NFT_MARKETPLACE_TOOL.test(tool.description));
+
+        expect(marketplace.map((tool) => tool.name).sort()).toEqual(
+            [...MARKETPLACE_READS, ...MARKETPLACE_ACTIONS].sort(),
+        );
+    });
+
+    it('exposes no prepare, submit, approval, fulfilment or confirmation tool', async () => {
+        const names = (await bootServer()).map((tool) => tool.name);
+
+        expect(names.filter((name) => HALF_STEP_TOOL.test(name))).toEqual([]);
+    });
+
+    it('tells the agent in every action description that this is land, not resources', async () => {
+        const tools = await bootServer();
+        const silent = MARKETPLACE_ACTIONS.filter((name) => {
+            const description = tools.find((tool) => tool.name === name)?.description ?? '';
+            return !/land market/u.test(description) || !/cpu_(create_lot|buy_lot|return_lot)/u.test(description);
+        });
+
+        expect(silent).toEqual([]);
+    });
+
+    it('separates Cell marketplace vocabulary from Lots in the server instructions', () => {
+        expect(SERVER_INSTRUCTIONS).toMatch(/cpu_get_cell_market/u);
+        expect(SERVER_INSTRUCTIONS).toMatch(/Lots?/u);
+        expect(SERVER_INSTRUCTIONS).toMatch(/Market order/u);
     });
 });

@@ -652,6 +652,9 @@ class ScriptedRevealRequests implements IRevealRequestsReader {
 }
 
 class ScriptedWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     public readonly sent: Array<TransactionRequest> = [];
     public readonly estimated: Array<GasEstimateRequest> = [];
     constructor(
@@ -710,6 +713,9 @@ class ScriptedWallet implements WalletManager, WalletProvider {
         return 0n;
     }
     async signMessage(): Promise<Hex> {
+        return '0x';
+    }
+    async signTypedData(): Promise<Hex> {
         return '0x';
     }
 }

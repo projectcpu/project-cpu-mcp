@@ -15,6 +15,7 @@ import {
     type EvmWalletManagerOptions,
     type GasEstimateRequest,
     type ReadContractParams,
+    type SignTypedDataRequest,
     type TransactionRequest,
     type TxReceipt,
     TxStatus,
@@ -92,6 +93,11 @@ export class EvmWalletManager implements WalletManager {
         };
     }
 
+    async getTransactionSender(hash: Hash): Promise<Address | null> {
+        const transaction = await this.publicClient.getTransaction({ hash });
+        return transaction.from;
+    }
+
     async readContract(params: ReadContractParams): Promise<unknown> {
         return this.publicClient.readContract({
             address: params.address,
@@ -108,5 +114,14 @@ export class EvmWalletManager implements WalletManager {
     async signMessage(message: string): Promise<Hex> {
         this.logger.debug('signing message with EVM key');
         return this.account.signMessage({ message });
+    }
+
+    async signTypedData(request: SignTypedDataRequest): Promise<Hex> {
+        this.logger.debug('signing typed data with EVM key', {
+            primaryType: request.primaryType,
+            verifyingContract: request.domain.verifyingContract,
+            chainId: request.domain.chainId,
+        });
+        return this.account.signTypedData(request as unknown as Parameters<PrivateKeyAccount['signTypedData']>[0]);
     }
 }

@@ -31,6 +31,7 @@ import { BalanceService } from './services/balance.service.js';
 import { BuildService } from './services/build.service.js';
 import { CellClient } from './services/cell.client.js';
 import { CraftService } from './services/craft.service.js';
+import { createMarketServices } from './services/market/factory.js';
 import { MiningService } from './services/mining.service.js';
 import { MintService } from './services/mint.service.js';
 import { RevealFulfilmentService } from './services/reveal-fulfilment.service.js';
@@ -60,7 +61,7 @@ import { createWalletProvider } from './wallet/index.js';
 async function main(): Promise<void> {
     const config = loadEnvConfig();
     const logger = createLogger();
-    logger.info('starting MCP server', { walletMode: config.WALLET_MODE });
+    logger.info('starting MCP server', { network: config.NETWORK });
 
     const storage = new SessionStorage(os.homedir(), logger.child('session:storage'));
     const session = new SessionManager({
@@ -149,6 +150,14 @@ async function main(): Promise<void> {
         wallet,
         tradeClient,
         logger: logger.child('trade:rules'),
+    });
+    const marketplace = createMarketServices({
+        api,
+        appConfig,
+        wallet,
+        network: config.NETWORK,
+        coordinator: null,
+        logger,
     });
     const syndicateRegistry = new SyndicateRegistryClient({ contracts, logger: logger.child('syndicate:client') });
     const syndicate = new SyndicateService({
@@ -291,6 +300,7 @@ async function main(): Promise<void> {
         route,
         trade,
         tradeRules,
+        ...marketplace,
         syndicate,
         swap,
         mint,

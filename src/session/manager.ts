@@ -1,6 +1,6 @@
-import type { ILogger } from '../logger/types.js';
-import { WalletMode } from '../types.js';
 import { type ISessionStorage, type SessionData, type SessionManagerOptions, SessionStatus } from './types.js';
+import type { ILogger } from '../logger/types.js';
+import type { WalletMode } from '../types.js';
 
 export class SessionManager {
     private session: SessionData | null = null;

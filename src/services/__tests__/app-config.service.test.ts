@@ -15,6 +15,7 @@ import { AppConfigService } from '../app-config.service.js';
 import type { AppConfig, CatalogBuildingView } from '../types.js';
 
 const CPU_HOOK = '0x4444444444444444444444444444444444444444';
+const USDG = '0x1111111111111111111111111111111111111111';
 const CELL = '0x5555555555555555555555555555555555555555';
 const ADAPTER = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa';
 
@@ -37,6 +38,7 @@ function makeResponse(overrides: Partial<AppConfigFixture> = {}): AppConfigFixtu
         chainId: 4663,
         contracts: {
             land: '0x3333333333333333333333333333333333333333',
+            usdg: USDG,
             cpuToken: '0x2222222222222222222222222222222222222222',
             cpuHook: CPU_HOOK,
             cell: CELL,
@@ -210,6 +212,7 @@ describe('AppConfigService', () => {
         expect(first.chainId).toBe(4663);
         expect(first.network).toBe(Network.ROBINHOOD);
         expect(first.contracts.cell).toBe(CELL);
+        expect(first.contracts.usdg).toBe(USDG);
         expect(first.contracts.cpuHook).toBe(CPU_HOOK);
         expect(first.resources[5]).toBe('Iron');
         expect(first.transport.moveFeeFloors).toEqual({ 5: '0.1' });

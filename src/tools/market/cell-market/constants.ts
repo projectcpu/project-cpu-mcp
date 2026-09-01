@@ -1,0 +1,15 @@
+export const GET_CELL_MARKET_DESCRIPTION = [
+    'The NFT marketplace snapshot for ONE Cell: the best (lowest) active listing anyone has published for it and',
+    'the best (highest) active offer standing against it. This is the land market — Cells traded as NFTs for a',
+    'configured currency — and it is entirely separate from `cpu_get_markets` / `cpu_list_lots`, which trade',
+    'RESOURCES for $CPU inside the game.',
+    'BOTH SIDES ARE INDEPENDENTLY NULLABLE. `bestListing: null` means nobody is selling that Cell right now;',
+    '`bestOffer: null` means nobody is bidding on it. Neither null is an error and neither implies the other.',
+    'An offer carries its `kind`: `item` (bound to this exact Cell), `trait`, or `collection`. A trait or',
+    'collection offer is not made for this Cell specifically, so its `tokenId` may be null — it would still be',
+    'fillable with this Cell.',
+    'Every price is a base-unit decimal integer STRING (never a number), paired with a `currency` carrying the',
+    'address, symbol and decimals you need to read it. Times are Unix seconds.',
+    'The snapshot is about 10 seconds old; re-reading it faster than that returns the same picture and burns the',
+    'read budget. Ordinary map and Cell reads carry no marketplace data — ask here.',
+].join(' ');

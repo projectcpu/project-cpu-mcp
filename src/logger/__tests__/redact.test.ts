@@ -85,6 +85,15 @@ describe('redactValue', () => {
         expect(redactValue(input)).toEqual(input);
     });
 
+    it('redacts an order signature and the prepared order it belongs to', () => {
+        const input = {
+            tokenId: '1234',
+            signature: `0x${'ab'.repeat(65)}`,
+            prepared: { prepareId: 'a'.repeat(64), order: { salt: '1' } },
+        };
+        expect(redactValue(input)).toEqual({ tokenId: '1234', signature: REDACTED, prepared: REDACTED });
+    });
+
     it('redacts whole subtree when key matches, ignoring its inner shape', () => {
         const input = { secret: { nested: { deep: 'x' } } };
         expect(redactValue(input)).toEqual({ secret: REDACTED });

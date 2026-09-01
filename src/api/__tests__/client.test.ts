@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NoopLogger } from '../../logger/noop.logger.js';
+import type { ILogger } from '../../logger/types.js';
 import type { IJwtSession } from '../../session/types.js';
 import { AuthenticationRequiredError } from '../authentication-required.error.js';
 import { ApiClient } from '../client.js';
@@ -9,8 +10,8 @@ const logger = new NoopLogger();
 
 const mockSession: IJwtSession = { clearJwt: vi.fn() };
 
-function createClient(): ApiClient {
-    return new ApiClient({ baseUrl: 'https://api.test.com', session: mockSession, logger });
+function createClient(overLogger: ILogger = logger): ApiClient {
+    return new ApiClient({ baseUrl: 'https://api.test.com', session: mockSession, logger: overLogger });
 }
 
 describe('ApiClient', () => {
@@ -56,25 +57,60 @@ describe('ApiClient', () => {
             mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
 
             const client = createClient();
-            await client.request('/test', { method: 'POST', body: { signerAddress: '0xABC' } });
+            await client.request('/test', { method: 'POST', body: { address: '0xABC' } });
 
             expect(mockFetch).toHaveBeenCalledWith(
                 expect.any(String),
                 expect.objectContaining({
                     method: 'POST',
-                    body: '{"signerAddress":"0xABC"}',
+                    body: '{"address":"0xABC"}',
                 }),
             );
         });
 
         it('should return status and parsed data', async () => {
-            const payload = { deviceCode: 'abc', userCode: 'XXXX-YYYY' };
+            const payload = { nonce: 'abc123def456', issuedAt: '2026-01-01T00:00:00.000Z' };
             mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(payload), { status: 200 }));
 
             const client = createClient();
             const result = await client.request<typeof payload>('/test');
 
-            expect(result).toEqual({ status: 200, data: payload });
+            expect(result).toEqual({ status: 200, data: payload, headers: expect.any(Headers) });
+        });
+
+        it('debug-logs the exact action and parsed response body at the HTTP boundary', async () => {
+            const requestBody = { tokenId: '1', expectedOrderHash: `0x${'e'.repeat(64)}`, maxAmount: '10000' };
+            const responseBody = {
+                statusCode: 400,
+                error: 'Bad Request',
+                message: ['maxAmount: Required'],
+            };
+            const debug = vi.fn();
+            const observingLogger = {
+                debug,
+                info: vi.fn(),
+                warn: vi.fn(),
+                error: vi.fn(),
+                child: vi.fn(),
+            } as unknown as ILogger;
+            mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(responseBody), { status: 400 }));
+
+            await createClient(observingLogger).request('/api/v1/market/purchases/prepare', {
+                method: 'POST',
+                body: requestBody,
+            });
+
+            expect(debug).toHaveBeenNthCalledWith(1, 'api request', {
+                method: 'POST',
+                path: '/api/v1/market/purchases/prepare',
+                body: requestBody,
+            });
+            expect(debug).toHaveBeenNthCalledWith(2, 'api response', {
+                method: 'POST',
+                path: '/api/v1/market/purchases/prepare',
+                status: 400,
+                body: responseBody,
+            });
         });
 
         it('should return non-200 status without throwing', async () => {
@@ -172,6 +208,72 @@ describe('ApiClient', () => {
             await client.request('/test');
             expect(client.getServerHealth().reachable).toBe(true);
             expect(client.getServerHealth().reason).toBeNull();
+        });
+    });
+
+    describe('response headers', () => {
+        it('hands the caller the response headers alongside the status, so Retry-After can be read', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'retry-after': '7' } }),
+            );
+
+            const client = createClient();
+            const result = await client.request('/test');
+
+            expect(result.status).toBe(200);
+            expect(result.headers.get('retry-after')).toBe('7');
+        });
+
+        it('preserves the headers of an error response too', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response(JSON.stringify({ code: 'upstreamRateLimited', message: 'slow down' }), {
+                    status: 429,
+                    headers: { 'retry-after': '30' },
+                }),
+            );
+
+            const client = createClient();
+            const result = await client.request('/test');
+
+            expect(result.status).toBe(429);
+            expect(result.headers.get('retry-after')).toBe('30');
+            expect(result.data).toEqual({ code: 'upstreamRateLimited', message: 'slow down' });
+        });
+    });
+
+    describe('bare rate limiting', () => {
+        it('returns a non-JSON 429 as a status and headers rather than failing to parse it', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response('<html>Too Many Requests</html>', {
+                    status: 429,
+                    headers: { 'content-type': 'text/html', 'retry-after': '60' },
+                }),
+            );
+
+            const client = createClient();
+            const result = await client.request('/test');
+
+            expect(result.status).toBe(429);
+            expect(result.headers.get('retry-after')).toBe('60');
+            expect(result.data).toBeNull();
+        });
+
+        it('does not treat a bare 429 as proof that the whole game API is unreachable', async () => {
+            mockFetch.mockResolvedValueOnce(new Response('', { status: 429, headers: { 'retry-after': '60' } }));
+
+            const client = createClient();
+            await client.request('/test');
+
+            expect(client.getServerHealth().reachable).toBe(true);
+        });
+
+        it('still rejects a non-JSON body on any other status', async () => {
+            mockFetch.mockResolvedValueOnce(
+                new Response('<html>err</html>', { status: 502, headers: { 'content-type': 'text/html' } }),
+            );
+
+            const client = createClient();
+            await expect(client.request('/test')).rejects.toThrow(/non-JSON/i);
         });
     });
 

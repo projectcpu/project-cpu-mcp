@@ -31,6 +31,25 @@ export interface DecodedRevert {
     args: ReadonlyArray<unknown>;
 }
 
+export interface TypedDataField {
+    name: string;
+    type: string;
+}
+
+export interface TypedDataDomain {
+    name: string;
+    version: string;
+    chainId: number;
+    verifyingContract: Address;
+}
+
+export interface SignTypedDataRequest {
+    domain: TypedDataDomain;
+    types: Record<string, ReadonlyArray<TypedDataField>>;
+    primaryType: string;
+    message: Record<string, unknown>;
+}
+
 export interface ReadContractParams {
     address: Address;
     abi: Abi;
@@ -45,10 +64,13 @@ export interface WalletManager {
     estimateGas(tx: GasEstimateRequest): Promise<bigint>;
     getGasPrice(): Promise<bigint>;
     waitForReceipt(hash: Hash): Promise<TxReceipt>;
+    /** The `from` address of a mined transaction; a Seaport order event never carries its sender. */
+    getTransactionSender(hash: Hash): Promise<Address | null>;
     readContract(params: ReadContractParams): Promise<unknown>;
     /** Native gas balance of the wallet address, in wei. */
     getBalance(): Promise<bigint>;
     signMessage(message: string): Promise<Hex>;
+    signTypedData(request: SignTypedDataRequest): Promise<Hex>;
 }
 
 export interface WalletProvider {

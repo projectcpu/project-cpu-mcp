@@ -1,5 +1,10 @@
 import { decodeJwt } from 'jose';
 
+export function jwtAddressOf(jwt: string): string | null {
+    const { address } = decodeJwt(jwt);
+    return typeof address === 'string' ? address : null;
+}
+
 /**
  * Returns true if the JWT's `exp` claim is in the past relative to `nowMs`.
  * JWTs without an `exp` claim are treated as non-expiring — the server decides on 401.

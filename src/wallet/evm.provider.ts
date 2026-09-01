@@ -10,9 +10,6 @@ export class EvmWalletProvider implements WalletProvider {
     private readonly wallet: WalletManager;
 
     constructor(config: EnvConfig, logger: ILogger) {
-        if (config.PRIVATE_KEY === null) {
-            throw new Error('EVM mode requires PRIVATE_KEY in env');
-        }
         this.wallet = new EvmWalletManager({
             privateKey: config.PRIVATE_KEY as Hex,
             chainId: chainIdForNetwork(config.NETWORK),

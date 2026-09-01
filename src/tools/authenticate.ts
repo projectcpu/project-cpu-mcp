@@ -1,8 +1,7 @@
 import { PayboxCoordinator } from '../paybox/auth/coordinator.js';
 import { PayboxWalletSelectionError } from '../paybox/errors.js';
 import { PayboxErrorCode } from '../paybox/types.js';
-import type { AppContext } from '../types.js';
-import { WalletMode } from '../types.js';
+import { WalletMode, type AppContext } from '../types.js';
 import { PERSONA_BRIEF_MARKER } from './persona/constants.js';
 import { authenticateInputSchema, type ToolRegistrar } from './types.js';
 

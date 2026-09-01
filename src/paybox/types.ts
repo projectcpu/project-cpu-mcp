@@ -6,7 +6,13 @@ import { z } from 'zod';
 
 import { isPbxk1 } from './auth/signing-key.utils.js';
 import type { ILogger } from '../logger/types.js';
-import type { GasEstimateRequest, ReadContractParams, TxReceipt, WalletManager } from '../wallet/types.js';
+import type {
+    GasEstimateRequest,
+    ReadContractParams,
+    SignTypedDataRequest,
+    TxReceipt,
+    WalletManager,
+} from '../wallet/types.js';
 
 export enum PayboxAuthStatus {
     Authenticated = 'authenticated',
@@ -66,6 +72,7 @@ export enum PayboxSdkOperation {
     ListEligibleAutonomousEvmGrants = 'list_eligible_autonomous_evm_grants',
     RefreshTokens = 'refresh_tokens',
     SignMessage = 'sign_message',
+    SignTypedData = 'sign_typed_data',
     SignTransaction = 'sign_transaction',
 }
 
@@ -334,6 +341,12 @@ export interface IPayboxSdkAdapter {
         authority: PayboxWalletAuthority,
     ): WalletManager;
     signMessage(tokens: PayboxTokens, signingKey: string, credentialId: string, message: string): Promise<string>;
+    signTypedData(
+        tokens: PayboxTokens,
+        signingKey: string,
+        credentialId: string,
+        request: SignTypedDataRequest,
+    ): Promise<Hex>;
     signTransaction(
         tokens: PayboxTokens,
         signingKey: string,
@@ -342,10 +355,16 @@ export interface IPayboxSdkAdapter {
     ): Promise<Hex>;
 }
 
+export type IPayboxCoordinatorSdkAdapter = Pick<
+    IPayboxSdkAdapter,
+    'refreshTokens' | 'listEligibleAutonomousEvmGrants' | 'createWallet'
+> &
+    Partial<Pick<IPayboxSdkAdapter, 'signMessage' | 'signTypedData' | 'signTransaction'>>;
+
 export interface PayboxCoordinatorOptions {
     storage: IPayboxAuthStorage;
     flow: PayboxAuthFlow;
-    sdk: IPayboxSdkAdapter;
+    sdk: IPayboxCoordinatorSdkAdapter;
     authenticator: PayboxSiweAuthenticator;
 }
 
@@ -383,6 +402,7 @@ export interface IPayboxRpcClient {
     sendRawTransaction(serializedTransaction: Hex): Promise<Hash>;
     getGasPrice(): Promise<bigint>;
     waitForReceipt(hash: Hash): Promise<TxReceipt>;
+    getTransactionSender(hash: Hash): Promise<Address | null>;
     readContract(params: ReadContractParams): Promise<unknown>;
     getBalance(address: Address): Promise<bigint>;
 }

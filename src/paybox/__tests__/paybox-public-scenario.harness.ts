@@ -401,6 +401,8 @@ export class PayboxPublicScenario {
                 this.createWallet(sdk, rpc, credentialId, address, authority),
             signMessage: (tokens, signingKey, credentialId, message) =>
                 boundary.signMessage(tokens, signingKey, credentialId, message),
+            signTypedData: (tokens, signingKey, credentialId, request) =>
+                boundary.signTypedData(tokens, signingKey, credentialId, request),
             signTransaction: (tokens, signingKey, credentialId, intent) =>
                 boundary.signTransaction(tokens, signingKey, credentialId, intent),
         };
@@ -503,6 +505,7 @@ export class PayboxPublicScenario {
                 this.externalRequests.push({ boundary: 'rpc', operation: 'wait_for_receipt', hash });
                 return { status: TxStatus.Success, transactionHash, blockNumber: 123n, logs: [] };
             },
+            getTransactionSender: async () => walletAccount.address,
             readContract: async () => null,
             getBalance: async () => 0n,
         };

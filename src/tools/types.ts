@@ -47,4 +47,9 @@ export enum ToolEventType {
     SyndicateManagerChanged = 'syndicate_manager_changed',
     SyndicateParamsChanged = 'syndicate_params_changed',
     RevealFulfilled = 'reveal_fulfilled',
+    CellListed = 'cell_listed',
+    CellOfferMade = 'cell_offer_made',
+    CellBought = 'cell_bought',
+    CellOfferAccepted = 'cell_offer_accepted',
+    MarketOrderCancelled = 'market_order_cancelled',
 }

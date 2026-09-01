@@ -10,6 +10,7 @@ export enum HttpStatus {
     Unauthorized = 401,
     NotFound = 404,
     Conflict = 409,
+    TooManyRequests = 429,
 }
 
 export interface ApiClientOptions {
@@ -53,6 +54,7 @@ export interface SiweVerifyResponse {
 
 export interface ApiResponse<T> {
     status: number;
+    headers: Headers;
     data: T;
 }
 
@@ -368,6 +370,7 @@ export const appConfigResponseSchema = z
         contracts: z
             .object({
                 land: z.string().default(''),
+                usdg: z.string().default(''),
                 cpuToken: z.string().default(''),
                 cpuHook: z.string().default(''),
                 cell: z.string().default(''),

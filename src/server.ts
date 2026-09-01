@@ -20,6 +20,17 @@ import { registerGetAttentionTool } from './tools/map/attention/attention.js';
 import { registerGetCellTool } from './tools/map/get-cell/get-cell.js';
 import { registerGetChangesTool } from './tools/map/get-changes/get-changes.js';
 import { registerGetMapTool } from './tools/map/get-map/get-map.js';
+import {
+    registerAcceptCellOfferTool,
+    registerBuyCellTool,
+    registerCancelOrderTool,
+    registerGetCellMarketTool,
+    registerGetMyListingsTool,
+    registerGetMyOffersReceivedTool,
+    registerGetMyOffersTool,
+    registerListCellTool,
+    registerMakeCellOfferTool,
+} from './tools/market/register.js';
 import { registerClaimMiningTool } from './tools/mining/claim/claim-mining.js';
 import { registerGetMiningStatusTool } from './tools/mining/get-status/get-mining-status.js';
 import { registerStartMiningTool } from './tools/mining/start/start-mining.js';
@@ -67,7 +78,6 @@ import type { ToolRegistrar } from './tools/types.js';
 import { registerWithdrawTool } from './tools/withdraw/withdraw.js';
 import type { AppContext } from './types.js';
 import { createBackendVersionGate } from './version/backend-version.js';
-import { createPackageVersionGate } from './version/package-version.js';
 import { createGuardedRegistrar } from './version/tool-guard.js';
 import type { ToolGate } from './version/types.js';
 
@@ -128,6 +138,15 @@ function registerTools(registrar: ToolRegistrar, context: AppContext, persona: P
     registerQuoteLotReturnTool(registrar, context);
     registerReturnLotTool(registrar, context);
     registerSetSaleFeeTool(registrar, context);
+    registerGetCellMarketTool(registrar, context);
+    registerGetMyListingsTool(registrar, context);
+    registerGetMyOffersTool(registrar, context);
+    registerGetMyOffersReceivedTool(registrar, context);
+    registerListCellTool(registrar, context);
+    registerMakeCellOfferTool(registrar, context);
+    registerBuyCellTool(registrar, context);
+    registerAcceptCellOfferTool(registrar, context);
+    registerCancelOrderTool(registrar, context);
     registerListSyndicatesTool(registrar, context);
     registerGetSyndicateTool(registrar, context);
     registerGetSyndicateMembershipTool(registrar, context);
@@ -152,10 +171,7 @@ export async function createServer(context: AppContext): Promise<void> {
     );
 
     const persona = createPersonaDelivery();
-    const gates: Array<ToolGate> = [
-        createPackageVersionGate(context.packageVersion),
-        createBackendVersionGate(context.backendVersion),
-    ];
+    const gates: Array<ToolGate> = [createBackendVersionGate(context.backendVersion)];
     if (context.config.OPERATOR_PERSONA) {
         gates.push(createPersonaGate(persona));
     }

@@ -7,12 +7,9 @@ import { createServer } from '../server.js';
 import { PERSONA_GATE_REFUSAL, PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
 import type { ToolRegistrar } from '../tools/types.js';
 import type { AppContext } from '../types.js';
-import { formatBlockedError } from '../version/package-version.utils.js';
 import { PackageVersionSignal } from '../version/types.js';
 
 const AUTHENTICATE_TOOL = 'cpu_authenticate';
-const CURRENT_VERSION = '1.0.0';
-const BLOCKING_VERSION = '2.0.0';
 
 const stubs = vi.hoisted(() => ({
     serverTransport: null as object | null,
@@ -38,14 +35,14 @@ vi.mock('../tools/config/get-game-config/get-game-config.js', () => ({
     },
 }));
 
-function contextFor(personaEnabled: boolean, blocked = false): AppContext {
+function contextFor(personaEnabled: boolean): AppContext {
     return {
         config: { OPERATOR_PERSONA: personaEnabled },
         packageVersion: {
-            currentVersion: CURRENT_VERSION,
+            currentVersion: '1.0.0',
             check: async () => ({
-                signal: blocked ? PackageVersionSignal.Blocked : PackageVersionSignal.Silent,
-                latest: blocked ? BLOCKING_VERSION : null,
+                signal: PackageVersionSignal.Silent,
+                latest: null,
             }),
         },
         backendVersion: {
@@ -147,15 +144,6 @@ describe('the operating brief gate', () => {
 
         expect(result.isError).toBe(true);
         expect(textOf(result)).toEqual([PERSONA_GATE_REFUSAL]);
-    });
-
-    it('runs the version guard before the brief gate', async () => {
-        const connected = await boot(contextFor(true, true));
-
-        const result = await call(connected, stubs.probeTool);
-
-        expect(result.isError).toBe(true);
-        expect(textOf(result)).toEqual([formatBlockedError(BLOCKING_VERSION, CURRENT_VERSION)]);
     });
 });
 

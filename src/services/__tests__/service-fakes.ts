@@ -74,6 +74,7 @@ export function makeConfig(cpuToken: string = CPU_TOKEN): AppConfig {
         chainId: 1,
         contracts: {
             land: LAND,
+            usdg: '',
             cpuToken,
             cpuHook: CPU_HOOK,
             cell: CELL,
@@ -281,6 +282,9 @@ export class FakeAllowance implements IAllowanceService {
 }
 
 export class FakeWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     public readonly sent: Array<TransactionRequest> = [];
     public readonly reads: Array<ReadContractParams> = [];
     private receiptIndex = 0;
@@ -326,6 +330,9 @@ export class FakeWallet implements WalletManager, WalletProvider {
         return 0n;
     }
     async signMessage(): Promise<Hex> {
+        return '0x';
+    }
+    async signTypedData(): Promise<Hex> {
         return '0x';
     }
 }

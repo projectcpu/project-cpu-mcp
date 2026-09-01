@@ -1,0 +1,214 @@
+import type { RequestOptions } from '../../../api/client.js';
+import type { ApiResponse } from '../../../api/types.js';
+import { LAUNCH_CHAIN_ID } from '../../../config/constants.js';
+import { NoopLogger } from '../../../logger/noop.logger.js';
+import { MarketApiClient } from '../client.js';
+import { MarketProfileClient } from '../profile.client.js';
+import { MarketService } from '../service.js';
+import { MarketOfferKind, type IMarketTransport } from '../types.js';
+
+export const CURRENCY = { address: `0x${'c'.repeat(40)}`, symbol: 'WETH', decimals: 18 };
+
+export const PROTOCOL_ADDRESS = '0x0000000000000068F116a894984e2DB1123eB395';
+
+export const MAKER = `0x${'1'.repeat(40)}`;
+
+export const OTHER_MAKER = `0x${'2'.repeat(40)}`;
+
+export const LISTING_HASH = `0x${'a'.repeat(64)}`;
+
+export const OFFER_HASH = `0x${'b'.repeat(64)}`;
+
+export const listingWire = {
+    orderHash: LISTING_HASH,
+    protocolAddress: PROTOCOL_ADDRESS,
+    chainId: 4663,
+    maker: MAKER,
+    tokenId: '1234',
+    price: '1500000000000000000',
+    currency: CURRENCY,
+    startTime: 1_800_000_000,
+    expirationTime: 1_800_086_400,
+};
+
+export function offerWire(kind: MarketOfferKind, tokenId: string | null): Record<string, unknown> {
+    return {
+        orderHash: OFFER_HASH,
+        protocolAddress: PROTOCOL_ADDRESS,
+        chainId: 4663,
+        maker: OTHER_MAKER,
+        kind,
+        tokenId,
+        amount: '900000000000000000',
+        currency: CURRENCY,
+        startTime: 1_800_000_000,
+        expirationTime: 1_800_086_400,
+    };
+}
+
+export const snapshotWire = {
+    tokenId: '1234',
+    bestListing: listingWire,
+    bestOffer: offerWire(MarketOfferKind.Item, '1234'),
+};
+
+export const emptySnapshotWire = { tokenId: '1234', bestListing: null, bestOffer: null };
+
+export interface FakeReply {
+    status: number;
+    data: unknown;
+    headers: Record<string, string>;
+}
+
+export function reply(status: number, data: unknown, headers: Record<string, string> = {}): FakeReply {
+    return { status, data, headers };
+}
+
+export function errorWire(
+    error: string,
+    message: string,
+    reqId: string = 'test-market-request',
+): Record<string, unknown> {
+    return { success: false, error, message, reqId };
+}
+
+export interface RecordedMarketCall {
+    path: string;
+    method: string;
+    body: unknown;
+}
+
+export class FakeMarketTransport implements IMarketTransport {
+    readonly calls: Array<RecordedMarketCall> = [];
+    private readonly replies: Array<FakeReply | Error>;
+    private readonly fallback: FakeReply | Error;
+
+    constructor(replies: Array<FakeReply | Error>, fallback: FakeReply | Error | null = null) {
+        this.replies = [...replies];
+        this.fallback = fallback ?? replies[replies.length - 1] ?? reply(200, null);
+    }
+
+    async authenticatedRequest<T>(path: string, options: RequestOptions | null): Promise<ApiResponse<T>> {
+        this.calls.push({ path, method: options?.method ?? 'GET', body: options?.body ?? null });
+        const next = this.replies.shift() ?? this.fallback;
+        if (next instanceof Error) {
+            throw next;
+        }
+        return { status: next.status, headers: new Headers(next.headers), data: next.data as T };
+    }
+}
+
+export function marketServiceOver(transport: IMarketTransport): MarketService {
+    const logger = new NoopLogger();
+    return new MarketService({ client: new MarketApiClient({ api: transport, logger }), logger });
+}
+
+export function marketProfileClientOver(transport: IMarketTransport): MarketProfileClient {
+    const logger = new NoopLogger();
+    return new MarketProfileClient({
+        client: new MarketApiClient({ api: transport, logger }),
+        chainId: LAUNCH_CHAIN_ID,
+        logger,
+    });
+}
+
+export function pageWire(items: Array<unknown>, nextCursor: string | null): Record<string, unknown> {
+    return { items, nextCursor };
+}
+
+function profileCurrencyFrom(item: Record<string, unknown>): Record<string, unknown> {
+    const currency = item.currency as typeof CURRENCY;
+    return { symbol: currency.symbol, decimals: currency.decimals };
+}
+
+export function profileListingFrom(item: Record<string, unknown>): Record<string, unknown> {
+    return {
+        orderHash: item.orderHash,
+        chainId: LAUNCH_CHAIN_ID,
+        tokenId: item.tokenId,
+        price: item.price,
+        currency: profileCurrencyFrom(item),
+    };
+}
+
+export function profileOfferFrom(item: Record<string, unknown>): Record<string, unknown> {
+    return {
+        orderHash: item.orderHash,
+        chainId: LAUNCH_CHAIN_ID,
+        kind: item.kind,
+        tokenId: item.tokenId,
+        amount: item.amount,
+        currency: profileCurrencyFrom(item),
+    };
+}
+
+function backendPriceFrom(item: Record<string, unknown>): Record<string, unknown> {
+    const currency = item.currency as typeof CURRENCY;
+    return {
+        currencyAddress: currency.address,
+        symbol: currency.symbol,
+        decimals: currency.decimals,
+        amountBaseUnits: item.price ?? item.amount,
+    };
+}
+
+export function backendOrderFrom(item: Record<string, unknown>): Record<string, unknown> {
+    return {
+        orderHash: item.orderHash,
+        protocolAddress: item.protocolAddress,
+        maker: item.maker,
+        tokenId: item.tokenId,
+        price: backendPriceFrom(item),
+        startsAt: item.startTime,
+        expiresAt: item.expirationTime,
+    };
+}
+
+export const backendSnapshotWire = {
+    tokenId: '1234',
+    bestListing: backendOrderFrom(listingWire),
+    bestOffer: { ...backendOrderFrom(offerWire(MarketOfferKind.Item, '1234')), kind: MarketOfferKind.Item },
+};
+
+export function backendListingPageWire(
+    listings: Array<Record<string, unknown>>,
+    cursor: string | null,
+): Record<string, unknown> {
+    return {
+        listings: listings.map((listing) => ({
+            orderHash: listing.orderHash,
+            tokenId: listing.tokenId,
+            price: {
+                ...profileCurrencyFrom(listing),
+                amountBaseUnits: listing.price,
+            },
+        })),
+        cursor,
+    };
+}
+
+export function backendOfferPageWire(
+    offers: Array<Record<string, unknown>>,
+    cursor: string | null,
+): Record<string, unknown> {
+    return {
+        offers: offers.map((offer) => ({
+            orderHash: offer.orderHash,
+            kind: offer.kind,
+            tokenId: offer.tokenId,
+            price: {
+                ...profileCurrencyFrom(offer),
+                amountBaseUnits: offer.amount,
+            },
+        })),
+        cursor,
+    };
+}
+
+export function listingWireFor(tokenId: string, orderHash: string): Record<string, unknown> {
+    return { ...listingWire, tokenId, orderHash };
+}
+
+export function offerWireFrom(kind: MarketOfferKind, tokenId: string | null, maker: string): Record<string, unknown> {
+    return { ...offerWire(kind, tokenId), maker };
+}

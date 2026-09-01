@@ -67,6 +67,45 @@ describe('SessionStorage', () => {
             expect(loaded?.jwt).toBe('new-jwt');
         });
 
+        it('persists only the wallet mode, address, JWT and timestamps', () => {
+            storage.save(createSessionData());
+            const written = JSON.parse(
+                fs.readFileSync(path.join(tempDir, SESSION_DIR, SESSION_FILE), 'utf-8'),
+            ) as Record<string, unknown>;
+            expect(Object.keys(written).sort()).toEqual(['address', 'createdAt', 'jwt', 'updatedAt', 'walletMode']);
+        });
+
+        it('writes nothing beside session.json', () => {
+            storage.save(createSessionData());
+            expect(fs.readdirSync(path.join(tempDir, SESSION_DIR))).toEqual([SESSION_FILE]);
+        });
+
+        it('reads a session file written by an older runtime and drops its discarded fields', () => {
+            const now = new Date().toISOString();
+            const sessionFile = path.join(tempDir, SESSION_DIR, SESSION_FILE);
+            fs.mkdirSync(path.dirname(sessionFile), { recursive: true, mode: 0o700 });
+            fs.writeFileSync(
+                sessionFile,
+                JSON.stringify({
+                    walletMode: 'evm',
+                    address: '0x1234567890123456789012345678901234567890',
+                    jwt: 'header.payload.signature',
+                    sessionConfig: null,
+                    createdAt: now,
+                    updatedAt: now,
+                }),
+                { mode: 0o600 },
+            );
+
+            expect(storage.load()).toEqual({
+                walletMode: WalletMode.EVM,
+                address: '0x1234567890123456789012345678901234567890',
+                jwt: 'header.payload.signature',
+                createdAt: now,
+                updatedAt: now,
+            });
+        });
+
         it('deletes session files and returns null when session.json is corrupted', () => {
             const sessionFile = path.join(tempDir, SESSION_DIR, SESSION_FILE);
             fs.mkdirSync(path.dirname(sessionFile), { recursive: true, mode: 0o700 });
@@ -87,6 +126,11 @@ describe('SessionStorage', () => {
 
         it('does not throw when file does not exist', () => {
             expect(() => storage.delete()).not.toThrow();
+        });
+        it('leaves the session directory empty', () => {
+            storage.save(createSessionData());
+            storage.delete();
+            expect(fs.readdirSync(path.join(tempDir, SESSION_DIR))).toEqual([]);
         });
     });
 

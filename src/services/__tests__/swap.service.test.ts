@@ -28,6 +28,9 @@ interface ReadResponses {
 }
 
 class SwapWallet implements WalletManager, WalletProvider {
+    async getTransactionSender(): Promise<Address | null> {
+        return this.getAddress();
+    }
     public readonly sent: Array<TransactionRequest> = [];
     public readonly reads: Array<ReadContractParams> = [];
     private receiptIndex = 0;
@@ -93,6 +96,9 @@ class SwapWallet implements WalletManager, WalletProvider {
     async signMessage(): Promise<Hex> {
         return '0x';
     }
+    async signTypedData(): Promise<Hex> {
+        return '0x';
+    }
 }
 
 function makeConfig(contracts: Partial<AppContracts> = {}): AppConfig {
@@ -101,6 +107,7 @@ function makeConfig(contracts: Partial<AppContracts> = {}): AppConfig {
         chainId: BASE_CHAIN_ID,
         contracts: {
             land: LAND,
+            usdg: '',
             cpuToken: CPU_TOKEN,
             cpuHook: CPU_HOOK,
             cell: '',

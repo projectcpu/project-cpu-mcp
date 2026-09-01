@@ -41,6 +41,24 @@ describe('loadEnvConfig NETWORK', () => {
     );
 });
 
+describe('loadEnvConfig PRIVATE_KEY', () => {
+    it('rejects a malformed private key', () => {
+        expect(() => loadEnvConfig({ WALLET_MODE: WalletMode.EVM, PRIVATE_KEY: '0xdeadbeef' })).toThrow(/PRIVATE_KEY/);
+    });
+});
+
+describe('loadEnvConfig RPC_URL', () => {
+    it('is null when the override is absent', () => {
+        expect(loadEnvConfig(EVM_ENV).RPC_URL).toBeNull();
+    });
+
+    it('keeps an explicit override', () => {
+        expect(loadEnvConfig({ ...EVM_ENV, RPC_URL: 'https://rpc.example/robinhood' }).RPC_URL).toBe(
+            'https://rpc.example/robinhood',
+        );
+    });
+});
+
 describe('loadEnvConfig OPERATOR_PERSONA', () => {
     it('is on when the variable is absent', () => {
         expect(loadEnvConfig({}).OPERATOR_PERSONA).toBe(true);

@@ -13,6 +13,7 @@ import { LAUNCH_CHAIN_ID } from '../../config/constants.js';
 import type {
     GasEstimateRequest,
     ReadContractParams,
+    SignTypedDataRequest,
     TransactionRequest,
     TxReceipt,
     WalletManager,
@@ -73,12 +74,30 @@ export class PayboxWalletManager implements WalletManager {
         return this.options.rpc.waitForReceipt(hash);
     }
 
+    public getTransactionSender(hash: Hash): Promise<Address | null> {
+        return this.options.rpc.getTransactionSender(hash);
+    }
+
     public readContract(params: ReadContractParams): Promise<unknown> {
         return this.options.rpc.readContract(params);
     }
 
     public getBalance(): Promise<bigint> {
         return this.options.rpc.getBalance(this.address);
+    }
+
+    public async signTypedData(request: SignTypedDataRequest): Promise<Hex> {
+        const authority = await this.currentAuthority();
+        try {
+            return await this.options.sdk.signTypedData(
+                authority.tokens,
+                authority.signingKey,
+                this.options.credentialId,
+                request,
+            );
+        } catch (error) {
+            this.throwSigningFailure(error);
+        }
     }
 
     private async sendAtQueueHead(tx: TransactionRequest): Promise<Hash> {

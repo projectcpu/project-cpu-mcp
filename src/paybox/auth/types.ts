@@ -1,13 +1,13 @@
 import type {
     IPayboxAuthStorage,
-    IPayboxSdkAdapter,
+    IPayboxCoordinatorSdkAdapter,
     PayboxAuthenticateResult,
     PayboxSiweAuthenticator,
 } from '../types.js';
 
 export interface PayboxAuthorityOptions {
     storage: IPayboxAuthStorage;
-    sdk: IPayboxSdkAdapter;
+    sdk: IPayboxCoordinatorSdkAdapter;
     authenticator: PayboxSiweAuthenticator;
 }
 
