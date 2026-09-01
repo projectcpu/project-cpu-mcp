@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.2](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.1...v0.12.2) (2026-09-01)
+
+
+### Features
+
+* **market:** add OpenSea Cell marketplace tools ([3c74d99](https://github.com/projectcpu/project-cpu-mcp/commit/3c74d99daf7465e8a0dc5f193f86d8b723114416))
+* **market:** complete OpenSea marketplace integration ([d709562](https://github.com/projectcpu/project-cpu-mcp/commit/d7095626e89cb9993bc553a301bb82427211d458))
+* **paybox:** sign Cell marketplace orders ([823ac82](https://github.com/projectcpu/project-cpu-mcp/commit/823ac82cd7d2fff9f9a4110f530eb946763902ef))
+
+
+### Bug Fixes
+
+* **market:** preserve compact profile orders ([c44cfe9](https://github.com/projectcpu/project-cpu-mcp/commit/c44cfe9f1f136a7bc9896273b46be169823dca90))
+
 ## [0.12.1](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.0...v0.12.1) (2026-08-29)
 
 
