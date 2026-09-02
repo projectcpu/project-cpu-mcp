@@ -40,6 +40,7 @@ import {
 } from './fixtures.js';
 import { ERC20_ABI } from '../../../../contracts/erc20.abi.js';
 import { SEAPORT_ADDRESS, SEAPORT_COUNTER_ABI } from '../../../../contracts/seaport.constants.js';
+import { WETH_ABI } from '../../../../contracts/weth.abi.js';
 import { errorWire } from '../../../../services/market/__tests__/fixtures.js';
 import { MarketActionTool } from '../../../../services/market/action.types.js';
 import { MARKET_RETRY_BUDGET_MS } from '../../../../services/market/constants.js';
@@ -132,31 +133,32 @@ describe('publishing an exact-Cell offer', () => {
         expect(result.tokenId).toBe(TOKEN_ID);
         expect(result.amount).toBe(AMOUNT);
         expect(result.wallet).toBe(BUYER);
+        expect(result.fundingTxHashes).toEqual([]);
         expect(result.approvalTxHashes).toEqual([]);
-        expect((result.currency as { symbol: string }).symbol).toBe('USDG');
+        expect((result.currency as { symbol: string }).symbol).toBe('WETH');
         expect((result.offer as { orderHash: string }).orderHash).toBe(ORDER_HASH);
         expect((result.offer as { kind: string }).kind).toBe(MarketOfferKind.Item);
     });
 
-    it('reads the USDG balance and maker counter before it prepares anything', async () => {
+    it('validates the prepared order before it checks whether WETH funding is needed', async () => {
         const harness = makeOfferHarness(routes());
 
         await harness.handler(makeOfferArgs());
 
         expect(harness.wallet.reads).toHaveLength(2);
         expect(harness.wallet.reads[0]).toEqual({
-            address: CURRENCY_ADDRESS,
-            abi: ERC20_ABI,
-            functionName: 'balanceOf',
-            args: [BUYER],
-        });
-        expect(harness.wallet.reads[1]).toEqual({
             address: SEAPORT_ADDRESS,
             abi: SEAPORT_COUNTER_ABI,
             functionName: 'getCounter',
             args: [BUYER],
         });
-        expect(harness.wallet.log.slice(0, 2)).toEqual(['read:balanceOf', 'read:getCounter']);
+        expect(harness.wallet.reads[1]).toEqual({
+            address: CURRENCY_ADDRESS,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [BUYER],
+        });
+        expect(harness.wallet.log).toEqual(['read:getCounter', 'read:balanceOf', 'sign']);
     });
 
     it('sends the counter it read with the prepare request, and never as an agent input', async () => {
@@ -234,21 +236,72 @@ describe('publishing an exact-Cell offer', () => {
     });
 });
 
-describe('the exact-amount currency approval an offer owes', () => {
+describe('funding and approving the exact WETH amount an offer owes', () => {
     useFrozenClock();
 
-    it('refuses an offer the wallet cannot fund before prepare, approval, signing or submit', async () => {
-        const wallet = new FakeBuyerWallet({ usdgBalance: BigInt(AMOUNT) - 1n });
+    it('wraps only the missing ETH after validation and immediately before approval', async () => {
+        const wallet = new FakeBuyerWallet({ wethBalance: BigInt(AMOUNT) / 4n });
+        const harness = makeOfferHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
+            wallet,
+        );
+
+        const result = parsed(await harness.handler(makeOfferArgs()));
+
+        expect(wallet.log).toEqual([
+            'read:getCounter',
+            'read:information',
+            'read:getConduit',
+            'read:balanceOf',
+            'read:nativeBalance',
+            `send:${CURRENCY_ADDRESS}`,
+            `receipt:0x${'1'.repeat(64)}`,
+            `send:${CURRENCY_ADDRESS}`,
+            `receipt:0x${'2'.repeat(64)}`,
+            'sign',
+        ]);
+        expect(wallet.broadcast[0]).toMatchObject({
+            to: CURRENCY_ADDRESS,
+            value: BigInt(AMOUNT) - BigInt(AMOUNT) / 4n,
+        });
+        expect(decodeFunctionData({ abi: WETH_ABI, data: wallet.broadcast[0]?.data ?? '0x' })).toEqual({
+            functionName: 'deposit',
+            args: undefined,
+        });
+        expect(wallet.broadcast[1]).toMatchObject({ to: CURRENCY_ADDRESS, value: 0n });
+        expect(result.fundingTxHashes).toEqual([`0x${'1'.repeat(64)}`]);
+        expect(result.approvalTxHashes).toEqual([`0x${'2'.repeat(64)}`]);
+    });
+
+    it('refuses an offer only after the prepared order is validated when ETH cannot cover the WETH deficit', async () => {
+        const wallet = new FakeBuyerWallet({ wethBalance: BigInt(AMOUNT) - 1n, nativeBalance: 1n });
         const harness = makeOfferHarness(routes(), wallet);
 
         const error = await failure(harness.handler(makeOfferArgs()));
 
         expect(error.code).toBe(MarketErrorCode.InsufficientBalance);
-        expect(error.message).toContain(`has ${BigInt(AMOUNT) - 1n} USDG base units but needs ${AMOUNT}`);
-        expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
+        expect(error.message).toContain(`has ${BigInt(AMOUNT) - 1n} WETH base units and 1 native base units`);
+        expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(1);
         expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
         expect(wallet.broadcast).toHaveLength(0);
         expect(wallet.signed).toHaveLength(0);
+    });
+
+    it('stops at a reverted wrap before approval, signing or publication', async () => {
+        const wallet = new FakeBuyerWallet({ wethBalance: 0n, receiptStatus: TxStatus.Reverted });
+        const harness = makeOfferHarness(
+            routes({ [MarketRoute.Prepare]: [reply(200, preparedWire({ approvals: [approvalWire()] }))] }),
+            wallet,
+        );
+
+        const error = await failure(harness.handler(makeOfferArgs()));
+
+        expect(error.code).toBe(MarketErrorCode.TransactionReverted);
+        expect(error.stage).toBe(MarketActionStage.Approve);
+        expect(error.txHash).toBe(`0x${'1'.repeat(64)}`);
+        expect(wallet.broadcast).toHaveLength(1);
+        expect(wallet.signed).toHaveLength(0);
+        expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
     });
 
     it('broadcasts approvals in the returned order and observes each receipt before signing', async () => {
@@ -259,10 +312,10 @@ describe('the exact-amount currency approval an offer owes', () => {
         const result = parsed(await harness.handler(makeOfferArgs()));
 
         expect(harness.wallet.log).toEqual([
-            'read:balanceOf',
             'read:getCounter',
             'read:information',
             'read:getConduit',
+            'read:balanceOf',
             `send:${CURRENCY_ADDRESS}`,
             `receipt:0x${'1'.repeat(64)}`,
             'sign',
@@ -321,7 +374,7 @@ describe('the exact-amount currency approval an offer owes', () => {
             functionName: 'approve',
             args: [CONDUIT, BigInt(AMOUNT)],
         });
-        expect(harness.wallet.reads.at(-1)?.args).toEqual([CONDUIT_KEY]);
+        expect(harness.wallet.reads.find((read) => read.functionName === 'getConduit')?.args).toEqual([CONDUIT_KEY]);
     });
 
     it('refuses to approve when the protocol disowns the conduit key the order names', async () => {
@@ -399,6 +452,7 @@ describe('the local checks a prepared offer must pass', () => {
         const error = await failure(harness.handler(makeOfferArgs()));
 
         expect(error.code).toBe(code);
+        expect(harness.wallet.reads.some((read) => read.functionName === 'balanceOf')).toBe(false);
         expect(harness.wallet.signed).toHaveLength(0);
         expect(harness.transport.callsOn(MarketRoute.Submit)).toHaveLength(0);
     });
@@ -418,18 +472,18 @@ describe('the local checks a prepared offer must pass', () => {
         expect(harness.wallet.signed).toHaveLength(0);
     });
 
-    it('refuses to prepare at all when USDG is not configured for this network', async () => {
+    it('refuses to prepare at all when WETH is not configured for this network', async () => {
         const harness = makeOfferHarness(
             routes(),
             new FakeBuyerWallet(),
             new MarketRecoveryStore(),
-            new FakeAppConfig(COLLECTION, 'the-usdg-token-is-missing'),
+            new FakeAppConfig(COLLECTION, 'the-weth-token-is-missing'),
         );
 
         const error = await failure(harness.handler(makeOfferArgs()));
 
         expect(error.code).toBe(MarketErrorCode.InvalidMarketResponse);
-        expect(error.message).toContain('USDG is not configured');
+        expect(error.message).toContain('WETH is not configured');
         expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
         expect(harness.wallet.reads).toHaveLength(0);
         expect(harness.wallet.signed).toHaveLength(0);
@@ -787,7 +841,7 @@ describe('a submit whose outcome is uncertain', () => {
                     reply(422, {
                         success: false,
                         error: 'upstreamRejected',
-                        message: 'The offer cannot be published because the wallet has too little USDG.',
+                        message: 'The offer cannot be published because the wallet has too little WETH.',
                         reqId: 'request-123',
                     }),
                 ],
@@ -938,14 +992,7 @@ describe('a submit whose outcome is uncertain', () => {
 
         expect(result.status).toBe(MarketActionStatus.Completed);
         expect(second.transport.callsOn(MarketRoute.Prepare)).toHaveLength(0);
-        expect(second.wallet.reads).toEqual([
-            {
-                address: CURRENCY_ADDRESS,
-                abi: ERC20_ABI,
-                functionName: 'balanceOf',
-                args: [BUYER],
-            },
-        ]);
+        expect(second.wallet.reads).toEqual([]);
         expect(second.transport.callsOn(MarketRoute.Submit)[0]?.body).toEqual({
             prepareId: PREPARE_ID,
             signature: SIGNATURE,
@@ -1087,7 +1134,6 @@ describe('the inputs the offer tool accepts', () => {
         ['a Cell id with a leading zero', { tokenId: '01234' }],
         ['a fractional amount', { amount: '1.5' }],
         ['a zero amount', { amount: '0' }],
-        ['a USDG amount finer than one cent', { amount: '15000' }],
         ['an expiry that has already passed', { expirationTime: NOW_SECONDS - 1 }],
     ])('rejects %s before any marketplace call', async (_label, over) => {
         const harness = makeOfferHarness(routes());
@@ -1097,6 +1143,33 @@ describe('the inputs the offer tool accepts', () => {
         expect(error.code).toBe(MarketErrorCode.InvalidInput);
         expect(harness.transport.calls).toHaveLength(0);
         expect(harness.wallet.reads).toHaveLength(0);
+    });
+
+    it('accepts a positive WETH amount without imposing decimal-price increments', async () => {
+        const amount = (BigInt(AMOUNT) - 1n).toString();
+        const harness = makeOfferHarness(
+            routes({
+                [MarketRoute.Prepare]: [reply(200, preparedWire(preparedOrderOver({ amount })))],
+                [MarketRoute.Submit]: [
+                    reply(
+                        200,
+                        submittedWire({
+                            price: {
+                                currencyAddress: CURRENCY.address,
+                                symbol: CURRENCY.symbol,
+                                decimals: CURRENCY.decimals,
+                                amountBaseUnits: amount,
+                            },
+                        }),
+                    ),
+                ],
+            }),
+        );
+
+        const result = parsed(await harness.handler(makeOfferArgs({ amount })));
+
+        expect(result.amount).toBe(amount);
+        expect(harness.transport.callsOn(MarketRoute.Prepare)).toHaveLength(1);
     });
 
     it('describes itself as an exact-Cell item offer that never creates trait or collection offers', () => {
@@ -1117,7 +1190,7 @@ describe('the summary the offer tool prints for an agent', () => {
 
         expect(result.content[0]?.text).toContain(`Cell ${TOKEN_ID}`);
         expect(result.content[0]?.text).toContain(ORDER_HASH);
-        expect(result.content[0]?.text).toContain('USDG');
+        expect(result.content[0]?.text).toContain('WETH');
         expect(result.content[0]?.text).toContain(AMOUNT);
     });
 });

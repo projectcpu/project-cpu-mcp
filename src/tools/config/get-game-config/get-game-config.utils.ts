@@ -115,7 +115,8 @@ export function renderStaticFacts(config: AppConfig, lotListing: LotListingRules
         `Transit: ${describeTransit(config)}.`,
         `Storage: ${STORAGE_SHELVES_SUMMARY}.`,
         `Resources: ${renderPairs(Object.entries(config.resources))}.`,
-        `Contracts — land ${config.contracts.land}, USDG ${config.contracts.usdg}, $CPU ${config.contracts.cpuToken}, ` +
+        `Contracts — land ${config.contracts.land}, WETH ${config.contracts.weth}, USDG ${config.contracts.usdg}, ` +
+            `$CPU ${config.contracts.cpuToken}, ` +
             `cpuHook ${config.contracts.cpuHook}, cell ${config.contracts.cell}, ` +
             `transport ${config.contracts.transport}.`,
     ].join('\n');
