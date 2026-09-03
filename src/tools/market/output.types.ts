@@ -23,7 +23,7 @@ const actionEnvelopeSchema = z.object({
     wallet: evmAddressSchema,
 });
 
-const approvalHashesSchema = z.array(transactionHashSchema);
+const transactionHashesSchema = z.array(transactionHashSchema);
 
 export const getCellMarketOutputSchema = cellMarketSnapshotSchema.strict();
 
@@ -40,7 +40,7 @@ export const listCellOutputSchema = actionEnvelopeSchema
         platformFee: baseUnitAmountSchema,
         creatorFee: baseUnitAmountSchema,
         estimatedProceeds: baseUnitAmountSchema,
-        approvalTxHashes: approvalHashesSchema,
+        approvalTxHashes: transactionHashesSchema,
         eventType: z.literal(ToolEventType.CellListed),
     })
     .strict();
@@ -51,7 +51,8 @@ export const makeCellOfferOutputSchema = actionEnvelopeSchema
         offer: marketOfferSchema,
         amount: baseUnitAmountSchema,
         currency: marketCurrencySchema,
-        approvalTxHashes: approvalHashesSchema,
+        fundingTxHashes: transactionHashesSchema,
+        approvalTxHashes: transactionHashesSchema,
         eventType: z.literal(ToolEventType.CellOfferMade),
     })
     .strict();
@@ -64,7 +65,7 @@ export const buyCellOutputSchema = actionEnvelopeSchema
         price: baseUnitAmountSchema,
         currency: marketCurrencySchema,
         maxAmount: baseUnitAmountSchema,
-        approvalTxHashes: approvalHashesSchema,
+        approvalTxHashes: transactionHashesSchema,
         fulfilmentTxHash: transactionHashSchema,
         txHashes: z.array(transactionHashSchema),
         eventType: z.literal(ToolEventType.CellBought),
@@ -79,7 +80,7 @@ export const acceptCellOfferOutputSchema = actionEnvelopeSchema
         buyer: evmAddressSchema,
         amount: baseUnitAmountSchema,
         currency: marketCurrencySchema,
-        approvalTxHashes: approvalHashesSchema,
+        approvalTxHashes: transactionHashesSchema,
         fulfilmentTxHash: transactionHashSchema,
         txHashes: z.array(transactionHashSchema),
         eventType: z.literal(ToolEventType.CellOfferAccepted),

@@ -43,6 +43,8 @@ export interface AuthServiceOptions {
 /** Resolved contract addresses for the configured network. */
 export interface AppContracts {
     land: string;
+    /** Wrapped native currency used by Cell offers; empty until configured for the network. */
+    weth: string;
     /** USDG accepted by the Cell marketplace; empty until configured for the network. */
     usdg: string;
     /** Empty until $CPU is configured for the network; validate with `isAddress` before use. */

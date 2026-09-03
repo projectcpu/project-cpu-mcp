@@ -207,6 +207,7 @@ function catalogScaleConfig(): AppConfig {
         chainId: 4663,
         contracts: {
             land: '0x1111111111111111111111111111111111111111',
+            weth: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             usdg: '0x9999999999999999999999999999999999999999',
             cpuToken: '0x2222222222222222222222222222222222222222',
             cpuHook: '0x3333333333333333333333333333333333333333',

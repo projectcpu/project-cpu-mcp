@@ -1,4 +1,4 @@
-import { zeroAddress, type Abi, type Address, type Hex } from 'viem';
+import { encodeFunctionData, zeroAddress, type Abi, type Address, type Hex } from 'viem';
 
 import {
     MarketActionTool,
@@ -25,7 +25,7 @@ import {
 import {
     prepareOfferResponseSchemaFor,
     submitOfferResponseSchemaFor,
-    usdgOfferAmountSchema,
+    wethOfferAmountSchema,
     type IMarketOfferService,
     type MakeCellOfferRequest,
     type MakeCellOfferResult,
@@ -73,6 +73,7 @@ import {
     SeaportSpenderOutcome,
     type ISeaportSpenderReader,
 } from '../../contracts/seaport.types.js';
+import { WETH_ABI } from '../../contracts/weth.abi.js';
 import type { ILogger } from '../../logger/types.js';
 import { errorMessage } from '../../utils/error.utils.js';
 import { TxStatus, type WalletProvider } from '../../wallet/types.js';
@@ -142,11 +143,11 @@ export class MarketOfferService implements IMarketOfferService {
             }
 
             const contracts = await this.requireMarketContracts();
-            await this.requireSufficientUsdgBalance(request, contracts.usdg);
             const prepared = await this.prepare(request, contracts);
-            payload = { prepared, signature: null, approvalTxHashes: [] };
+            payload = { prepared, signature: null, fundingTxHashes: [], approvalTxHashes: [] };
             this.reserve(key, MarketActionStage.Prepare, payload);
 
+            payload = await this.fundOffer(key, request, contracts.weth, payload);
             payload = { ...payload, approvalTxHashes: await this.broadcastApprovals(prepared) };
             this.reserve(key, MarketActionStage.Approve, payload);
 
@@ -177,11 +178,11 @@ export class MarketOfferService implements IMarketOfferService {
         }
 
         const contracts = await this.requireMarketContracts();
-        this.requireConfiguredCurrency(request, prepared, contracts.usdg);
-        await this.requireSufficientUsdgBalance(request, contracts.usdg);
+        this.requireConfiguredCurrency(request, prepared, contracts.weth);
 
         if (payload.signature === null) {
-            const resumed = { ...payload, approvalTxHashes: await this.broadcastApprovals(prepared) };
+            const funded = await this.fundOffer(key, request, contracts.weth, payload);
+            const resumed = { ...funded, approvalTxHashes: await this.broadcastApprovals(prepared) };
             const signed = { ...resumed, signature: await this.sign(prepared) };
             this.reserve(key, MarketActionStage.Sign, signed);
             return this.submit(key, request, signed, false);
@@ -305,7 +306,7 @@ export class MarketOfferService implements IMarketOfferService {
                 MarketActionStatus.AlreadyCompleted,
                 MarketActionStage.Reconcile,
                 request,
-                { prepared, signature: null, approvalTxHashes: [] },
+                { prepared, signature: null, fundingTxHashes: [], approvalTxHashes: [] },
                 published,
             );
         }
@@ -493,7 +494,7 @@ export class MarketOfferService implements IMarketOfferService {
     private async requireMarketContracts(): Promise<MarketOfferContracts> {
         const config = await this.appConfig.load();
         const collection = config.contracts.land;
-        const usdg = config.contracts.usdg;
+        const weth = config.contracts.weth;
 
         if (!evmAddressSchema.safeParse(collection).success) {
             throw new MarketError({
@@ -508,11 +509,11 @@ export class MarketOfferService implements IMarketOfferService {
             });
         }
 
-        if (!evmAddressSchema.safeParse(usdg).success) {
+        if (!evmAddressSchema.safeParse(weth).success) {
             throw new MarketError({
                 code: MarketErrorCode.InvalidMarketResponse,
                 message:
-                    'USDG is not configured for this network, so this wallet cannot verify the currency or fund ' +
+                    'WETH is not configured for this network, so this wallet cannot verify the currency or fund ' +
                     'an offer safely.',
                 retryable: false,
                 retryAfterSeconds: null,
@@ -521,7 +522,7 @@ export class MarketOfferService implements IMarketOfferService {
             });
         }
 
-        return { collection, usdg };
+        return { collection, weth };
     }
 
     private async requireTrustworthyPreparation(
@@ -557,7 +558,7 @@ export class MarketOfferService implements IMarketOfferService {
 
         this.requireRequestedTerms(request, prepared, counter);
         this.requireSpendableCurrency(request, prepared);
-        this.requireConfiguredCurrency(request, prepared, contracts.usdg);
+        this.requireConfiguredCurrency(request, prepared, contracts.weth);
         await this.requireCurrencyApprovalsOnly(request, prepared);
         this.requireOfferedAmount(request, prepared);
         this.requireRequestedCell(request, prepared, contracts.collection);
@@ -634,24 +635,29 @@ export class MarketOfferService implements IMarketOfferService {
     private requireConfiguredCurrency(
         request: MakeCellOfferRequest,
         prepared: PrepareOfferResponse,
-        usdg: string,
+        weth: string,
     ): void {
-        if (!sameAddress(prepared.offer.currency.address, usdg)) {
+        if (!sameAddress(prepared.offer.currency.address, weth)) {
             throw this.untrustworthy(
                 MarketErrorCode.InvalidMarketResponse,
-                `it is priced in ${prepared.offer.currency.address} instead of the configured USDG ${usdg}`,
+                `it is priced in ${prepared.offer.currency.address} instead of the configured WETH ${weth}`,
                 request,
             );
         }
     }
 
-    private async requireSufficientUsdgBalance(request: MakeCellOfferRequest, usdg: string): Promise<void> {
+    private async fundOffer(
+        key: string,
+        request: MakeCellOfferRequest,
+        weth: string,
+        payload: OfferRecoveryPayload,
+    ): Promise<OfferRecoveryPayload> {
         const wallet = this.wallet.get();
         let balance: unknown;
 
         try {
             balance = await wallet.readContract({
-                address: usdg as Address,
+                address: weth as Address,
                 abi: ERC20_ABI,
                 functionName: 'balanceOf',
                 args: [wallet.getAddress()],
@@ -660,11 +666,11 @@ export class MarketOfferService implements IMarketOfferService {
             throw new MarketError({
                 code: MarketErrorCode.NetworkFailure,
                 message:
-                    `The USDG contract ${usdg} did not answer this wallet's balance, so the offer was not ` +
-                    `prepared: ${errorMessage(error)}.`,
+                    `The WETH contract ${weth} did not answer this wallet's balance, so no ETH was wrapped and ` +
+                    `the offer was not published: ${errorMessage(error)}.`,
                 retryable: true,
                 retryAfterSeconds: null,
-                stage: MarketActionStage.Prepare,
+                stage: MarketActionStage.Approve,
                 txHash: null,
             });
         }
@@ -672,27 +678,74 @@ export class MarketOfferService implements IMarketOfferService {
         if (typeof balance !== 'bigint') {
             throw new MarketError({
                 code: MarketErrorCode.InvalidMarketResponse,
-                message: `The USDG contract ${usdg} returned a non-integer balance, so the offer was not prepared.`,
+                message: `The WETH contract ${weth} returned a non-integer balance, so no ETH was wrapped.`,
                 retryable: false,
                 retryAfterSeconds: null,
-                stage: MarketActionStage.Prepare,
+                stage: MarketActionStage.Approve,
                 txHash: null,
             });
         }
 
         const required = BigInt(request.amount);
-        if (balance < required) {
+        if (balance >= required) {
+            return payload;
+        }
+
+        const deficit = required - balance;
+        let nativeBalance: bigint;
+        try {
+            nativeBalance = await wallet.getBalance();
+        } catch (error) {
             throw new MarketError({
-                code: MarketErrorCode.InsufficientBalance,
+                code: MarketErrorCode.NetworkFailure,
                 message:
-                    `The wallet has ${balance.toString()} USDG base units but needs ${request.amount} to make ` +
-                    `the offer for Cell ${request.tokenId}. Nothing was approved, signed or published.`,
-                retryable: false,
+                    `The wallet's ETH balance could not be read before wrapping ${deficit.toString()} base units ` +
+                    `into WETH: ${errorMessage(error)}.`,
+                retryable: true,
                 retryAfterSeconds: null,
-                stage: MarketActionStage.Prepare,
+                stage: MarketActionStage.Approve,
                 txHash: null,
             });
         }
+
+        if (nativeBalance <= deficit) {
+            throw new MarketError({
+                code: MarketErrorCode.InsufficientBalance,
+                message:
+                    `The wallet has ${balance.toString()} WETH base units and ${nativeBalance.toString()} native ` +
+                    `base units, but needs ${request.amount} WETH base units plus gas. Nothing was wrapped, ` +
+                    'approved, signed or published.',
+                retryable: false,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Approve,
+                txHash: null,
+            });
+        }
+
+        this.requireWithinDeadline(this.requirePrepared(payload), MarketActionStage.Approve);
+        const hash = await wallet.sendTransaction({
+            to: weth as Address,
+            data: encodeFunctionData({ abi: WETH_ABI, functionName: 'deposit' }),
+            value: deficit,
+            gas: null,
+        });
+        const receipt = await wallet.waitForReceipt(hash);
+        if (receipt.status !== TxStatus.Success) {
+            throw new MarketError({
+                code: MarketErrorCode.TransactionReverted,
+                message:
+                    `Wrapping ${deficit.toString()} native base units into WETH reverted, so nothing was approved, ` +
+                    'signed or published.',
+                retryable: false,
+                retryAfterSeconds: null,
+                stage: MarketActionStage.Approve,
+                txHash: hash,
+            });
+        }
+
+        const funded = { ...payload, fundingTxHashes: [...payload.fundingTxHashes, hash] };
+        this.reserve(key, MarketActionStage.Approve, funded);
+        return funded;
     }
 
     private async requireCurrencyApprovalsOnly(
@@ -1074,11 +1127,11 @@ export class MarketOfferService implements IMarketOfferService {
             );
         }
 
-        const amount = usdgOfferAmountSchema.safeParse(request.amount);
+        const amount = wethOfferAmountSchema.safeParse(request.amount);
         if (!amount.success) {
             throw this.rejectedInput(
-                `"${request.amount}" is not a valid USDG offer amount. Pass a positive decimal integer in whole ` +
-                    'cent increments: 10000 base units is $0.01.',
+                `"${request.amount}" is not a valid WETH offer amount. Pass a positive decimal integer in WETH ` +
+                    'base units: 10000000000000000 is 0.01 WETH.',
             );
         }
 
@@ -1098,7 +1151,7 @@ export class MarketOfferService implements IMarketOfferService {
     }
 
     private emptyPayload(): OfferRecoveryPayload {
-        return { prepared: null, signature: null, approvalTxHashes: [] };
+        return { prepared: null, signature: null, fundingTxHashes: [], approvalTxHashes: [] };
     }
 
     private result(
@@ -1122,6 +1175,7 @@ export class MarketOfferService implements IMarketOfferService {
             offer,
             amount: offer.amount,
             currency: offer.currency,
+            fundingTxHashes: [...payload.fundingTxHashes],
             approvalTxHashes: [...payload.approvalTxHashes],
         };
     }

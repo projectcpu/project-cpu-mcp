@@ -43,7 +43,7 @@ export const CONDUIT_REGISTRY = `0x${'6'.repeat(40)}`;
 
 export const NATIVE_ADDRESS = `0x${'0'.repeat(40)}`;
 
-export const CURRENCY = { address: CURRENCY_ADDRESS, symbol: 'USDG', decimals: 6 };
+export const CURRENCY = { address: CURRENCY_ADDRESS, symbol: 'WETH', decimals: 18 };
 
 export const OTHER_CURRENCY = { address: `0x${'8'.repeat(40)}`, symbol: 'USDC', decimals: 6 };
 
@@ -316,15 +316,15 @@ export class RoutedMarketTransport implements IMarketTransport {
 
 export class FakeAppConfig implements IAppConfig {
     private readonly land: string;
-    private readonly usdg: string;
+    private readonly weth: string;
 
-    constructor(land: string = COLLECTION, usdg: string = CURRENCY_ADDRESS) {
+    constructor(land: string = COLLECTION, weth: string = CURRENCY_ADDRESS) {
         this.land = land;
-        this.usdg = usdg;
+        this.weth = weth;
     }
 
     async load(): Promise<AppConfig> {
-        return { contracts: { land: this.land, usdg: this.usdg } } as AppConfig;
+        return { contracts: { land: this.land, weth: this.weth } } as AppConfig;
     }
 }
 
@@ -335,7 +335,8 @@ export interface FakeWalletOptions {
     counter: bigint | null;
     conduit: string | null;
     protocolReadFails: boolean;
-    usdgBalance: bigint;
+    wethBalance: bigint;
+    nativeBalance: bigint;
 }
 
 export class FakeBuyerWallet implements WalletManager, WalletProvider {
@@ -357,7 +358,8 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
             counter: BigInt(COUNTER),
             conduit: CONDUIT,
             protocolReadFails: false,
-            usdgBalance: BigInt(AMOUNT),
+            wethBalance: BigInt(AMOUNT),
+            nativeBalance: BigInt(AMOUNT) + 1n,
             ...over,
         };
     }
@@ -412,7 +414,8 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
     }
 
     async getBalance(): Promise<bigint> {
-        return 0n;
+        this.log.push('read:nativeBalance');
+        return this.options.nativeBalance;
     }
 
     async readContract(params: ReadContractParams): Promise<unknown> {
@@ -430,7 +433,7 @@ export class FakeBuyerWallet implements WalletManager, WalletProvider {
             return conduit === null ? [`0x${'0'.repeat(40)}`, false] : [conduit, true];
         }
         if (params.functionName === 'balanceOf') {
-            return this.options.usdgBalance;
+            return this.options.wethBalance;
         }
 
         if (this.options.counter === null) {
@@ -470,8 +473,14 @@ export function makeOfferHarness(
     });
 
     const definition = createMakeCellOfferTool({ marketOffer: service });
+    const handler = async (args: never): Promise<ToolResult> => {
+        const result = (await definition.handler(args)) as ToolResult;
+        definition.outputSchema.parse(result.structuredContent);
+        return result;
+    };
+
     return {
-        handler: definition.handler as (args: never) => Promise<ToolResult>,
+        handler,
         transport,
         wallet,
         recovery,

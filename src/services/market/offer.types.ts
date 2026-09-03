@@ -25,12 +25,8 @@ import {
 import type { ILogger } from '../../logger/types.js';
 import type { WalletProvider } from '../../wallet/types.js';
 import type { IAppConfig } from '../types.js';
-import { USDG_CENT_BASE_UNITS } from './constants.js';
 
-export const usdgOfferAmountSchema = positiveBaseUnitAmountSchema.refine(
-    (amount) => /^[1-9][0-9]*$/.test(amount) && BigInt(amount) % USDG_CENT_BASE_UNITS === 0n,
-    'USDG offers must use whole-cent increments (10000 base units).',
-);
+export const wethOfferAmountSchema = positiveBaseUnitAmountSchema;
 
 export interface MarketOfferScan {
     outcome: MarketScanOutcome;
@@ -39,7 +35,7 @@ export interface MarketOfferScan {
 
 export interface MarketOfferContracts {
     collection: string;
-    usdg: string;
+    weth: string;
 }
 
 export const preparedOfferTermsSchema = z.object({
@@ -139,12 +135,14 @@ export interface MakeCellOfferResult {
     offer: MarketOffer;
     amount: string;
     currency: MarketCurrency;
+    fundingTxHashes: Array<string>;
     approvalTxHashes: Array<string>;
 }
 
 export interface OfferRecoveryPayload {
     prepared: PrepareOfferResponse | null;
     signature: string | null;
+    fundingTxHashes: Array<string>;
     approvalTxHashes: Array<string>;
 }
 

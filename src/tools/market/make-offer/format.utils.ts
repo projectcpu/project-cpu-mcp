@@ -10,11 +10,16 @@ export function summarizeCellOffer(result: MakeCellOfferResult): string {
         result.approvalTxHashes.length === 0
             ? 'no currency approval was needed'
             : `currency approvals broadcast in order: ${result.approvalTxHashes.join(', ')}`;
+    const funding =
+        result.fundingTxHashes.length === 0
+            ? 'the wallet already had enough WETH; no ETH was wrapped'
+            : `ETH wrapped into WETH before approval: ${result.fundingTxHashes.join(', ')}`;
 
     return [
         `${opening} (order ${result.offer.orderHash}, buyer ${result.wallet})`,
         `you bid: ${result.amount} ${result.currency.symbol} base units (decimals=${result.currency.decimals})`,
         `expires at ${result.offer.expirationTime}`,
+        funding,
         approvals,
     ].join('\n');
 }
