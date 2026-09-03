@@ -23,7 +23,7 @@ import {
 } from '../tools/market/cancel-order/__tests__/fixtures.js';
 import { createCancelOrderTool } from '../tools/market/cancel-order/cancel-order.js';
 
-const NETWORK = 'robinhood';
+const NETWORK = 'arbitrum';
 
 interface Wired {
     services: MarketServices;

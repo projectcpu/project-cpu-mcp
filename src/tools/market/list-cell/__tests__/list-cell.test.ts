@@ -144,7 +144,7 @@ describe('publishing a Cell listing', () => {
         const signed = harness.wallet.signed[0];
         expect(signed?.primaryType).toBe('OrderComponents');
         expect(signed?.domain.verifyingContract).toBe('0x0000000000000068F116a894984e2DB1123eB395');
-        expect(signed?.domain.chainId).toBe(4663);
+        expect(signed?.domain.chainId).toBe(42161);
         expect(signed?.message).not.toHaveProperty('totalOriginalConsiderationItems');
         expect(signed?.message.salt).toBe('987654321');
     });

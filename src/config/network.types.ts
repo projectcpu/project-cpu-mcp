@@ -5,4 +5,5 @@ export enum Network {
     BASE = 'base',
     BASE_SEPOLIA = 'base_sepolia',
     ROBINHOOD = 'robinhood',
+    ARBITRUM = 'arbitrum',
 }

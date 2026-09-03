@@ -217,7 +217,7 @@ describe('cpu_authenticate', () => {
                     provider: 'https://attacker.test/open-me',
                     credential_type: 'wallet',
                     disabled_at: null,
-                    metadata: { chain: 'eip155:4663', address: PAYBOX_ACCOUNT.address },
+                    metadata: { chain: 'eip155:42161', address: PAYBOX_ACCOUNT.address },
                 },
                 grant: { credential_id: 'credential-b', approval_mode: 'autonomous' },
             },

@@ -45,7 +45,7 @@ const intent: PayboxTransactionIntent = {
     to: destination,
     value: parseEther('0.5'),
     data: '0x1234',
-    chainId: 4663,
+    chainId: 42161,
     gas: 45_000n,
     maxPriorityFeePerGas: 2_000_000_000n,
     maxFeePerGas: 30_000_000_000n,
@@ -55,7 +55,7 @@ const typedData: SignTypedDataRequest = {
     domain: {
         name: 'Project CPU test',
         version: '1',
-        chainId: 4663,
+        chainId: 42161,
         verifyingContract: destination,
     },
     types: { Test: [{ name: 'value', type: 'uint256' }] },
@@ -282,7 +282,7 @@ describe('PayboxWalletManager', () => {
         await expect(wallet.signMessage(message)).resolves.toBe(signature);
         expect(signMessage).toHaveBeenCalledWith(tokens, 'pbxk1.key', 'credential-a', message);
         expect(wallet.getAddress()).toBe(account.address);
-        expect(wallet.getChainId()).toBe(4663);
+        expect(wallet.getChainId()).toBe(42161);
     });
 
     it('requires explicit authentication for wrong signer, wrong message, and malformed signatures', async () => {

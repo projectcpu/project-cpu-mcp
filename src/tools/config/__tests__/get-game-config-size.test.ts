@@ -203,8 +203,8 @@ function catalogBuildings(recipes: Array<RecipeView>): Array<CatalogBuildingView
 function catalogScaleConfig(): AppConfig {
     const recipes = catalogRecipes();
     return {
-        network: Network.ROBINHOOD,
-        chainId: 4663,
+        network: Network.ARBITRUM,
+        chainId: 42161,
         contracts: {
             land: '0x1111111111111111111111111111111111111111',
             weth: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

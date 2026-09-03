@@ -7,7 +7,7 @@ import { viemChainForChainId } from '../chain.utils.js';
 
 describe('viemChainForChainId', () => {
     it('maps each supported chainId to its viem chain', () => {
-        for (const id of [1, 11155111, 8453, 84532, 4663]) {
+        for (const id of [1, 11155111, 8453, 84532, 4663, 42161]) {
             expect(viemChainForChainId(id).id).toBe(id);
         }
     });

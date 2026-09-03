@@ -478,7 +478,7 @@ export function listCellHarness(
         profile: new MarketProfileClient({ client, chainId: LAUNCH_CHAIN_ID, logger }),
         appConfig,
         wallet,
-        network: 'robinhood',
+        network: 'arbitrum',
         singleFlight: new MarketSingleFlight(),
         recovery,
         logger,

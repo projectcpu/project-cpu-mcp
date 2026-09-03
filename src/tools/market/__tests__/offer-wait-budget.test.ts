@@ -34,7 +34,7 @@ function makeOfferHandler(transport: RoutedMarketTransport): ToolHandler {
         profile: new MarketProfileClient({ client, chainId: LAUNCH_CHAIN_ID, logger }),
         appConfig: new FakeAppConfig(),
         wallet: new FakeBuyerWallet(),
-        network: 'robinhood',
+        network: 'arbitrum',
         singleFlight: new MarketSingleFlight(),
         recovery: new MarketRecoveryStore(),
         logger,

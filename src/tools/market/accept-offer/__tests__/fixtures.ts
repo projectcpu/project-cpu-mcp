@@ -493,7 +493,7 @@ export function acceptOfferHarness(
         proof: new MarketFulfilmentProof({ transactions: reader, logger }),
         appConfig: over.appConfig ?? new FakeAppConfig(),
         wallet,
-        network: 'robinhood',
+        network: 'arbitrum',
         singleFlight: over.singleFlight ?? new MarketSingleFlight(),
         recovery,
         logger,

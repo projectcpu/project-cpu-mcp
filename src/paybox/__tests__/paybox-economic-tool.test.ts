@@ -118,8 +118,8 @@ describe('Paybox economic tool flow', () => {
         const contracts = new ContractClient({ wallet: provider, logger: new NoopLogger(), retry: null });
         const cellClient = new CellClient({ contracts, logger: new NoopLogger() });
         const config = {
-            network: Network.ROBINHOOD,
-            chainId: 4663,
+            network: Network.ARBITRUM,
+            chainId: 42161,
             contracts: { cell },
         } as unknown as AppConfig;
         const appConfig: IAppConfig = { load: vi.fn(async () => config) };
@@ -379,8 +379,8 @@ async function failedEconomicScenario(
     });
     const cellContract = cell;
     const config = {
-        network: Network.ROBINHOOD,
-        chainId: 4663,
+        network: Network.ARBITRUM,
+        chainId: 42161,
         contracts: { cell: cellContract },
     } as unknown as AppConfig;
     const appConfig: IAppConfig = { load: vi.fn(async () => config) };

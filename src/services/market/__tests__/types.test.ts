@@ -129,12 +129,12 @@ describe('time, chain and currency schemas', () => {
     });
 
     it('accepts only a positive whole chain id', () => {
-        expect(accepts(chainIdSchema, 4663)).toBe(true);
+        expect(accepts(chainIdSchema, 42161)).toBe(true);
 
         expect(accepts(chainIdSchema, 0)).toBe(false);
         expect(accepts(chainIdSchema, -1)).toBe(false);
         expect(accepts(chainIdSchema, 1.5)).toBe(false);
-        expect(accepts(chainIdSchema, '4663')).toBe(false);
+        expect(accepts(chainIdSchema, '42161')).toBe(false);
     });
 
     it('requires the address, symbol and decimals needed to read a price', () => {

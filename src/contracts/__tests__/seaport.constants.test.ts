@@ -20,7 +20,7 @@ describe('the pinned Seaport protocol contract', () => {
     it('carries the domain the launch chain verifies signatures against', () => {
         expect(SEAPORT_DOMAIN_NAME).toBe('Seaport');
         expect(SEAPORT_DOMAIN_VERSION).toBe('1.6');
-        expect(LAUNCH_CHAIN_ID).toBe(4663);
+        expect(LAUNCH_CHAIN_ID).toBe(42161);
     });
 
     it('exposes the maker counter read the protocol contract defines', () => {

@@ -155,8 +155,8 @@ const HUB: CatalogBuildingView = {
 };
 
 const CONFIG: AppConfig = {
-    network: Network.ROBINHOOD,
-    chainId: 4663,
+    network: Network.ARBITRUM,
+    chainId: 42161,
     contracts: {
         land: '0xland',
         weth: '0xweth',

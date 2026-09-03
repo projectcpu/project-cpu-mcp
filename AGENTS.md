@@ -4,7 +4,7 @@ MCP server for a blockchain game on EVM (Abstract). Distributed via npm, runs lo
 
 Two wallet modes via `WALLET_MODE` (defaults to `paybox`): `paybox` (browser OAuth and remote signing) or `evm` (private key in env, SIWE auth — requires `PRIVATE_KEY`). Session state persists to `~/.project-cpu/session.json`.
 
-The launch chain is Robinhood (chainId 4663). `NETWORK` is optional, defaults to `robinhood`, and rejects every other value at startup. Contract addresses are loaded from the game API `GET /api/v1/config?network=robinhood`. Set `RPC_URL` to override Robinhood's public RPC when sending transactions (e.g. `reveal`).
+The launch chain is Arbitrum One (chainId 42161). `NETWORK` is optional, defaults to `arbitrum`, and rejects every other value at startup. Contract addresses are loaded from the game API `GET /api/v1/config?network=arbitrum`. Set `RPC_URL` to override Arbitrum's public RPC when sending transactions (e.g. `reveal`).
 
 ## Worktrees
 

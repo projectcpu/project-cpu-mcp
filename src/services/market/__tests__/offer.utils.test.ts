@@ -19,7 +19,7 @@ function activeOffer(over: Partial<MarketOffer> = {}): MarketOffer {
     return {
         orderHash: `0x${'f'.repeat(64)}`,
         protocolAddress: `0x${'2'.repeat(40)}`,
-        chainId: 4663,
+        chainId: 42161,
         maker: WALLET,
         kind: MarketOfferKind.Item,
         tokenId: '1234',

@@ -1,5 +1,5 @@
 import type { Chain } from 'viem';
-import { base, baseSepolia, mainnet, robinhood, sepolia } from 'viem/chains';
+import { arbitrum, base, baseSepolia, mainnet, robinhood, sepolia } from 'viem/chains';
 
 // Inverse of config/network.utils: the numeric chainId the wallet carries → its viem `Chain`, used to
 // build the wallet/public clients. Kept in sync with the supported `Network` set.
@@ -9,6 +9,7 @@ const CHAIN_BY_ID: Record<number, Chain> = {
     [base.id]: base,
     [baseSepolia.id]: baseSepolia,
     [robinhood.id]: robinhood,
+    [arbitrum.id]: arbitrum,
 };
 
 export function viemChainForChainId(chainId: number): Chain {

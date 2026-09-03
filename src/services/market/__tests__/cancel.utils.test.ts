@@ -222,7 +222,7 @@ describe('the one transaction a cancellation may send', () => {
             to: COLLECTION,
             data: '0xfd9f1e10',
             value: '0',
-            chainId: 4663,
+            chainId: 42161,
             ...over,
         };
     }

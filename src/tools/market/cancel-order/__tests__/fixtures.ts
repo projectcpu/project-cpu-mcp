@@ -381,7 +381,7 @@ export function cancelOrderHarness(
         client: new MarketApiClient({ api: transport, logger }),
         proof: new MarketFulfilmentProof({ transactions: reader, logger }),
         wallet,
-        network: 'robinhood',
+        network: 'arbitrum',
         singleFlight: over.singleFlight ?? new MarketSingleFlight(),
         recovery,
         logger,

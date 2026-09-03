@@ -8,7 +8,7 @@ const WALLET = `0x${'A'.repeat(40)}`;
 function key(over: Partial<Parameters<typeof marketActionKey>[0]> = {}): string {
     return marketActionKey({
         wallet: WALLET,
-        network: 'robinhood',
+        network: 'arbitrum',
         tool: MarketActionTool.ListCell,
         inputs: ['1234', '1000', '1800086400', null],
         ...over,

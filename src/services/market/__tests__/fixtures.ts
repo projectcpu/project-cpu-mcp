@@ -22,7 +22,7 @@ export const OFFER_HASH = `0x${'b'.repeat(64)}`;
 export const listingWire = {
     orderHash: LISTING_HASH,
     protocolAddress: PROTOCOL_ADDRESS,
-    chainId: 4663,
+    chainId: 42161,
     maker: MAKER,
     tokenId: '1234',
     price: '1500000000000000000',
@@ -35,7 +35,7 @@ export function offerWire(kind: MarketOfferKind, tokenId: string | null): Record
     return {
         orderHash: OFFER_HASH,
         protocolAddress: PROTOCOL_ADDRESS,
-        chainId: 4663,
+        chainId: 42161,
         maker: OTHER_MAKER,
         kind,
         tokenId,

@@ -10,6 +10,7 @@ describe('chainIdForNetwork', () => {
         expect(chainIdForNetwork(Network.BASE)).toBe(8453);
         expect(chainIdForNetwork(Network.BASE_SEPOLIA)).toBe(84532);
         expect(chainIdForNetwork(Network.ROBINHOOD)).toBe(4663);
+        expect(chainIdForNetwork(Network.ARBITRUM)).toBe(42161);
     });
 
     it('covers every network in the enum', () => {

@@ -35,8 +35,8 @@ type AppConfigFixture = Required<AppConfigResponse>;
 
 function makeResponse(overrides: Partial<AppConfigFixture> = {}): AppConfigFixture {
     return {
-        network: Network.ROBINHOOD,
-        chainId: 4663,
+        network: Network.ARBITRUM,
+        chainId: 42161,
         contracts: {
             land: '0x3333333333333333333333333333333333333333',
             weth: WETH,
@@ -88,7 +88,7 @@ function makeResponse(overrides: Partial<AppConfigFixture> = {}): AppConfigFixtu
 function makeService(api: FakeApi): AppConfigService {
     return new AppConfigService({
         api: api as unknown as ApiClient,
-        network: Network.ROBINHOOD,
+        network: Network.ARBITRUM,
         logger: new NoopLogger(),
     });
 }
@@ -210,9 +210,9 @@ describe('AppConfigService', () => {
         const first = await service.load();
         const second = await service.load();
 
-        expect(api.paths).toEqual(['/api/v1/config?network=robinhood']);
-        expect(first.chainId).toBe(4663);
-        expect(first.network).toBe(Network.ROBINHOOD);
+        expect(api.paths).toEqual(['/api/v1/config?network=arbitrum']);
+        expect(first.chainId).toBe(42161);
+        expect(first.network).toBe(Network.ARBITRUM);
         expect(first.contracts.cell).toBe(CELL);
         expect(first.contracts.weth).toBe(WETH);
         expect(first.contracts.usdg).toBe(USDG);
@@ -316,8 +316,8 @@ describe('AppConfigService', () => {
             new FakeApi({
                 status: 200,
                 data: {
-                    network: 'robinhood',
-                    chainId: 4663,
+                    network: 'arbitrum',
+                    chainId: 42161,
                     contracts: { land: '', cpuToken: '', cpuHook: '', cell: '' },
                     randomness: { kind: RandomnessKind.ENTROPY, adapter: '' },
                     resources: {},

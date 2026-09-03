@@ -275,8 +275,8 @@ export class PayboxPublicScenario {
         const contracts = new ContractClient({ wallet, logger: new NoopLogger(), retry: null });
         const cellClient = new CellClient({ contracts, logger: new NoopLogger() });
         const config = {
-            network: Network.ROBINHOOD,
-            chainId: 4663,
+            network: Network.ARBITRUM,
+            chainId: 42161,
             contracts: { cell: cellAddress },
         } as unknown as AppConfig;
         const appConfig: IAppConfig = { load: async () => config };
@@ -526,7 +526,7 @@ function grantRow(credentialId: string, label: string): unknown {
             provider: 'Paybox',
             credential_type: 'wallet',
             disabled_at: null,
-            metadata: { chain: 'eip155:4663', address: walletAccount.address },
+            metadata: { chain: 'eip155:42161', address: walletAccount.address },
         },
         grant: { credential_id: credentialId, approval_mode: 'autonomous' },
     };

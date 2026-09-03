@@ -180,8 +180,8 @@ Keep `PRIVATE_KEY` secret. Use it only in the MCP server environment. Do not put
 | `WALLET_MODE` | `paybox` | Set to `evm` for a local private-key wallet. |
 | `PRIVATE_KEY` | — | Required only when `WALLET_MODE=evm`; `0x` followed by 64 hex chars (32 bytes). |
 | `API_URL` | `https://api-dev.projectcpu.cc` | Point the client at a different game API deployment. |
-| `NETWORK` | `robinhood` | Normally never; Robinhood is the only accepted launch network. |
-| `RPC_URL` | Robinhood public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
+| `NETWORK` | `arbitrum` | Normally never; Arbitrum One is the only accepted launch network. |
+| `RPC_URL` | Arbitrum public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
 | `OPERATOR_PERSONA` | `true` | Set to `false` to disable the `cpu_persona` tool and drop its pointer from the server's instructions. |
 | `DEBUG` | `false` | Set to `true` for debug-level logging on stderr. |
 

@@ -37,8 +37,8 @@ const RECIPE_ONLY_NUMBERS = {
 };
 
 const CONFIG: AppConfig = {
-    network: Network.ROBINHOOD,
-    chainId: 4663,
+    network: Network.ARBITRUM,
+    chainId: 42161,
     contracts: {
         land: '0xland',
         weth: '0xweth',
@@ -336,7 +336,7 @@ describe('get_game_config tool — the static every agent reads once', () => {
         const text = await prose();
         const section = sectionOf(text, STATIC_SECTION_TITLE);
 
-        expect(text).toMatch(/Network robinhood \(chainId 4663\)/);
+        expect(text).toMatch(/Network arbitrum \(chainId 42161\)/);
         expect(section).toContain('5:Iron');
         expect(section).toContain('101:Concrete');
         expect(section).toContain('USDG 0xusdg');
@@ -408,8 +408,8 @@ describe('get_game_config tool — the static every agent reads once', () => {
     it('carries every static group in the machine block, untrimmed', async () => {
         const json = await reference();
 
-        expect(json.network).toBe('robinhood');
-        expect(json.chainId).toBe(4663);
+        expect(json.network).toBe('arbitrum');
+        expect(json.chainId).toBe(42161);
         expect(json.contracts).toEqual(CONFIG.contracts);
         expect(json.resources).toEqual({ 5: 'Iron', 101: 'Concrete', 102: 'Steel' });
         expect(json.reveal).toEqual({ ethBudget: '0.001', cpuBurn: '2' });

@@ -12,7 +12,7 @@ import { MarketOfferKind, MarketTransactionKind, type MarketTransaction } from '
 const ORDER_HASH = `0x${'e'.repeat(64)}`;
 
 function transaction(kind: MarketTransactionKind, data: string): MarketTransaction {
-    return { kind, to: `0x${'1'.repeat(40)}`, data, value: '0', chainId: 4663 };
+    return { kind, to: `0x${'1'.repeat(40)}`, data, value: '0', chainId: 42161 };
 }
 
 function prepared(over: Partial<PrepareAcceptanceResponse> = {}): PrepareAcceptanceResponse {
@@ -21,7 +21,7 @@ function prepared(over: Partial<PrepareAcceptanceResponse> = {}): PrepareAccepta
         offer: {
             orderHash: ORDER_HASH,
             protocolAddress: `0x${'2'.repeat(40)}`,
-            chainId: 4663,
+            chainId: 42161,
             maker: `0x${'3'.repeat(40)}`,
             kind: MarketOfferKind.Item,
             tokenId: '1234',
