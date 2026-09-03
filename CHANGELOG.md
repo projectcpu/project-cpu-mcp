@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.3](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.2...v0.12.3) (2026-09-03)
+
+
+### Features
+
+* **market:** support ETH and WETH orders ([#34](https://github.com/projectcpu/project-cpu-mcp/issues/34)) ([51e8e5e](https://github.com/projectcpu/project-cpu-mcp/commit/51e8e5e0bf942132f4583e906d6b9cb164738b0b))
+
 ## [0.12.2](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.1...v0.12.2) (2026-09-01)
 
 
