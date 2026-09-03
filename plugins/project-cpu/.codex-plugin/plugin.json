@@ -1,6 +1,6 @@
 {
     "name": "project-cpu",
-    "version": "0.12.3",
+    "version": "0.12.4",
     "description": "Project CPU game orchestration skill and MCP server.",
     "author": {
         "name": "projectcpu"
