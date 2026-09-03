@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.4](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.3...v0.12.4) (2026-09-03)
+
+
+### Features
+
+* **config:** move the launch chain to Arbitrum One ([4a3c9e3](https://github.com/projectcpu/project-cpu-mcp/commit/4a3c9e31794b8737d98ac61900110482f969a471))
+
 ## [0.12.3](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.2...v0.12.3) (2026-09-03)
 
 
