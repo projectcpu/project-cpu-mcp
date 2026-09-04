@@ -6,6 +6,7 @@ import type { IMarketOfferService } from './offer.types.js';
 import type { IMarketProfileReader } from './profile.schemas.js';
 import type { IMarketPurchaseService } from './purchase.types.js';
 import type { IMarketService, IMarketTransport } from './types.js';
+import type { Network } from '../../config/network.types.js';
 import type { ILogger } from '../../logger/types.js';
 import type { WalletProvider } from '../../wallet/types.js';
 import type { IAppConfig } from '../types.js';
@@ -19,7 +20,7 @@ export interface MarketServicesOptions {
     api: IMarketTransport;
     appConfig: IAppConfig;
     wallet: WalletProvider;
-    network: string;
+    network: Network;
     /** Null builds a fresh one; the whole marketplace surface then shares that single coordinator. */
     coordinator: MarketCoordinator | null;
     logger: ILogger;

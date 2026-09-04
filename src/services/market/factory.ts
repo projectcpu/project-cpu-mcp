@@ -11,6 +11,7 @@ import { MarketPurchaseService } from './purchase.service.js';
 import { MarketRecoveryStore } from './recovery.store.js';
 import { MarketService } from './service.js';
 import { MarketSingleFlight } from './single-flight.js';
+import { chainIdForNetwork } from '../../config/network.utils.js';
 
 // One recovery store and one single-flight map for the whole marketplace surface: the bound on
 // unresolved creations is a promise about this process, not about one tool, and two tools that
@@ -29,7 +30,7 @@ export function createMarketServices(options: MarketServicesOptions): MarketServ
     });
     const profile = new MarketProfileClient({
         client,
-        chainId: wallet.get().getChainId(),
+        chainId: chainIdForNetwork(network),
         logger: logger.child('market:profile'),
     });
 
