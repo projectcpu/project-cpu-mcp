@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.5](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.4...v0.12.5) (2026-09-04)
+
+
+### Bug Fixes
+
+* allow Paybox cold start ([#37](https://github.com/projectcpu/project-cpu-mcp/issues/37)) ([671e3a0](https://github.com/projectcpu/project-cpu-mcp/commit/671e3a0e14a17faca7fb082547deb714cd45e67a))
+
 ## [0.12.4](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.3...v0.12.4) (2026-09-03)
 
 
