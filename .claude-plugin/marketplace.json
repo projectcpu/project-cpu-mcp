@@ -9,7 +9,7 @@
             "name": "project-cpu",
             "source": "./plugins/project-cpu",
             "description": "Project CPU game orchestration skill and MCP server.",
-            "version": "0.12.4"
+            "version": "0.12.5"
         }
     ]
 }
