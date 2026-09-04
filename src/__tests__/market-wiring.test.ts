@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Network } from '../config/network.types.js';
 import { NoopLogger } from '../logger/noop.logger.js';
 import { MarketActionTool } from '../services/market/action.types.js';
 import { MarketError } from '../services/market/error.js';
@@ -22,8 +23,9 @@ import {
     type FakeMarketTransport,
 } from '../tools/market/cancel-order/__tests__/fixtures.js';
 import { createCancelOrderTool } from '../tools/market/cancel-order/cancel-order.js';
+import type { WalletProvider } from '../wallet/types.js';
 
-const NETWORK = 'arbitrum';
+const NETWORK = Network.ARBITRUM;
 
 interface Wired {
     services: MarketServices;
@@ -63,6 +65,26 @@ afterEach(() => {
 });
 
 describe('the marketplace services the server is built with', () => {
+    it('start before the Paybox wallet is authenticated', () => {
+        const wallet: WalletProvider = {
+            isReady: () => false,
+            get: () => {
+                throw new Error('Paybox wallet is not authenticated. Call cpu_authenticate first.');
+            },
+        };
+
+        expect(() =>
+            createMarketServices({
+                api: transportOf(),
+                appConfig: {} as unknown as IAppConfig,
+                wallet,
+                network: NETWORK,
+                coordinator: null,
+                logger: new NoopLogger(),
+            }),
+        ).not.toThrow();
+    });
+
     it('prove a fulfilment by asking the wallet itself who sent the transaction', async () => {
         const { services, wallet } = wire();
 
