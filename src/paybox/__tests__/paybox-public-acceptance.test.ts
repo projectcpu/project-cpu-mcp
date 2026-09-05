@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createPayboxPublicScenario, type PayboxPublicScenario } from './paybox-public-scenario.harness.js';
 
@@ -12,6 +12,7 @@ describe('Paybox public acceptance', () => {
 
     it('bootstraps one autonomous Wallet through registered cpu_authenticate', async () => {
         scenario = await createPayboxPublicScenario();
+        scenario.holdAuthCallback();
 
         const first = await scenario.callAuthenticate();
 
@@ -27,7 +28,16 @@ describe('Paybox public acceptance', () => {
                 operation: 'open_authorization',
                 authorizationUrl: 'https://accounts.paybox.test/authorize?state=acceptance',
             },
+            { boundary: 'auth_flow', operation: 'accept_callback' },
         ]);
+        scenario.releaseAuthCallback();
+        await vi.waitFor(() => {
+            expect(scenario?.persistedPaybox()).not.toBeNull();
+            expect(scenario?.persistedSession()?.jwt).toBe('game-jwt-1');
+        });
+        expect(await scenario.callAuthenticate()).toEqual({ status: 'authenticated', address: scenario.walletAddress });
+        expect(scenario.requestCount('browser', 'open_authorization')).toBe(1);
+        expect(scenario.requestCount('game_api', 'verify_siwe')).toBe(1);
     });
 
     it('keeps one selected Wallet coherent across SIWE, a transaction, restart, and refresh rotation', async () => {
@@ -135,6 +145,7 @@ describe('Paybox public acceptance', () => {
 
         expect(scenario.persistedPaybox()).not.toBeNull();
         expect(scenario.persistedSession()).not.toBeNull();
+        scenario.holdAuthCallback();
 
         expect(await scenario.callAuthenticate({ force: true })).toEqual({
             status: 'paybox_auth_required',
@@ -152,6 +163,7 @@ describe('Paybox public acceptance', () => {
         scenario = await createPayboxPublicScenario();
         await scenario.bootstrap();
         scenario.replaceSelectedGrant();
+        scenario.holdAuthCallback();
 
         expect(await scenario.callAuthenticate()).toEqual({
             status: 'paybox_auth_required',
@@ -169,6 +181,7 @@ describe('Paybox public acceptance', () => {
         scenario = await createPayboxPublicScenario();
         await scenario.bootstrap();
         scenario.rejectGrantRequests(403);
+        scenario.holdAuthCallback();
 
         expect(await scenario.callAuthenticate()).toEqual({
             status: 'paybox_auth_required',
@@ -241,6 +254,7 @@ describe('Paybox public acceptance', () => {
     it('shares one browser launch and public state across concurrent authentication calls', async () => {
         scenario = await createPayboxPublicScenario();
         scenario.holdBrowserStart();
+        scenario.holdAuthCallback();
 
         const first = scenario.callAuthenticate();
         const second = scenario.callAuthenticate();
@@ -256,18 +270,19 @@ describe('Paybox public acceptance', () => {
         await expect(first).resolves.toEqual(expected);
         await expect(second).resolves.toEqual(expected);
         expect(scenario.requestCount('browser', 'open_authorization')).toBe(1);
-        expect(scenario.requestCount('auth_flow', 'accept_callback')).toBe(0);
+        expect(scenario.requestCount('auth_flow', 'accept_callback')).toBe(1);
     });
 
     it('ignores a late auth callback after force reset without resurrecting credentials', async () => {
         scenario = await createPayboxPublicScenario();
-        scenario.holdAuthCallback();
+        const releaseOldCallback = scenario.holdAuthCallback();
 
         await scenario.callAuthenticate();
         await scenario.callAuthenticate();
         await scenario.waitForRequests('auth_flow', 'accept_callback', 1);
+        scenario.holdAuthCallback();
         await scenario.callAuthenticate({ force: true });
-        scenario.releaseAuthCallback();
+        releaseOldCallback();
         await scenario.waitForRequests('auth_flow', 'return_callback_material', 1);
 
         expect(scenario.persistedPaybox()).toBeNull();

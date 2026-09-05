@@ -1,4 +1,5 @@
 import { CHAKRA_PETCH_700_WOFF2, IBM_PLEX_MONO_400_WOFF2 } from './loopback-page-fonts.constants.js';
+import { FRONTEND_URL } from '../../config/constants.js';
 
 export function signingKeyPage(action: string, provisioningUrl: string, error: string | null): string {
     const errorMarkup =
@@ -41,16 +42,23 @@ export function signingKeyPage(action: string, provisioningUrl: string, error: s
 
 export function connectionCompletePage(): string {
     return document(
-        'Project CPU connected',
+        'Project CPU signing key received',
         `<main class="shell">
             <section class="panel compact" aria-labelledby="page-title">
-                ${header('CONNECTED', 'success')}
+                ${header('KEY RECEIVED', 'success')}
                 <div class="panel-body complete">
-                    <p class="eyebrow">AUTH SEQUENCE COMPLETE</p>
-                    <h1 id="page-title">Connection established</h1>
-                    <p class="lede">Your Paybox signing key is stored locally. You can close this tab and return to Project CPU.</p>
+                    <p class="eyebrow">FINISHING CONNECTION</p>
+                    <h1 id="page-title">Signing key received</h1>
+                    <p class="lede">Project CPU is finishing your login automatically. You can close this tab and return to Project CPU.</p>
+                    <section class="key-entry" aria-label="Live grid">
+                        <p class="eyebrow">OPERATOR VIEW // LIVE GRID</p>
+                        <p class="lede">Watch the grid in real time. Issue orders in chat. The UI observes. The agent acts.</p>
+                        <a class="button primary" href="${escapeHtml(FRONTEND_URL)}" target="_blank" rel="noopener noreferrer">
+                            Open the grid <span aria-hidden="true">↗</span>
+                        </a>
+                    </section>
                 </div>
-                <footer>127.0.0.1 <span>//</span> LOCAL ONLY <span>//</span> READY</footer>
+                <footer>127.0.0.1 <span>//</span> LOCAL ONLY <span>//</span> KEY RECEIVED</footer>
             </section>
         </main>`,
     );

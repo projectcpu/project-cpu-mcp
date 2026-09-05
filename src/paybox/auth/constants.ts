@@ -7,6 +7,7 @@ export const OAUTH_DEVICE_PENDING_ERROR = 'authorization_pending';
 export const OAUTH_DEVICE_SLOW_DOWN_ERROR = 'slow_down';
 export const DEFAULT_DEVICE_POLL_INTERVAL_SECONDS = 5;
 export const DEFAULT_DEVICE_START_TIMEOUT_MS = 5 * 60 * 1000;
+export const SIGNING_KEY_FORM_OPEN_DELAY_MS = 5000;
 export const DEVICE_SLOW_DOWN_INCREMENT_SECONDS = 5;
 export const OAUTH_CONFIRMED_AUTH_HTTP_STATUSES = new Set([400, 401, 403]);
 export const LOOPBACK_HOST = '127.0.0.1';

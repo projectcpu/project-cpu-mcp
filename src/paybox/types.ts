@@ -16,6 +16,7 @@ import type {
 
 export enum PayboxAuthStatus {
     Authenticated = 'authenticated',
+    Authenticating = 'authenticating',
     AuthRequired = 'paybox_auth_required',
     WalletSelectionRequired = 'wallet_selection_required',
 }
@@ -257,6 +258,7 @@ export interface PayboxAuthenticateInput {
 }
 
 export type PayboxAuthenticateResult =
+    | { status: PayboxAuthStatus.Authenticating; instructions: string }
     | { status: PayboxAuthStatus.AuthRequired; instructions: string; authorizationUrl: string }
     | { status: PayboxAuthStatus.Authenticated; address: string }
     | { status: PayboxAuthStatus.WalletSelectionRequired; choices: Array<EligiblePayboxGrant> };

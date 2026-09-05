@@ -1666,7 +1666,9 @@ describe('PayboxCoordinator', () => {
         }>();
         const save = vi.fn();
         const createWallet = vi.fn(() => wallet);
-        const listGrants = vi.fn(() => grant.promise);
+        const listGrants = vi
+            .fn<IPayboxSdkAdapter['listEligibleAutonomousEvmGrants']>(() => new Promise(() => undefined))
+            .mockImplementationOnce(() => grant.promise);
         const coordinator = new PayboxCoordinator({
             storage: { load: () => null, save, clear: vi.fn() },
             flow: {
@@ -1731,7 +1733,9 @@ describe('PayboxCoordinator', () => {
             .fn()
             .mockResolvedValueOnce({ authorizationUrl: 'https://accounts.test/authorize?state=stale' })
             .mockResolvedValueOnce({ authorizationUrl: 'https://accounts.test/authorize?state=current' });
-        const finish = vi.fn(() => completion.promise);
+        const finish = vi
+            .fn<PayboxAuthFlow['finish']>(() => new Promise(() => undefined))
+            .mockImplementationOnce(() => completion.promise);
         const save = vi.fn();
         const listGrants = vi.fn();
         const createWallet = vi.fn();
@@ -1867,7 +1871,6 @@ describe('PayboxCoordinator', () => {
             authenticator: testAuthenticator(vi.fn()),
         });
 
-        await coordinator.authenticate({ force: false, payboxCredentialId: null });
         await coordinator.authenticate({ force: false, payboxCredentialId: null });
         await vi.waitFor(() => expect(listGrants).toHaveBeenCalledOnce());
         await new Promise<void>((resolve) => setImmediate(resolve));
@@ -2057,7 +2060,9 @@ describe('PayboxCoordinator', () => {
             new Promise<never>((_, reject) => setImmediate(() => reject(new Error('blocked')))),
         ]);
 
-        expect(polled).toEqual(pending);
+        expect(pending).toMatchObject({ status: PayboxAuthStatus.AuthRequired });
+        expect(polled).toMatchObject({ status: PayboxAuthStatus.Authenticating });
+        expect(polled).not.toHaveProperty('authorizationUrl');
         expect(authenticate).toHaveBeenCalledOnce();
         expect(start).toHaveBeenCalledOnce();
         authentication.resolve('game-jwt');
@@ -2104,7 +2109,7 @@ describe('PayboxCoordinator', () => {
             authenticator: testAuthenticator(
                 vi.fn((_wallet, signal) => {
                     siweSignals.push(signal);
-                    return authentication.promise;
+                    return siweSignals.length === 1 ? authentication.promise : new Promise<never>(() => undefined);
                 }),
             ),
         });

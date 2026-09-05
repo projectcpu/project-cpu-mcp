@@ -291,6 +291,34 @@ describe('DeviceAuthFlow', () => {
                 client_id: 'oauth-client',
             }),
         );
+    }, 10_000);
+
+    it('waits five seconds after OAuth before opening the local key form', async () => {
+        vi.useFakeTimers();
+        const openBrowser = vi.fn();
+        const flow = flowWith(successfulClient(), openBrowser, 10_000);
+        await begin(flow);
+
+        await vi.advanceTimersByTimeAsync(1);
+        expect(openBrowser).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(4999);
+        expect(openBrowser).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(openBrowser).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not open the key form if cancelled during the delay', async () => {
+        vi.useFakeTimers();
+        const openBrowser = vi.fn();
+        const flow = flowWith(successfulClient(), openBrowser, 10_000);
+        await begin(flow);
+        await vi.advanceTimersByTimeAsync(1);
+        abort(flow);
+
+        await vi.advanceTimersByTimeAsync(5000);
+
+        expect(openBrowser).toHaveBeenCalledOnce();
+        await expect(finish(flow)).rejects.toBeInstanceOf(PayboxAuthFlowError);
     });
 
     it('honors authorization_pending and the five-second slow_down backoff', async () => {
@@ -322,7 +350,7 @@ describe('DeviceAuthFlow', () => {
         vi.useRealTimers();
     });
 
-    it('rejects invalid, oversized, and duplicate key submissions without reflecting secrets', async () => {
+    it('rejects invalid and oversized submissions, then closes after a valid key without reflecting secrets', async () => {
         const openBrowser = vi.fn();
         const flow = flowWith(successfulClient(), openBrowser);
         await begin(flow);
@@ -356,17 +384,9 @@ describe('DeviceAuthFlow', () => {
                 })
             ).status,
         ).toBe(200);
-        expect(
-            (
-                await fetch(captureUrl, {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ key: VALID_SIGNING_KEY }).toString(),
-                })
-            ).status,
-        ).toBe(409);
+        await expect(fetch(captureUrl)).rejects.toThrow();
         await expect(finish(flow)).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
-    });
+    }, 10_000);
 
     it.each(['/.well-known/oauth-authorization-server', '/register', '/device'])(
         'bounds a stalled %s request and allows a replacement start',
@@ -527,10 +547,10 @@ describe('DeviceAuthFlow', () => {
         expect(submitted.status).toBe(200);
         await expect(finish(flow)).resolves.toMatchObject({ signingKey: VALID_SIGNING_KEY });
         await expect(fetch(captureUrl)).rejects.toThrow();
-    });
+    }, 10_000);
 });
 
-function flowWith(client: PayboxHttpClient, open = vi.fn(), timeoutMs = 1000): DeviceAuthFlow {
+function flowWith(client: PayboxHttpClient, open = vi.fn(), timeoutMs = 10_000): DeviceAuthFlow {
     return new DeviceAuthFlow(
         {
             issuerUrl: 'https://api.paybox.test',
@@ -620,7 +640,7 @@ function controlledPromise<T>(): { promise: Promise<T>; resolve: (value: T) => v
 }
 
 async function waitForBrowserCalls(openBrowser: ReturnType<typeof vi.fn>, count: number): Promise<void> {
-    await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledTimes(count));
+    await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledTimes(count), { timeout: 8000 });
 }
 
 async function expectParserFailure(failure: Promise<unknown>, forbidden: RegExp): Promise<void> {

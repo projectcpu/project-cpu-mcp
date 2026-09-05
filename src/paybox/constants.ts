@@ -8,5 +8,8 @@ export const PAYBOX_TOKEN_REFRESH_WINDOW_MS = 60 * 1000;
 export const PAYBOX_KEY_PREFIX = 'pbxk1.';
 export const PAYBOX_AUTH_REQUIRED_INSTRUCTIONS =
     'Paybox authorization should open automatically in your browser. If it did not open, use the authorization URL.';
+export const PAYBOX_AUTHENTICATING_INSTRUCTIONS =
+    'Paybox signing key received. Project CPU login is finishing automatically. ' +
+    'Call cpu_authenticate again to check the result; no further browser authorization is needed.';
 export const PAYBOX_FULL_ACCESS_WALLET_INSTRUCTIONS =
     'Create or grant an EVM Wallet with autonomous access in Paybox, then call cpu_authenticate again.';

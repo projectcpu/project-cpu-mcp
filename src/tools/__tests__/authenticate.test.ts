@@ -413,7 +413,6 @@ describe('cpu_authenticate', () => {
         client = harness.toolClient;
 
         await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
-        await harness.toolClient.callTool({ name: 'cpu_authenticate', arguments: {} });
         await vi.waitFor(() => expect(harness.sign).toHaveBeenCalledOnce());
         await new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -541,17 +540,19 @@ async function createPayboxPublicHarness(
     const flowStart = vi.fn(async () => ({ authorizationUrl: 'https://accounts.test/authorize?state=opaque' }));
     const flow: PayboxAuthFlow = {
         start: flowStart,
-        finish: vi.fn(async () => ({
-            tokens: {
-                clientId: 'client',
-                accessToken: 'access',
-                refreshToken: null,
-                expiresAt: null,
-                resource: null,
-                baseUrl: 'https://api.paybox.test',
-            },
-            signingKey: 'pbxk1.abcdefghijklmnop',
-        })),
+        finish: vi
+            .fn<PayboxAuthFlow['finish']>(() => new Promise(() => undefined))
+            .mockResolvedValueOnce({
+                tokens: {
+                    clientId: 'client',
+                    accessToken: 'access',
+                    refreshToken: null,
+                    expiresAt: null,
+                    resource: null,
+                    baseUrl: 'https://api.paybox.test',
+                },
+                signingKey: 'pbxk1.abcdefghijklmnop',
+            }),
     };
     let auth: AuthService | null = null;
     const wallet = new PayboxCoordinator({

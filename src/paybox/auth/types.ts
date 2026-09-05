@@ -48,10 +48,12 @@ export interface PayboxAuthorityOptions {
 
 export enum PayboxAuthFlowPollStatus {
     Completed = 'completed',
+    Finalizing = 'finalizing',
     Pending = 'pending',
 }
 
 export type PayboxAuthFlowPollResult =
+    | { status: PayboxAuthFlowPollStatus.Finalizing }
     | {
           status: PayboxAuthFlowPollStatus.Completed;
           result: PayboxAuthenticateResult;
