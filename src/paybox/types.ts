@@ -214,19 +214,6 @@ export interface PayboxWalletAuthority {
     invalidate(): void;
 }
 
-export interface OAuthMetadata {
-    authorizationEndpoint: string;
-    registrationEndpoint: string;
-    tokenEndpoint: string;
-}
-
-export interface OAuthTokenResponse {
-    accessToken: string;
-    refreshToken: string | null;
-    expiresAt: number | null;
-    resource: string | null;
-}
-
 export interface EligiblePayboxGrant {
     credentialId: string;
     address: string;
@@ -262,12 +249,6 @@ export interface PayboxHttpResponse {
 
 export interface PayboxHttpClient {
     fetch(url: string, init: RequestInit): Promise<PayboxHttpResponse>;
-}
-
-export interface LoopbackAuthFlowOptions {
-    issuerUrl: string;
-    httpClient: PayboxHttpClient;
-    timeoutMs: number | null;
 }
 
 export interface PayboxAuthenticateInput {

@@ -1,5 +1,5 @@
+import type { OAuthDeviceAuthorization, OAuthTokenResponse } from './types.js';
 import { oauthError } from './utils.js';
-import type { OAuthTokenResponse } from '../types.js';
 
 export function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -48,7 +48,30 @@ export function tokenResponse(value: unknown): OAuthTokenResponse {
     };
 }
 
-export function formKey(body: string): string | null {
-    const value = new URLSearchParams(body).get('key');
-    return value === null ? null : value;
+export function deviceAuthorizationResponse(value: unknown): OAuthDeviceAuthorization {
+    if (!isObject(value)) throw oauthError('malformed device authorization response');
+    const expiresIn = positiveNumber(value, 'expires_in');
+    const interval = value.interval === undefined ? null : positiveNumber(value, 'interval');
+    return {
+        deviceCode: nonEmptyString(value, 'device_code'),
+        userCode: nonEmptyString(value, 'user_code'),
+        verificationUri: urlField(value, 'verification_uri'),
+        verificationUriComplete: urlField(value, 'verification_uri_complete'),
+        expiresIn,
+        interval,
+    };
+}
+
+export function oauthResponseError(value: unknown): string | null {
+    if (!isObject(value)) return null;
+    const error = value.error;
+    return typeof error === 'string' && error.length > 0 ? error : null;
+}
+
+function positiveNumber(value: Record<string, unknown>, name: string): number {
+    const field = value[name];
+    if (typeof field !== 'number' || !Number.isFinite(field) || field <= 0) {
+        throw oauthError(`invalid ${name}`);
+    }
+    return field;
 }

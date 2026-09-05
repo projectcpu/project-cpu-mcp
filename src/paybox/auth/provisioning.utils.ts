@@ -1,5 +1,5 @@
 import { PAYBOX_AGENT_KEY_PATH } from './constants.js';
-import { isObject } from './loopback-flow.utils.js';
+import { isObject } from './oauth-response.utils.js';
 import { managementUrlFromBaseUrl } from '../sdk/utils.js';
 
 export function agentClientId(accessToken: string): string | null {
