@@ -1,4 +1,4 @@
-import { PAYBOX_AUTH_REQUIRED_INSTRUCTIONS } from '../constants.js';
+import { PAYBOX_AUTHENTICATING_INSTRUCTIONS, PAYBOX_AUTH_REQUIRED_INSTRUCTIONS } from '../constants.js';
 import { PayboxAuthority } from './authority.js';
 import { PayboxAuthFlowSession } from './flow-session.js';
 import { PayboxAuthFlowPollStatus } from './types.js';
@@ -93,6 +93,12 @@ export class PayboxCoordinator implements WalletProvider {
         }
         const result = await this.authFlow.poll((material) => this.authority.authenticate(material, null));
         if (result.status === PayboxAuthFlowPollStatus.Completed) return result.result;
+        if (result.status === PayboxAuthFlowPollStatus.Finalizing) {
+            return {
+                status: PayboxAuthStatus.Authenticating,
+                instructions: PAYBOX_AUTHENTICATING_INSTRUCTIONS,
+            };
+        }
         return {
             status: PayboxAuthStatus.AuthRequired,
             instructions: PAYBOX_AUTH_REQUIRED_INSTRUCTIONS,

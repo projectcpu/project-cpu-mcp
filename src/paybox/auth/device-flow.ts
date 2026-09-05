@@ -1,12 +1,12 @@
 import { mcpResource } from '@paybox-sh/sdk';
 
 import { SystemBrowserOpener } from './browser-opener.js';
-import { DEFAULT_DEVICE_START_TIMEOUT_MS } from './constants.js';
+import { DEFAULT_DEVICE_START_TIMEOUT_MS, SIGNING_KEY_FORM_OPEN_DELAY_MS } from './constants.js';
 import { DeviceAuthorizationClient } from './device-authorization.client.js';
 import { agentKeyProvisioningUrl } from './provisioning.utils.js';
 import { SigningKeyCapture } from './signing-key-capture.js';
 import type { DeviceAuthFlowOptions, DeviceAuthorizationGrant } from './types.js';
-import { authAbortError, oauthError } from './utils.js';
+import { authAbortError, oauthError, waitForPoll } from './utils.js';
 import type { IPayboxBrowserOpener, PayboxAuthFlow, PayboxAuthMaterial, PayboxAuthStart } from '../types.js';
 
 export class DeviceAuthFlow implements PayboxAuthFlow {
@@ -100,6 +100,8 @@ export class DeviceAuthFlow implements PayboxAuthFlow {
         const key = capture.waitForKey(provisioningUrl);
         // Paybox Connect navigates to key generation in the approving browser.
         // The local form links there as a fallback without opening a duplicate tab.
+        await waitForPoll(SIGNING_KEY_FORM_OPEN_DELAY_MS, signal);
+        signal.throwIfAborted();
         this.openBrowser(captureUrl);
         const signingKey = await key;
         signal.throwIfAborted();

@@ -66,7 +66,12 @@ export class SigningKeyCapture {
     }
 
     private handle(request: IncomingMessage, response: ServerResponse): void {
-        const url = new URL(request.url ?? '/', `http://${LOOPBACK_HOST}`);
+        let url: URL;
+        try {
+            url = new URL(request.url ?? '/', `http://${LOOPBACK_HOST}`);
+        } catch {
+            return this.respond(response, 400, 'Invalid request');
+        }
         if (url.pathname !== this.keyPath) return this.respond(response, 404, 'Not found');
         const provisioningUrl = this.provisioningUrl;
         if (request.method === 'GET') {
@@ -101,10 +106,15 @@ export class SigningKeyCapture {
                 );
             }
             this.accepted = true;
+            // Flush the response before finalization can dispose the capture server.
+            response.once('finish', () => {
+                this.resolveKey?.(key);
+                this.resolveKey = null;
+                this.rejectKey = null;
+                this.close();
+            });
+            response.shouldKeepAlive = false;
             this.respond(response, 200, connectionCompletePage());
-            this.resolveKey?.(key);
-            this.resolveKey = null;
-            this.rejectKey = null;
         });
     }
 

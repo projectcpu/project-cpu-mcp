@@ -182,8 +182,10 @@ export class PayboxPublicScenario {
         this.browserStartBarrier = null;
     }
 
-    public holdAuthCallback(): void {
-        this.authCallbackBarrier = deferred();
+    public holdAuthCallback(): () => void {
+        const barrier = deferred();
+        this.authCallbackBarrier = barrier;
+        return () => barrier.resolve();
     }
 
     public releaseAuthCallback(): void {

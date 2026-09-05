@@ -10,6 +10,7 @@ export class PayboxAuthFlowSession {
     private completionResult: PayboxAuthenticateResult | null = null;
     private consumingResult: Promise<PayboxAuthFlowPollResult> | null = null;
     private completionError: Error | null = null;
+    private finalizing = false;
 
     constructor(private readonly flow: PayboxAuthFlow) {}
 
@@ -34,18 +35,24 @@ export class PayboxAuthFlowSession {
         if (this.completionResult !== null) return this.consumeCompletion();
         if (this.startResult === null) {
             await this.start();
-            return this.pendingResult();
+            const pending = this.pendingResult();
+            this.beginCompletion(complete);
+            return pending;
         }
-        const pending = this.pendingResult();
-        this.beginCompletion(complete);
         if (await this.hasCompletedAuthentication()) {
             if (this.completionResult !== null) return this.consumeCompletion();
         }
-        return pending;
+        if (this.completionError !== null) {
+            const error = this.completionError;
+            this.completionError = null;
+            throw error;
+        }
+        return this.pendingResult();
     }
 
     private pendingResult(): PayboxAuthFlowPollResult {
         if (this.startResult === null) throw new Error('Paybox authentication flow is unavailable.');
+        if (this.finalizing) return { status: PayboxAuthFlowPollStatus.Finalizing };
         return {
             status: PayboxAuthFlowPollStatus.Pending,
             authorizationUrl: this.startResult.authorizationUrl,
@@ -61,11 +68,13 @@ export class PayboxAuthFlowSession {
         this.completionResult = null;
         this.consumingResult = null;
         this.completionError = null;
+        this.finalizing = false;
         controller?.abort(new Error('Paybox authentication was invalidated.'));
     }
 
     private start(): Promise<PayboxAuthStart> {
         if (this.starting !== null) return this.starting;
+        this.finalizing = false;
         const controller = new AbortController();
         const starting = this.runStart(controller);
         this.controller = controller;
@@ -111,6 +120,7 @@ export class PayboxAuthFlowSession {
         try {
             const material = await this.flow.finish();
             controller.signal.throwIfAborted();
+            this.finalizing = true;
             const result = await complete(material);
             controller.signal.throwIfAborted();
             if (this.controller === controller) {
