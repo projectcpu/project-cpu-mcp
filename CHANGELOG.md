@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.6](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.5...v0.12.6) (2026-09-05)
+
+
+### Bug Fixes
+
+* migrate Paybox authentication to device flow ([#39](https://github.com/projectcpu/project-cpu-mcp/issues/39)) ([fd2851b](https://github.com/projectcpu/project-cpu-mcp/commit/fd2851bb3475877cf9f01292fd091dbe61f88101))
+
 ## [0.12.5](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.4...v0.12.5) (2026-09-04)
 
 
