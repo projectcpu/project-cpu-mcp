@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.13.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.6...v0.13.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* cpu_authenticate returns authenticating with instructions and no authorizationUrl while a received signing key is being used to finish login, instead of paybox_auth_required.
+
+### Features
+
+* finalize Paybox authentication automatically ([#41](https://github.com/projectcpu/project-cpu-mcp/issues/41)) ([bd97e4e](https://github.com/projectcpu/project-cpu-mcp/commit/bd97e4e9f420b9432aeed031b91db61d040a5d1b))
+
 ## [0.12.6](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.5...v0.12.6) (2026-09-05)
 
 
