@@ -15,7 +15,7 @@ import { MapStore } from './map/store.js';
 import { MapSync } from './map/sync.js';
 import { SystemBrowserOpener } from './paybox/auth/browser-opener.js';
 import { createPayboxCoordinator } from './paybox/auth/coordinator.factory.js';
-import { LoopbackAuthFlow } from './paybox/auth/loopback-flow.js';
+import { DeviceAuthFlow } from './paybox/auth/device-flow.js';
 import { PayboxSdkAdapter } from './paybox/sdk/adapter.js';
 import { defaultPayboxSdkClientFactory, defaultPayboxTokenRefresher } from './paybox/sdk/factory.js';
 import { PayboxAuthStorage } from './paybox/storage.js';
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
             ? createPayboxCoordinator(
                   {
                       storage: new PayboxAuthStorage(os.homedir(), logger.child('paybox:storage')),
-                      flow: new LoopbackAuthFlow(
+                      flow: new DeviceAuthFlow(
                           {
                               issuerUrl: PAYBOX_ISSUER_URL,
                               httpClient: { fetch: (url, init) => fetch(url, init) },
