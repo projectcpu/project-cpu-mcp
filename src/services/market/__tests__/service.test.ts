@@ -30,14 +30,14 @@ describe('MarketService.getCellMarket', () => {
         const snapshot = await marketServiceOver(transport).getCellMarket('1234');
 
         expect(snapshot.bestListing).toMatchObject({
-            chainId: 42161,
+            chainId: 4663,
             price: snapshotWire.bestListing.price,
             currency: snapshotWire.bestListing.currency,
             startTime: snapshotWire.bestListing.startTime,
             expirationTime: snapshotWire.bestListing.expirationTime,
         });
         expect(snapshot.bestOffer).toMatchObject({
-            chainId: 42161,
+            chainId: 4663,
             amount: snapshotWire.bestOffer.amount,
             currency: snapshotWire.bestOffer.currency,
             startTime: snapshotWire.bestOffer.startTime,
