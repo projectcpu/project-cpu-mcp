@@ -154,7 +154,9 @@ Add to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf:
 
 </details>
 
-Every MCP command above pins `@latest`, so restarting the server is how you update — `npx` re-resolves the registry on each launch. The server also watches for new releases on its own: a backwards-compatible one is mentioned once in a tool's response, a breaking one blocks every tool until you restart.
+Every MCP command above pins `@latest`; restart the server to load the current package. The server checks for releases on tool calls, at most once every two hours. A compatible update adds a one-time notice; a detected breaking update blocks tool calls until restart. Registry failures allow calls to continue, and the guard does not install updates, restart itself, or cancel transactions already in flight. Older builds with a disconnected guard cannot block themselves: update/restart them explicitly.
+
+Reveal pricing now requires the token-specific `quoteReveal(tokenId)` contract interface. Each cell's first completed reveal needs no CPU balance or approval; subsequent reveals burn the configured CPU. Every new request still pays its ETH budget and gas. Update this client together with the matching contracts; there is no fallback to the older quote interface.
 
 ## Authenticate
 
