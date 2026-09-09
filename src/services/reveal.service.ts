@@ -536,16 +536,15 @@ export class RevealService {
     }
 
     /**
-     * Every reveal is paid for, first one included, and only the Cell knows the price: the served config omits
-     * live service-fee split and validates that it fits inside the configured ETH budget. A zero burn needs no
-     * approval; service fees can consume the whole ETH budget without making the reveal free.
+     * Funding follows the selected on-chain quote, even when cached reveal history disagrees.
+     * A zero CPU amount skips balance and allowance work; the ETH budget still funds the request.
      */
     private async fundReveal(
         config: AppConfig,
         cell: Address,
         tokenId: string,
     ): Promise<{ approveTxHash: Hash | null; quote: RevealQuote }> {
-        const quote = await this.cellClient.quoteReveal(cell);
+        const quote = await this.cellClient.quoteReveal(cell, BigInt(tokenId));
         if (quote.cpuBurnWei === 0n) {
             return { approveTxHash: null, quote };
         }

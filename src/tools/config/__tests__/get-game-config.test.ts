@@ -263,7 +263,7 @@ function upgradeRelationsOf(config: AppConfig): Array<{ type: string; related: A
 }
 
 describe('get_game_config tool — reveal payment', () => {
-    it('never offers a free reveal, whatever the legs are priced at', async () => {
+    it('describes the ETH budget separately from the first CPU exemption across profiles', async () => {
         const profiles: Array<AppConfig['reveal']> = [
             { ethBudget: '0.001', cpuBurn: '2' },
             { ethBudget: '0', cpuBurn: '2' },
@@ -274,15 +274,16 @@ describe('get_game_config tool — reveal payment', () => {
         for (const reveal of profiles) {
             const text = await prose({ ...CONFIG, reveal });
 
-            expect(text).toContain('Reveal: every reveal');
-            expect(text).not.toMatch(/free reveal|reveal (is |)free|first reveal free|re-reveal/i);
+            expect(text).toContain('ETH budget');
+            expect(text).toMatch(/first (completed )?reveal/);
         }
     });
 
     it('prints the reveal budget and burn without rescaling either of them', async () => {
         const text = await prose({ ...CONFIG, reveal: { ethBudget: '0.0001', cpuBurn: '1' } });
 
-        expect(text).toContain('0.0001 ETH budget and burns 1 $CPU');
+        expect(text).toContain('0.0001 ETH budget');
+        expect(text).toContain('first reveal of each cell burns no $CPU, later reveals burn 1 $CPU');
         expect(text).toContain('pool contribution, live randomness fee and metadata publication charge');
         expect(text).toContain('carved out of that budget');
     });
@@ -291,7 +292,7 @@ describe('get_game_config tool — reveal payment', () => {
         const text = await prose({ ...CONFIG, reveal: null });
 
         expect(text).toContain('this network serves no price for it, so the amounts are unknown here');
-        expect(text).toContain('`cpu_reveal` reads the current budget and burn from the Cell before paying');
+        expect(text).toContain('`cpu_reveal` reads the current budget and burn from the selected Cell before paying');
     });
 });
 

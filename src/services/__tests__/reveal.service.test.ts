@@ -85,13 +85,13 @@ class FakeAppConfig implements IAppConfig {
 
 class FakeCellClient implements ICellClient {
     public readonly requests: Array<RequestRevealParams> = [];
-    public readonly quoted: Array<Address> = [];
+    public readonly quoted: Array<{ cell: Address; tokenId: bigint }> = [];
     constructor(private readonly quote: RevealQuote | Error = DEFAULT_QUOTE) {}
     async readCellView(): Promise<CellViewResult> {
         return { buildingType: 0, modeResource: 0, modeRecipeId: 0n, processDrawPerCycle: 0n };
     }
-    async quoteReveal(cell: Address): Promise<RevealQuote> {
-        this.quoted.push(cell);
+    async quoteReveal(cell: Address, tokenId: bigint): Promise<RevealQuote> {
+        this.quoted.push({ cell, tokenId });
         if (this.quote instanceof Error) {
             throw this.quote;
         }
@@ -284,7 +284,7 @@ describe('RevealService on a push randomness source', () => {
         await p;
 
         expect(h.randomness.calls).toEqual([{ descriptor: config.randomness, cell: CELL }]);
-        expect(h.cellClient.quoted).toEqual([CELL]);
+        expect(h.cellClient.quoted).toEqual([{ cell: CELL, tokenId: 42n }]);
     });
 
     it('funds the reveal from the chain quote, not from the amounts the chain config carries', async () => {
@@ -421,7 +421,7 @@ describe('RevealService on a push randomness source', () => {
         expect(h.cellClient.requests).toHaveLength(0);
     });
 
-    it('charges a first reveal and a later reveal alike, quoting and approving the same way for both', async () => {
+    it('follows the selected cell quote: first reveal skips CPU funding and later reveal pays CPU', async () => {
         const quote: RevealQuote = {
             poolContributionWei: 3_000n,
             randomnessFeeWei: 1_000n,
@@ -429,7 +429,7 @@ describe('RevealService on a push randomness source', () => {
             cpuBurnWei: parseEther('1'),
             metadataPublicationChargeWei: 0n,
         };
-        const first = makeReveal({ quote, approve: APPROVE_HASH, bumpTo: 1 });
+        const first = makeReveal({ quote: { ...quote, cpuBurnWei: 0n }, cpuBalance: 0n, bumpTo: 1 });
         const later = makeReveal({
             quote,
             state: revealState({ revealCount: 1 }),
@@ -450,12 +450,28 @@ describe('RevealService on a push randomness source', () => {
 
         expect(firstResult.genesis).toBe(true);
         expect(laterResult.genesis).toBe(false);
-        expect(first.allowance.calls).toEqual(later.allowance.calls);
+        expect(first.wallet.reads).toEqual([]);
+        expect(first.allowance.calls).toEqual([]);
+        expect(later.allowance.calls).toEqual([{ token: CPU_TOKEN, spender: CELL, needed: quote.cpuBurnWei }]);
         expect(first.cellClient.requests).toEqual(later.cellClient.requests);
         expect(firstResult.ethPaid).toBe(laterResult.ethPaid);
-        expect(firstResult.cpuBurn).toBe(laterResult.cpuBurn);
-        expect(firstResult.cpuBurn).toBe('1');
-        expect(firstResult.approveTxHash).toBe(APPROVE_HASH);
+        expect(firstResult.cpuBurn).toBe('0');
+        expect(laterResult.cpuBurn).toBe('1');
+        expect(firstResult.approveTxHash).toBeNull();
+        expect(laterResult.approveTxHash).toBe(APPROVE_HASH);
+    });
+
+    it('uses a zero on-chain quote even when cached history says the cell was revealed', async () => {
+        const h = makeReveal({ state: revealState({ revealCount: 7 }), cpuBalance: 0n, bumpTo: 8 });
+        const pending = h.service.reveal('42');
+        await vi.runAllTimersAsync();
+        const result = await pending;
+
+        expect(result.genesis).toBe(false);
+        expect(result.cpuBurn).toBe('0');
+        expect(h.wallet.reads).toEqual([]);
+        expect(h.allowance.calls).toEqual([]);
+        expect(h.cellClient.quoted).toEqual([{ cell: CELL, tokenId: 42n }]);
     });
 
     it('sends no value and approves nothing beyond the quote on a $CPU-only profile', async () => {
@@ -652,6 +668,7 @@ class ScriptedRevealRequests implements IRevealRequestsReader {
 }
 
 class ScriptedWallet implements WalletManager, WalletProvider {
+    public readonly readRequests: Array<ReadContractParams> = [];
     async getTransactionSender(): Promise<Address | null> {
         return this.getAddress();
     }
@@ -707,6 +724,7 @@ class ScriptedWallet implements WalletManager, WalletProvider {
         };
     }
     async readContract(params: ReadContractParams): Promise<unknown> {
+        this.readRequests.push(params);
         return this.reads[params.functionName];
     }
     async getBalance(): Promise<bigint> {
@@ -989,6 +1007,18 @@ describe('RevealService on a self-service randomness source', () => {
 
         expect(lapsed.beacon.askedAt).toHaveLength(2);
         expect(lapsed.beacon.askedAt.map((at) => at - (lapsed.beacon.askedAt[0] ?? 0))).toEqual([0, 3_000]);
+    });
+
+    it('quotes the selected token in self-service mode without CPU balance reads for a zero burn', async () => {
+        const h = makeSelfService({ cpuBalance: 0n });
+        const result = await runReveal(h);
+        expect(h.wallet.readRequests.filter((read) => read.functionName === 'quoteReveal')).toMatchObject([
+            { address: SELF_CELL, args: [42n] },
+        ]);
+        expect(h.wallet.readRequests.some((read) => read.functionName === 'balanceOf')).toBe(false);
+        expect(h.allowance.calls).toEqual([]);
+        expect(result.cpuBurn).toBe('0');
+        expect(result.approveTxHash).toBeNull();
     });
 
     it('takes a second look at the round when settling the request the cell already carries', async () => {

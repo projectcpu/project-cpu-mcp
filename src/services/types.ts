@@ -224,7 +224,7 @@ export interface CellViewResult {
 
 export interface ICellClient {
     readCellView(cell: Address, tokenId: bigint): Promise<CellViewResult>;
-    quoteReveal(cell: Address): Promise<RevealQuote>;
+    quoteReveal(cell: Address, tokenId: bigint): Promise<RevealQuote>;
     requestReveal(params: RequestRevealParams): Promise<Hash>;
     place(params: PlaceParams): Promise<Hash>;
     demolish(params: DemolishParams): Promise<Hash>;

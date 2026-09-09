@@ -17,7 +17,7 @@ For the primary SeaDrop public drop, `cpu_quote_mint` returns price, availabilit
 
 ## Reveal and enter the world
 
-Inspect the Cell and config before Reveal. `cpu_reveal` pays the live ETH and `$CPU` payment and starts the randomness request.
+Inspect the Cell and config before Reveal. `cpu_reveal` quotes the selected Cell and starts the randomness request. The first completed Reveal of each Cell requires no `$CPU` balance or approval; later Reveals burn the configured `$CPU`. Every new request still pays the quoted ETH budget and transaction gas. Config shows the repeat burn; the live quote determines this Cell's price.
 
 The Randomness source controls delivery. In self-service mode, `cpu_reveal`, the background sweep, or `cpu_fulfill_reveal` can complete an open request. In push mode, poll the Cell. Completing an open request pays no second Reveal payment.
 
