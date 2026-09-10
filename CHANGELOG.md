@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.14.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.13.0...v0.14.0) (2026-09-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **reveal:** requires Cell.quoteReveal(uint256); the legacy quote selector is unsupported.
+
+### Features
+
+* **reveal:** use per-cell pricing and restore breaking-release blocking ([#44](https://github.com/projectcpu/project-cpu-mcp/issues/44)) ([67f9fbe](https://github.com/projectcpu/project-cpu-mcp/commit/67f9fbe182ae62f73e64cb3c2362dedadf934816))
+
 ## [0.13.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.12.6...v0.13.0) (2026-09-05)
 
 
