@@ -341,22 +341,20 @@ itself or has to be delivered. These terms govern that split and what an undeliv
   carries `revealPending`, and that flag locks more than the draw: the cell holds no new draw, a second request
   on it is refused on-chain (`RevealAlreadyPending`), and so is building on it (`RevealInFlight`) — `cpu_build`
   places nothing until the request is settled.
-  *Avoid*: re-reveal (that is a fresh request on a cell already mined dry — it needs every deposit exhausted;
-  it is not a differently-priced reveal, since every reveal pays the same Reveal payment).
-- **Reveal payment** — what every reveal costs: one configured ETH budget and a $CPU burn. The budget is an
-  envelope split at request time between the $CPU liquidity-pool contribution, the live randomness fee, and
-  the Land metadata publication charge; those three ETH legs sum to the budget rather than being added on top.
-  `cpu_get_game_config` carries the budget and burn. A zero leg is skipped; both configured values at zero mean
-  no reveal payment is configured (`RevealPaymentNotConfigured`). There is no free reveal. If the two service
-  fees exceed the budget, no quote or request is possible until the budget or fees change.
-  *Avoid*: first reveal free, re-reveal price.
-- **Reveal quote** — the Cell's current split of one Reveal payment, read immediately before the request. It
-  validates that the service fees fit, supplies the ETH budget the request must cover, and names the exact $CPU
-  to approve. `cpu_reveal` sends the quoted budget plus 10% refundable headroom for a budget change between the
-  read and send; `ethPaid` reports the quoted budget, not that temporary ceiling. The result also reports
-  `cpuBurn`; both fields are `0` when the call settled an open request instead of opening one. The $CPU leg is
-  fundable only when the wallet holds at least the quoted burn: a spending allowance permits the transfer but
-  never substitutes for the tokens themselves.
+  *Avoid*: re-reveal (a fresh request after every deposit on a previously revealed cell is exhausted).
+- **Reveal payment** — every new request pays the configured ETH budget. A cell with zero completed reveals
+  burns no $CPU; later reveals burn the configured amount. An empty completed draw counts. Transfer does not
+  reset history, and clearing an unfulfilled stale first request preserves its exemption without refunding ETH.
+  The budget is split at request time into the live randomness fee, dynamic Land metadata publication amount
+  and the remaining pool contribution. Publication funding is capped to the budget left after randomness;
+  only randomness alone above the budget prevents a quote or request. Both stored payment values at zero mean
+  no payment is configured. A valid CPU-only profile can still produce a zero-cost first request, apart from gas.
+- **Reveal quote** — `quoteReveal(tokenId)` returns the selected cell's current payment immediately before
+  its request. The on-chain counter decides the CPU price; cached map history does not. A zero CPU quote skips
+  balance reads and approval; a positive quote requires the quoted balance and allowance. Config reports the
+  stored repeat burn, not the discounted first price. `cpu_reveal` sends the quoted ETH budget plus 10%
+  refundable headroom; `ethPaid` reports the quoted budget. `ethPaid` and `cpuBurn` are both `0` when completing
+  an open request, which pays transaction gas but opens no new reveal payment.
 - **Target round** — the beacon round whose signature closes one particular request. The source stores it
   with the request and hands it back when the request is read, and no signature for it exists until the beacon
   publishes that round — so a fulfilment attempted earlier has nothing to carry and the request just stays

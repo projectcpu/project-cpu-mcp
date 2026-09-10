@@ -1,4 +1,12 @@
-import { type Abi, decodeFunctionData, encodeErrorResult, parseAbi, type Address, type Hash } from 'viem';
+import {
+    type Abi,
+    decodeFunctionData,
+    encodeFunctionData,
+    encodeErrorResult,
+    parseAbi,
+    type Address,
+    type Hash,
+} from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import { CELL_ABI } from '../../contracts/cell.abi.js';
@@ -89,16 +97,25 @@ describe('CellClient', () => {
         });
     });
 
-    it('reads the budget and its three carved-out ETH legs positionally', async () => {
-        const { client } = makeClient({ quoteReveal: [3_000n, 1_000n, 10_000n, 2n, 6_000n] });
+    it('encodes the token-specific quote selector and argument on the wire', () => {
+        const data = encodeFunctionData({ abi: CELL_ABI, functionName: 'quoteReveal', args: [42n] });
+        expect(decodeFunctionData({ abi: parseAbi(['function quoteReveal(uint256 tokenId)']), data })).toEqual({
+            functionName: 'quoteReveal',
+            args: [42n],
+        });
+    });
 
-        await expect(client.quoteReveal(CELL)).resolves.toEqual({
+    it('reads the budget and its three carved-out ETH legs positionally', async () => {
+        const { client, contracts } = makeClient({ quoteReveal: [3_000n, 1_000n, 10_000n, 2n, 6_000n] });
+
+        await expect(client.quoteReveal(CELL, 42n)).resolves.toEqual({
             poolContributionWei: 3_000n,
             randomnessFeeWei: 1_000n,
             ethBudgetWei: 10_000n,
             cpuBurnWei: 2n,
             metadataPublicationChargeWei: 6_000n,
         });
+        expect(contracts.reads).toEqual([{ address: CELL, abi: CELL_ABI, functionName: 'quoteReveal', args: [42n] }]);
     });
 
     it('explains when live reveal service fees no longer fit inside the configured budget', async () => {
@@ -110,8 +127,8 @@ describe('CellClient', () => {
         const failure = new Error('Execution reverted', { cause: { data } });
         const { client } = makeClient({ quoteReveal: failure });
 
-        await expect(client.quoteReveal(CELL)).rejects.toThrow(
-            /budget is 4000 wei.*randomness fee and metadata publication charge need 4500 wei.*nothing was spent/is,
+        await expect(client.quoteReveal(CELL, 42n)).rejects.toThrow(
+            /budget is 4000 wei.*randomness fee needs 4500 wei.*nothing was spent/is,
         );
     });
 

@@ -37,14 +37,14 @@ export class CellClient implements ICellClient {
         });
     }
 
-    async quoteReveal(cell: Address): Promise<RevealQuote> {
+    async quoteReveal(cell: Address, tokenId: bigint): Promise<RevealQuote> {
         let quote: readonly [bigint, bigint, bigint, bigint, bigint];
         try {
             quote = await this.contracts.read({
                 address: cell,
                 abi: CELL_ABI,
                 functionName: 'quoteReveal',
-                args: [],
+                args: [tokenId],
             });
         } catch (error) {
             throw withRevealQuotePhrase(error);
@@ -52,6 +52,7 @@ export class CellClient implements ICellClient {
         const [poolContributionWei, randomnessFeeWei, ethBudgetWei, cpuBurnWei, metadataPublicationChargeWei] = quote;
         this.logger.info('quoted the reveal', {
             cell,
+            tokenId: tokenId.toString(),
             ethBudgetWei: ethBudgetWei.toString(),
             cpuBurnWei: cpuBurnWei.toString(),
         });

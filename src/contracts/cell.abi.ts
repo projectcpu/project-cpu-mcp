@@ -9,7 +9,7 @@ export const CELL_ABI = [
     {
         type: 'function',
         name: 'quoteReveal',
-        inputs: [],
+        inputs: [{ name: 'tokenId', type: 'uint256', internalType: 'uint256' }],
         outputs: [
             { name: 'poolContributionWei', type: 'uint256', internalType: 'uint256' },
             { name: 'randomnessFeeWei', type: 'uint256', internalType: 'uint256' },

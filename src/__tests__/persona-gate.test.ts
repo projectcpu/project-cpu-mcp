@@ -7,6 +7,7 @@ import { createServer } from '../server.js';
 import { PERSONA_GATE_REFUSAL, PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
 import type { ToolRegistrar } from '../tools/types.js';
 import type { AppContext } from '../types.js';
+import { formatBlockedError, formatUpdateNotice } from '../version/package-version.utils.js';
 import { PackageVersionSignal } from '../version/types.js';
 
 const AUTHENTICATE_TOOL = 'cpu_authenticate';
@@ -16,6 +17,8 @@ const stubs = vi.hoisted(() => ({
     probeTool: 'cpu_get_game_config',
     probeText: 'probe ran',
     probeCalls: 0,
+    revealCalls: 0,
+    refreshCalls: 0,
 }));
 
 vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
@@ -35,18 +38,42 @@ vi.mock('../tools/config/get-game-config/get-game-config.js', () => ({
     },
 }));
 
-function contextFor(personaEnabled: boolean): AppContext {
+function contextFor(personaEnabled: boolean, blocked = false): AppContext {
     return {
         config: { OPERATOR_PERSONA: personaEnabled },
         packageVersion: {
             currentVersion: '1.0.0',
             check: async () => ({
-                signal: PackageVersionSignal.Silent,
-                latest: null,
+                signal: blocked ? PackageVersionSignal.Blocked : PackageVersionSignal.Silent,
+                latest: blocked ? '2.0.0' : null,
             }),
         },
+        reveal: {
+            reveal: async (tokenId: string) => {
+                stubs.revealCalls += 1;
+                return {
+                    tokenId,
+                    genesis: true,
+                    requestTxHash: '0xreveal',
+                    fulfillTxHash: null,
+                    requestId: '1',
+                    source: '0x1111111111111111111111111111111111111111',
+                    round: null,
+                    deposits: [],
+                    status: 'success',
+                    blockNumber: '100',
+                    ethPaid: '0.0015',
+                    cpuBurn: '0',
+                    approveTxHash: null,
+                    fulfilled: true,
+                    note: null,
+                };
+            },
+        },
         backendVersion: {
-            ensureFresh: async (): Promise<void> => undefined,
+            ensureFresh: async (): Promise<void> => {
+                stubs.refreshCalls += 1;
+            },
             takeResetNotice: () => false,
         },
     } as unknown as AppContext;
@@ -75,6 +102,8 @@ function textOf(result: CallToolResult): Array<string> {
 
 beforeEach(() => {
     stubs.probeCalls = 0;
+    stubs.revealCalls = 0;
+    stubs.refreshCalls = 0;
     stubs.serverTransport = null;
 });
 
@@ -164,5 +193,58 @@ describe('the operating brief switched off', () => {
         const { tools } = await connected.listTools();
 
         expect(tools.map((tool) => tool.name)).not.toContain(PERSONA_TOOL_NAME);
+    });
+});
+
+describe('the package gate through real server registration', () => {
+    it.each([true, false])('blocks read and reveal tools before services with persona=%s', async (persona) => {
+        const connected = await boot(contextFor(persona, true));
+        const read = await call(connected, stubs.probeTool);
+        const reveal = (await connected.callTool({
+            name: 'cpu_reveal',
+            arguments: { tokenId: '42' },
+        })) as CallToolResult;
+        for (const result of [read, reveal]) {
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toEqual([formatBlockedError('2.0.0', '1.0.0')]);
+        }
+        expect(stubs.probeCalls).toBe(0);
+        expect(stubs.revealCalls).toBe(0);
+        expect(stubs.refreshCalls).toBe(0);
+    });
+
+    it.each([true, false])('allows a reveal when its package is compatible with persona=%s', async (persona) => {
+        const connected = await boot(contextFor(persona));
+        if (persona) await call(connected, PERSONA_TOOL_NAME);
+        const result = (await connected.callTool({
+            name: 'cpu_reveal',
+            arguments: { tokenId: '42' },
+        })) as CallToolResult;
+        expect(result.isError).toBeFalsy();
+        expect(stubs.revealCalls).toBe(1);
+        expect(textOf(result).join('')).toContain('"cpuBurn":"0"');
+    });
+
+    it('allows a compatible update and delivers its notice once through registered tools', async () => {
+        const context = contextFor(false);
+        context.packageVersion.check = vi
+            .fn()
+            .mockResolvedValueOnce({ signal: PackageVersionSignal.UpdateAvailable, latest: '1.1.0' })
+            .mockResolvedValue({ signal: PackageVersionSignal.Silent, latest: null });
+        const connected = await boot(context);
+        const first = await call(connected, stubs.probeTool);
+        const second = await call(connected, stubs.probeTool);
+        expect(first.isError).toBeFalsy();
+        expect(textOf(first)).toEqual([stubs.probeText, formatUpdateNotice('1.1.0', '1.0.0')]);
+        expect(textOf(second)).toEqual([stubs.probeText]);
+        expect(stubs.probeCalls).toBe(2);
+    });
+
+    it('blocks the brief itself before persona delivery', async () => {
+        const connected = await boot(contextFor(true, true));
+        const result = await call(connected, PERSONA_TOOL_NAME);
+        expect(result.isError).toBe(true);
+        expect(textOf(result)).toEqual([formatBlockedError('2.0.0', '1.0.0')]);
+        expect(stubs.refreshCalls).toBe(0);
     });
 });

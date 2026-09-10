@@ -74,8 +74,9 @@ export const BUILDING_INDEX_SECTION_TITLE = 'Building index';
 export const EMPTY_CATALOG_NOTE = 'No buildings in the catalog of this network.';
 
 export const REVEAL_PAYMENT_UNKNOWN_SUMMARY = [
-    'every reveal is charged, the first reveal of a cell included, but this network serves no price for it, so',
-    'the amounts are unknown here — `cpu_reveal` reads the current budget and burn from the Cell before paying.',
+    'the first completed reveal of each cell waives CPU; later reveals burn CPU, and every request pays its ETH budget.',
+    'this network serves no price for it, so the amounts are unknown here —',
+    '`cpu_reveal` reads the current budget and burn from the selected Cell before paying.',
 ].join(' ');
 
 export const SELF_SERVICE_RANDOMNESS_SUMMARY = [

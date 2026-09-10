@@ -1,6 +1,7 @@
 export const REVEAL_DESCRIPTION = [
     'Reveal the deposits of a cell you own (call `cpu_authenticate` first). Sends an on-chain Cell tx requesting',
-    'randomness. Every reveal is paid for, the first one included: the cell quotes the price and this call pays',
+    'randomness. The first completed reveal of each cell costs no CPU; later reveals burn the configured CPU.',
+    'The cell quotes the price and this call pays',
     'exactly that — ETH with the transaction, so keep some, plus a $CPU burn it approves for you. Revealing a',
     'cell a second time additionally needs all its deposits depleted. How the draw arrives depends on the network’s',
     'randomness mode — see `cpu_get_game_config`. On a self-service network this call also settles the draw and',

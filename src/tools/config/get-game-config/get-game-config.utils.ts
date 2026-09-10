@@ -37,8 +37,8 @@ export function describeRevealPayment(payment: RevealPaymentView | null): string
         return REVEAL_PAYMENT_UNKNOWN_SUMMARY;
     }
     return (
-        `every reveal has a ${payment.ethBudget} ETH budget and burns ${payment.cpuBurn} $CPU, the first reveal ` +
-        `of a cell included; the pool contribution, live randomness fee and metadata publication charge are ` +
+        `every reveal has a ${payment.ethBudget} ETH budget; the first reveal of each cell burns no $CPU, later reveals ` +
+        `burn ${payment.cpuBurn} $CPU; the pool contribution, live randomness fee and metadata publication charge are ` +
         `carved out of that budget, and cpu_reveal checks the current split on-chain before paying it`
     );
 }

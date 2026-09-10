@@ -78,6 +78,7 @@ import type { ToolRegistrar } from './tools/types.js';
 import { registerWithdrawTool } from './tools/withdraw/withdraw.js';
 import type { AppContext } from './types.js';
 import { createBackendVersionGate } from './version/backend-version.js';
+import { createPackageVersionGate } from './version/package-version.js';
 import { createGuardedRegistrar } from './version/tool-guard.js';
 import type { ToolGate } from './version/types.js';
 
@@ -171,7 +172,10 @@ export async function createServer(context: AppContext): Promise<void> {
     );
 
     const persona = createPersonaDelivery();
-    const gates: Array<ToolGate> = [createBackendVersionGate(context.backendVersion)];
+    const gates: Array<ToolGate> = [
+        createPackageVersionGate(context.packageVersion),
+        createBackendVersionGate(context.backendVersion),
+    ];
     if (context.config.OPERATOR_PERSONA) {
         gates.push(createPersonaGate(persona));
     }

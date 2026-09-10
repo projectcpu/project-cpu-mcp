@@ -16,8 +16,8 @@ function messageFor(name: CellRevertName, args: ReadonlyArray<unknown>, tokenId:
         case CellRevertName.REVEAL_SERVICE_FEES_EXCEED_BUDGET:
             return (
                 `The configured reveal budget is ${String(args[0] ?? 'unknown')} wei, but the live randomness ` +
-                `fee and metadata publication charge need ${String(args[1] ?? 'more')} wei together. The service ` +
-                `fees cannot be paid on top of the budget, so no reveal can be quoted or requested until the ` +
+                `fee needs ${String(args[1] ?? 'more')} wei. The randomness ` +
+                `fee cannot be paid on top of the budget, so no reveal can be quoted or requested until the ` +
                 `budget or fees change. Nothing was spent.`
             );
         case CellRevertName.REVEAL_PAYMENT_NOT_CONFIGURED:
