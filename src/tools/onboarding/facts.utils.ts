@@ -36,8 +36,6 @@ export async function readOnboardingFacts(context: AppContext, status: Onboardin
     }
 
     const walletAddress = readAddress(context);
-    if (walletAddress === null) {
-        return EMPTY_ONBOARDING_FACTS;
-    }
-    return { walletAddress, cellCount: await readCellCount(context, walletAddress) };
+    const cellCount = walletAddress === null ? null : await readCellCount(context, walletAddress);
+    return { walletAddress, cellCount, walletMode: context.config.WALLET_MODE };
 }

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { EMPTY_STATE, FakeApi, FINISHED_STATE, makeService, stateOk, stateWith } from './fixtures.js';
+import {
+    EMPTY_STATE,
+    FakeApi,
+    FakeSession,
+    FINISHED_STATE,
+    makeService,
+    SECOND_ADDRESS,
+    stateOk,
+    stateWith,
+} from './fixtures.js';
 import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import {
     ONBOARDING_COMPLETE_PATH,
@@ -32,6 +41,22 @@ describe('onboarding state reads', () => {
         expect(api.paths).toEqual([ONBOARDING_STATE_PATH]);
     });
 
+    it('reads a body that leaves the nullable marks out', async () => {
+        const api = new FakeApi({ status: 200, data: { version: 1, completedSteps: [OnboardingStep.Intro] } });
+        const service = makeService(api);
+
+        const status = await service.state();
+
+        expect(status.availability).toBe(OnboardingAvailability.Ready);
+        expect(status.state).toEqual({
+            version: 1,
+            completedSteps: [OnboardingStep.Intro],
+            completedAt: null,
+            skippedAt: null,
+            skipReason: null,
+        });
+    });
+
     it('answers repeated reads from one request', async () => {
         const api = new FakeApi({ status: 200, data: EMPTY_STATE });
         const service = makeService(api);
@@ -41,6 +66,21 @@ describe('onboarding state reads', () => {
         await service.state();
 
         expect(api.calls).toHaveLength(1);
+    });
+
+    it('reads again once the wallet address changes under the cached state', async () => {
+        const session = new FakeSession();
+        const api = new FakeApi({ status: 200, data: EMPTY_STATE });
+        const service = makeService(api, true, session);
+
+        await service.state();
+        await service.state();
+        session.address = SECOND_ADDRESS;
+        api.setOutcome(stateOk({ completedSteps: [OnboardingStep.Intro] }));
+        const afterSwitch = await service.state();
+
+        expect(api.calls).toHaveLength(2);
+        expect(afterSwitch.state?.completedSteps).toEqual([OnboardingStep.Intro]);
     });
 
     it('reads again after a refresh', async () => {

@@ -23,6 +23,7 @@ import {
     ONBOARDING_STEP_BRIEFS,
     ONBOARDING_UNAVAILABLE_TEXT,
     ONBOARDING_UNKNOWN_FACT,
+    ONBOARDING_WALLET_MODE_LABEL,
 } from './constants.js';
 import type { OnboardingFacts } from './types.js';
 import { ONBOARDING_STEP_ORDER } from '../../onboarding/constants.js';
@@ -50,6 +51,7 @@ function factsBlock(step: OnboardingStep, facts: OnboardingFacts): string | null
         ONBOARDING_FACTS_HEADING,
         bullet(`${ONBOARDING_ADDRESS_LABEL}: ${facts.walletAddress ?? ONBOARDING_UNKNOWN_FACT}`),
         bullet(`${ONBOARDING_CELLS_LABEL}: ${facts.cellCount ?? ONBOARDING_UNKNOWN_FACT}`),
+        bullet(`${ONBOARDING_WALLET_MODE_LABEL}: ${facts.walletMode ?? ONBOARDING_UNKNOWN_FACT}`),
     ].join(ONBOARDING_LINE_SEPARATOR);
 }
 

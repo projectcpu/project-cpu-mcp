@@ -4,6 +4,7 @@ import {
     ONBOARDING_NOTICE_CALL,
     ONBOARDING_NOTICE_PREFIX,
     ONBOARDING_NOTICE_SEPARATOR,
+    ONBOARDING_NULLABLE_STATE_KEYS,
     ONBOARDING_STEP_ORDER,
 } from './constants.js';
 import { OnboardingPhase, OnboardingStep, type OnboardingState } from './types.js';
@@ -13,8 +14,16 @@ export function isSuccessStatus(status: number): boolean {
     return status >= HTTP_OK && status < HTTP_MULTIPLE_CHOICES;
 }
 
-export function isOnboardingStep(value: string): value is OnboardingStep {
-    return ONBOARDING_STEP_ORDER.includes(value as OnboardingStep);
+export function normalizeOnboardingStatePayload(payload: unknown): unknown {
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        return payload;
+    }
+    const source = payload as Record<string, unknown>;
+    const normalized: Record<string, unknown> = { ...source };
+    for (const key of ONBOARDING_NULLABLE_STATE_KEYS) {
+        normalized[key] = source[key] ?? null;
+    }
+    return normalized;
 }
 
 export function isOnboardingFinished(state: OnboardingState): boolean {
