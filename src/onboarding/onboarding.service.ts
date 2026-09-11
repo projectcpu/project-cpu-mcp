@@ -39,6 +39,7 @@ export class OnboardingService implements IOnboardingService {
     private readonly session: OnboardingSession;
     private readonly logger: ILogger;
     private cached: OnboardingStatus | null = null;
+    private cachedAddress: string | null = null;
     private inFlight: Promise<OnboardingStatus> | null = null;
     private unavailableNotice = false;
 
@@ -49,7 +50,7 @@ export class OnboardingService implements IOnboardingService {
     }
 
     async state(): Promise<OnboardingStatus> {
-        return this.cached ?? this.load();
+        return this.cachedForCurrentAddress() ?? this.load();
     }
 
     async refresh(): Promise<OnboardingStatus> {
@@ -106,6 +107,21 @@ export class OnboardingService implements IOnboardingService {
         const pending = this.unavailableNotice;
         this.unavailableNotice = false;
         return pending;
+    }
+
+    private currentAddress(): string | null {
+        try {
+            return this.session.getSession().address.toLowerCase();
+        } catch {
+            return null;
+        }
+    }
+
+    private cachedForCurrentAddress(): OnboardingStatus | null {
+        if (this.cached === null || this.cachedAddress !== this.currentAddress()) {
+            return null;
+        }
+        return this.cached;
     }
 
     private async load(): Promise<OnboardingStatus> {
@@ -171,6 +187,7 @@ export class OnboardingService implements IOnboardingService {
 
     private remember(status: OnboardingStatus): OnboardingStatus {
         this.cached = status;
+        this.cachedAddress = this.currentAddress();
         return status;
     }
 }

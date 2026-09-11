@@ -2,7 +2,13 @@ import type { RequestOptions } from '../../api/client.js';
 import type { ApiResponse } from '../../api/types.js';
 import { NoopLogger } from '../../logger/noop.logger.js';
 import { OnboardingService } from '../onboarding.service.js';
-import { type OnboardingApi, type OnboardingState, OnboardingStep } from '../types.js';
+import {
+    type OnboardingAccount,
+    type OnboardingApi,
+    type OnboardingSession,
+    type OnboardingState,
+    OnboardingStep,
+} from '../types.js';
 
 export type ApiOutcome = { status: number; data: unknown } | { throws: Error };
 
@@ -72,10 +78,30 @@ export const FINISHED_STATE = stateWith({
     completedAt: 1_700_000_000,
 });
 
-export function makeService(api: OnboardingApi, authenticated = true): OnboardingService {
-    return new OnboardingService({
-        api,
-        session: { isAuthenticated: (): boolean => authenticated },
-        logger: new NoopLogger(),
-    });
+export const FIRST_ADDRESS = '0x00000000000000000000000000000000000000a1';
+export const SECOND_ADDRESS = '0x00000000000000000000000000000000000000b2';
+
+export class FakeSession implements OnboardingSession {
+    public address = FIRST_ADDRESS;
+    private readonly authenticated: boolean;
+
+    constructor(authenticated = true) {
+        this.authenticated = authenticated;
+    }
+
+    isAuthenticated(): boolean {
+        return this.authenticated;
+    }
+
+    getSession(): OnboardingAccount {
+        return { address: this.address };
+    }
+}
+
+export function makeService(
+    api: OnboardingApi,
+    authenticated = true,
+    session: FakeSession = new FakeSession(authenticated),
+): OnboardingService {
+    return new OnboardingService({ api, session, logger: new NoopLogger() });
 }

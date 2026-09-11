@@ -63,8 +63,13 @@ export interface OnboardingApi {
     authenticatedRequest<T>(path: string, options: RequestOptions | null): Promise<ApiResponse<T>>;
 }
 
+export interface OnboardingAccount {
+    address: string;
+}
+
 export interface OnboardingSession {
     isAuthenticated(): boolean;
+    getSession(): OnboardingAccount;
 }
 
 export interface OnboardingServiceOptions {

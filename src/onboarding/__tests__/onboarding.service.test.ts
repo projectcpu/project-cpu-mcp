@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { EMPTY_STATE, FakeApi, FINISHED_STATE, makeService, stateOk, stateWith } from './fixtures.js';
+import {
+    EMPTY_STATE,
+    FakeApi,
+    FakeSession,
+    FINISHED_STATE,
+    makeService,
+    SECOND_ADDRESS,
+    stateOk,
+    stateWith,
+} from './fixtures.js';
 import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import {
     ONBOARDING_COMPLETE_PATH,
@@ -57,6 +66,21 @@ describe('onboarding state reads', () => {
         await service.state();
 
         expect(api.calls).toHaveLength(1);
+    });
+
+    it('reads again once the wallet address changes under the cached state', async () => {
+        const session = new FakeSession();
+        const api = new FakeApi({ status: 200, data: EMPTY_STATE });
+        const service = makeService(api, true, session);
+
+        await service.state();
+        await service.state();
+        session.address = SECOND_ADDRESS;
+        api.setOutcome(stateOk({ completedSteps: [OnboardingStep.Intro] }));
+        const afterSwitch = await service.state();
+
+        expect(api.calls).toHaveLength(2);
+        expect(afterSwitch.state?.completedSteps).toEqual([OnboardingStep.Intro]);
     });
 
     it('reads again after a refresh', async () => {
