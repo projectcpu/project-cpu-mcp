@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+    COMPLETE_ONBOARDING_STEP_TOOL_NAME,
+    ONBOARDING_TOOL_NAME,
+    RESTART_ONBOARDING_TOOL_NAME,
+    SKIP_ONBOARDING_TOOL_NAME,
+} from '../onboarding/constants.js';
 import { SERVER_INSTRUCTIONS } from '../server.constants.js';
 import { createServer } from '../server.js';
 import { LOT_RETURN_REVERT_REASONS } from '../services/lot-return.constants.js';
@@ -104,6 +110,16 @@ const NFT_MARKETPLACE_TOOL = /NFT marketplace/iu;
 
 const RETIRED_TOOLS: ReadonlyArray<string> = ['cpu_cancel_lot'];
 
+/** The walkthrough surface: registered together with the gate, absent together with it. */
+const ONBOARDING_TOOLS: ReadonlyArray<string> = [
+    ONBOARDING_TOOL_NAME,
+    COMPLETE_ONBOARDING_STEP_TOOL_NAME,
+    SKIP_ONBOARDING_TOOL_NAME,
+    RESTART_ONBOARDING_TOOL_NAME,
+];
+
+const INCOME_PROMISE = /earn|profit|prize pool|guarantee/iu;
+
 /** The three claims about Eviction and Lot return that the shipped surface must never make. */
 const EVICTED_LOT_IS_BUYABLE =
     /evicted[^.;]{0,60}?(?:still\s+sells|sells\s+to\s+(?:any|every)|is\s+(?:still\s+)?buyable|can\s+(?:still\s+)?be\s+bought|open\s+to\s+buyers)/iu;
@@ -148,9 +164,14 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
     StdioServerTransport: class StdioServerTransportStub {},
 }));
 
-async function bootServer(personaEnabled = true): Promise<Array<{ name: string; description: string }>> {
+async function bootServer(
+    personaEnabled = true,
+    onboardingEnabled = false,
+): Promise<Array<{ name: string; description: string }>> {
     sdk.tools.length = 0;
-    await createServer({ config: { OPERATOR_PERSONA: personaEnabled } } as unknown as AppContext);
+    await createServer({
+        config: { OPERATOR_PERSONA: personaEnabled, OPERATOR_ONBOARDING: onboardingEnabled },
+    } as unknown as AppContext);
     return [...sdk.tools];
 }
 
@@ -196,6 +217,37 @@ describe('the registered tool surface', () => {
         const names = (await bootServer(false)).map((tool) => tool.name);
 
         expect(names.sort()).toEqual([...PUBLIC_TOOLS].sort());
+    });
+});
+
+describe('the onboarding surface', () => {
+    it('adds exactly the four walkthrough tools when the walkthrough is on', async () => {
+        const names = (await bootServer(true, true)).map((tool) => tool.name);
+
+        expect(names.sort()).toEqual([...PUBLIC_TOOLS, PERSONA_TOOL_NAME, ...ONBOARDING_TOOLS].sort());
+    });
+
+    it('registers none of them when the walkthrough is off', async () => {
+        const names = (await bootServer(true, false)).map((tool) => tool.name);
+
+        expect(names.filter((name) => ONBOARDING_TOOLS.includes(name))).toEqual([]);
+    });
+
+    it('names no unregistered tool in any description with the walkthrough on', async () => {
+        const tools = await bootServer(true, true);
+        const names = tools.map((tool) => tool.name);
+        const promised = tools.flatMap((tool) => [...new Set(tool.description.match(/cpu_[a-z_]+/g) ?? [])]);
+
+        expect([...new Set(promised.filter((name) => !names.includes(name)))]).toEqual([]);
+    });
+
+    it('promises no income in any walkthrough tool description', async () => {
+        const tools = await bootServer(true, true);
+        const offenders = tools.filter(
+            (tool) => ONBOARDING_TOOLS.includes(tool.name) && INCOME_PROMISE.test(tool.description),
+        );
+
+        expect(offenders.map((tool) => tool.name)).toEqual([]);
     });
 });
 

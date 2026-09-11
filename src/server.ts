@@ -38,6 +38,10 @@ import { registerGetMiningStatusTool } from './tools/mining/get-status/get-minin
 import { registerStartMiningTool } from './tools/mining/start/start-mining.js';
 import { registerMintCellTool } from './tools/mint/mint-cell.js';
 import { registerQuoteMintTool } from './tools/mint/quote/quote-mint.js';
+import { registerCompleteOnboardingStepTool } from './tools/onboarding/complete-onboarding-step.js';
+import { registerOnboardingTool } from './tools/onboarding/onboarding.js';
+import { registerRestartOnboardingTool } from './tools/onboarding/restart-onboarding.js';
+import { registerSkipOnboardingTool } from './tools/onboarding/skip-onboarding.js';
 import { PERSONA_TOOL_NAME } from './tools/persona/constants.js';
 import { createPersonaDelivery, createPersonaGate } from './tools/persona/persona.gate.js';
 import { registerPersonaTool } from './tools/persona/persona.js';
@@ -102,6 +106,12 @@ function registerTools(registrar: ToolRegistrar, context: AppContext, persona: P
     registerAuthenticateTool(registrar, context);
     if (context.config.OPERATOR_PERSONA) {
         registerPersonaTool(registrar, persona);
+    }
+    if (context.config.OPERATOR_ONBOARDING) {
+        registerOnboardingTool(registrar, context);
+        registerCompleteOnboardingStepTool(registrar, context);
+        registerSkipOnboardingTool(registrar, context);
+        registerRestartOnboardingTool(registrar, context);
     }
     registerGetGameConfigTool(registrar, context);
     registerGetBuildingTool(registrar, context);
