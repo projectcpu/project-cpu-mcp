@@ -47,7 +47,7 @@ interface BootedServer {
     tools: Array<RegisteredTool>;
 }
 
-async function bootServer(personaEnabled = true, onboardingEnabled = false): Promise<BootedServer> {
+async function bootServer(personaEnabled = true, onboardingEnabled = true): Promise<BootedServer> {
     sdk.options.length = 0;
     sdk.tools.length = 0;
     await createServer({
