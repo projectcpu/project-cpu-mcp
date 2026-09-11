@@ -8,6 +8,8 @@ import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { REVEAL_DESCRIPTION } from '../constants.js';
 import { registerRevealTool } from '../reveal.js';
 
+const ONBOARDING_OFF = { OPERATOR_ONBOARDING: false };
+
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
 }
@@ -23,7 +25,7 @@ function harness(outcome: RevealResult | Error): Handler {
             return outcome;
         },
     };
-    const context = { reveal, logger: new NoopLogger() } as unknown as AppContext;
+    const context = { reveal, config: ONBOARDING_OFF, logger: new NoopLogger() } as unknown as AppContext;
 
     let captured: Handler | null = null;
     const server = {

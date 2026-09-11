@@ -7,6 +7,8 @@ description: Explain or operate a Project CPU game session through its MCP serve
 
 Load `cpu_persona` first. Authenticate for owner-scoped reads and actions. Use `cpu_get_game_config` as the live rulebook, then read only relevant state. Tool descriptions and results define current rules, prices, limits, and errors.
 
+While `cpu_onboarding` reports the onboarding unfinished, walk the player through it before anything else: keep each step to four or five sentences, use only that step's own terms, and end with one call to action.
+
 Use a decision loop: observe, compare, quote or preflight, act, verify. The Operator sets the objective, spend, and risk. Present relevant trade-offs without assuming an optimization target. Refresh state after a transaction or meaningful delay.
 
 ## Game model

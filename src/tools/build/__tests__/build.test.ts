@@ -8,6 +8,8 @@ import type { AppContext } from '../../../types.js';
 import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerBuildTool } from '../build.js';
 
+const ONBOARDING_OFF = { OPERATOR_ONBOARDING: false };
+
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
 }
@@ -25,7 +27,7 @@ function harness(outcome: BuildResult | Error): Handler {
         },
     };
     const appConfig = { load: async () => makeConfig() };
-    const context = { build, appConfig, logger: new NoopLogger() } as unknown as AppContext;
+    const context = { build, appConfig, config: ONBOARDING_OFF, logger: new NoopLogger() } as unknown as AppContext;
 
     let captured: Handler | null = null;
     const server = {

@@ -1,4 +1,6 @@
 import { START_MINING_DESCRIPTION } from './constants.js';
+import { closeOnboardingStep } from '../../../onboarding/onboarding.autoclose.js';
+import { OnboardingStep } from '../../../onboarding/types.js';
 import type { AppContext } from '../../../types.js';
 import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { summarizeMiningStart } from '../format.utils.js';
@@ -15,6 +17,8 @@ export function registerStartMiningTool(server: ToolRegistrar, context: AppConte
                 batches: args.batches,
             });
             const { resources } = await context.appConfig.load();
+
+            await closeOnboardingStep(context, OnboardingStep.StartMining);
 
             return {
                 content: [
