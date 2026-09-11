@@ -1,12 +1,8 @@
-import { ONBOARDING_STEP_ORDER } from './constants.js';
+import { completeStepAndFinish } from './onboarding.completion.js';
 import { isOnboardingFinished } from './onboarding.utils.js';
-import { OnboardingAvailability, type OnboardingState, type OnboardingStep } from './types.js';
+import { OnboardingAvailability, type OnboardingStep } from './types.js';
 import type { AppContext } from '../types.js';
 import { errorMessage } from '../utils/error.utils.js';
-
-function allStepsClosed(state: OnboardingState): boolean {
-    return ONBOARDING_STEP_ORDER.every((step) => state.completedSteps.includes(step));
-}
 
 export async function closeOnboardingStep(context: AppContext, step: OnboardingStep): Promise<void> {
     if (!context.config.OPERATOR_ONBOARDING) {
@@ -22,10 +18,7 @@ export async function closeOnboardingStep(context: AppContext, step: OnboardingS
             return;
         }
 
-        const { state } = await context.onboarding.completeStep(step);
-        if (state !== null && !isOnboardingFinished(state) && allStepsClosed(state)) {
-            await context.onboarding.complete();
-        }
+        await completeStepAndFinish(context.onboarding, step);
     } catch (error) {
         context.logger.warn('could not record the onboarding step', { step, reason: errorMessage(error) });
     }
