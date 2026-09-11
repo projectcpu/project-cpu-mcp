@@ -1,3 +1,4 @@
+import { refreshOnboarding } from '../onboarding/onboarding.gate.js';
 import { PayboxCoordinator } from '../paybox/auth/coordinator.js';
 import { PayboxWalletSelectionError } from '../paybox/errors.js';
 import { PayboxErrorCode } from '../paybox/types.js';
@@ -29,6 +30,7 @@ export function registerAuthenticateTool(server: ToolRegistrar, context: AppCont
                 throw new Error('Paybox wallet mode is not configured.');
             }
             const result = await context.wallet.authenticate({ force, payboxCredentialId });
+            await refreshOnboarding(context);
             return { content: [{ type: 'text', text: JSON.stringify(result) }] };
         }
         if (payboxCredentialId !== null) {
@@ -36,6 +38,7 @@ export function registerAuthenticateTool(server: ToolRegistrar, context: AppCont
         }
 
         await (force ? authService.reauthenticate() : authService.getAccessToken());
+        await refreshOnboarding(context);
         const address = context.wallet.get().getAddress();
         const suffix = force ? ' (forced fresh SIWE login).' : '.';
         return {

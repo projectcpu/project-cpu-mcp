@@ -1,5 +1,5 @@
 import { parseBooleanEnv } from './boolean-env.utils.js';
-import { OPERATOR_PERSONA_DEFAULT } from './constants.js';
+import { OPERATOR_ONBOARDING_DEFAULT, OPERATOR_PERSONA_DEFAULT } from './constants.js';
 import { type EnvConfig, envSchema } from './types.js';
 
 export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
@@ -11,6 +11,7 @@ export function loadEnvConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
         RPC_URL: env.RPC_URL ?? null,
         NETWORK: env.NETWORK,
         OPERATOR_PERSONA: parseBooleanEnv(env.OPERATOR_PERSONA ?? null, OPERATOR_PERSONA_DEFAULT),
+        OPERATOR_ONBOARDING: parseBooleanEnv(env.OPERATOR_ONBOARDING ?? null, OPERATOR_ONBOARDING_DEFAULT),
     });
 
     if (!parsed.success) {

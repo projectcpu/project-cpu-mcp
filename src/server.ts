@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import pkg from '../package.json' with { type: 'json' };
+import { createOnboardingGate } from './onboarding/onboarding.gate.js';
 import { SENTENCE_BOUNDARY, SERVER_INSTRUCTIONS } from './server.constants.js';
 import { registerGetBalanceTool } from './tools/account/get-balance/get-balance.js';
 import { registerAuthenticateTool } from './tools/authenticate.js';
@@ -178,6 +179,9 @@ export async function createServer(context: AppContext): Promise<void> {
     ];
     if (context.config.OPERATOR_PERSONA) {
         gates.push(createPersonaGate(persona));
+    }
+    if (context.config.OPERATOR_ONBOARDING) {
+        gates.push(createOnboardingGate(context.onboarding));
     }
     registerTools(createGuardedRegistrar(server, gates), context, persona);
 

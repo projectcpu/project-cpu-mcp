@@ -75,3 +75,19 @@ describe('loadEnvConfig OPERATOR_PERSONA', () => {
         expect(loadEnvConfig({ OPERATOR_PERSONA: 'nope' }).OPERATOR_PERSONA).toBe(true);
     });
 });
+
+describe('loadEnvConfig OPERATOR_ONBOARDING', () => {
+    it('is on when the variable is absent', () => {
+        expect(loadEnvConfig({}).OPERATOR_ONBOARDING).toBe(true);
+    });
+
+    it('is off on an explicit false, whatever the casing', () => {
+        expect(loadEnvConfig({ OPERATOR_ONBOARDING: 'false' }).OPERATOR_ONBOARDING).toBe(false);
+        expect(loadEnvConfig({ OPERATOR_ONBOARDING: '  FALSE ' }).OPERATOR_ONBOARDING).toBe(false);
+    });
+
+    it('stays on for true and for a value it cannot read', () => {
+        expect(loadEnvConfig({ OPERATOR_ONBOARDING: 'true' }).OPERATOR_ONBOARDING).toBe(true);
+        expect(loadEnvConfig({ OPERATOR_ONBOARDING: 'nope' }).OPERATOR_ONBOARDING).toBe(true);
+    });
+});

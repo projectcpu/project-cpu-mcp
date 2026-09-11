@@ -17,6 +17,7 @@ export const envSchema = z
         RPC_URL: z.string().url().nullable(),
         NETWORK: z.literal(LAUNCH_NETWORK).default(LAUNCH_NETWORK),
         OPERATOR_PERSONA: z.boolean(),
+        OPERATOR_ONBOARDING: z.boolean(),
     })
     .refine((data) => data.WALLET_MODE !== WalletMode.EVM || data.PRIVATE_KEY !== null, {
         message: 'PRIVATE_KEY is required when WALLET_MODE=evm',

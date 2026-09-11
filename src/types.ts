@@ -3,6 +3,7 @@ import type { EnvConfig } from './config/types.js';
 import type { ILogger } from './logger/types.js';
 import type { MapReader } from './map/reader.js';
 import type { MapSync } from './map/sync.js';
+import type { IOnboardingService } from './onboarding/types.js';
 import type { AppConfigService } from './services/app-config.service.js';
 import type { AuthService } from './services/auth.service.js';
 import type { BalanceService } from './services/balance.service.js';
@@ -65,6 +66,7 @@ export interface AppContext {
     withdraw: WithdrawService;
     mapSync: MapSync;
     mapReader: MapReader;
+    onboarding: IOnboardingService;
     backendVersion: IBackendVersionSignal;
     packageVersion: IPackageVersionSignal;
     logger: ILogger;
