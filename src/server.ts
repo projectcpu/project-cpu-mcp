@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import pkg from '../package.json' with { type: 'json' };
+import { ONBOARDING_TOOL_NAME } from './onboarding/constants.js';
 import { createOnboardingGate } from './onboarding/onboarding.gate.js';
 import { SENTENCE_BOUNDARY, SERVER_INSTRUCTIONS } from './server.constants.js';
 import { registerGetBalanceTool } from './tools/account/get-balance/get-balance.js';
@@ -83,12 +84,15 @@ import { createPackageVersionGate } from './version/package-version.js';
 import { createGuardedRegistrar } from './version/tool-guard.js';
 import type { ToolGate } from './version/types.js';
 
-function instructionsFor(personaEnabled: boolean): string {
-    if (personaEnabled) {
+function instructionsFor(personaEnabled: boolean, onboardingEnabled: boolean): string {
+    const hidden = [personaEnabled ? null : PERSONA_TOOL_NAME, onboardingEnabled ? null : ONBOARDING_TOOL_NAME].filter(
+        (name): name is string => name !== null,
+    );
+    if (hidden.length === 0) {
         return SERVER_INSTRUCTIONS;
     }
     return SERVER_INSTRUCTIONS.split(SENTENCE_BOUNDARY)
-        .filter((sentence) => !sentence.includes(PERSONA_TOOL_NAME))
+        .filter((sentence) => !hidden.some((name) => sentence.includes(name)))
         .join(' ');
 }
 
@@ -169,7 +173,7 @@ function registerTools(registrar: ToolRegistrar, context: AppContext, persona: P
 export async function createServer(context: AppContext): Promise<void> {
     const server = new McpServer(
         { name: pkg.name, version: pkg.version },
-        { instructions: instructionsFor(context.config.OPERATOR_PERSONA) },
+        { instructions: instructionsFor(context.config.OPERATOR_PERSONA, context.config.OPERATOR_ONBOARDING) },
     );
 
     const persona = createPersonaDelivery();

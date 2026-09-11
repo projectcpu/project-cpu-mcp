@@ -2,6 +2,7 @@ export const SERVER_INSTRUCTIONS = [
     'MCP server for Project CPU (blockchain game on EVM).',
     'Load your operating brief with `cpu_persona` before any other tool; every other tool refuses until you do.',
     '`cpu_authenticate` opens Paybox browser OAuth by default; EVM mode signs in locally with SIWE.',
+    'Until `cpu_onboarding` reports the onboarding finished, walk the player through it before anything else.',
     'Read `cpu_get_game_config` once for rules and the router to `cpu_get_building`, `cpu_find_buildings`,',
     '`cpu_get_resource`, and `cpu_list_recipes`.',
     "Cells are identified only by tokenId; use each cell's `neighbors` list to plan routes.",

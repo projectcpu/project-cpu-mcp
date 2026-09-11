@@ -1,6 +1,8 @@
 import { BUILD_DESCRIPTION } from './constants.js';
 import { buildPanel } from './panel.utils.js';
 import { buildInputSchema } from './types.js';
+import { closeOnboardingStep } from '../../onboarding/onboarding.autoclose.js';
+import { OnboardingStep } from '../../onboarding/types.js';
 import type { AppContext } from '../../types.js';
 import { ToolEventType, type ToolRegistrar } from '../types.js';
 
@@ -14,6 +16,10 @@ export function registerBuildTool(server: ToolRegistrar, context: AppContext): v
                 buildingType: args.buildingType,
             });
             const config = await context.appConfig.load();
+
+            if (!result.alreadyBuilt) {
+                await closeOnboardingStep(context, OnboardingStep.BuildExtractor);
+            }
 
             return {
                 content: [

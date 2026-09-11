@@ -1,5 +1,7 @@
 import { REVEAL_DESCRIPTION } from './constants.js';
 import { revealInputSchema } from './types.js';
+import { closeOnboardingStep } from '../../onboarding/onboarding.autoclose.js';
+import { OnboardingStep } from '../../onboarding/types.js';
 import type { RevealResult } from '../../services/types.js';
 import type { AppContext } from '../../types.js';
 import { ToolEventType, type ToolRegistrar } from '../types.js';
@@ -67,6 +69,10 @@ export function registerRevealTool(server: ToolRegistrar, context: AppContext): 
             const header = [requestLine(result), requestIdLine(result), outcomeLine(result)]
                 .filter((line): line is string => line !== null)
                 .join(' ');
+
+            if (result.fulfilled) {
+                await closeOnboardingStep(context, OnboardingStep.Reveal);
+            }
 
             return {
                 content: [
