@@ -32,6 +32,22 @@ describe('onboarding state reads', () => {
         expect(api.paths).toEqual([ONBOARDING_STATE_PATH]);
     });
 
+    it('reads a body that leaves the nullable marks out', async () => {
+        const api = new FakeApi({ status: 200, data: { version: 1, completedSteps: [OnboardingStep.Intro] } });
+        const service = makeService(api);
+
+        const status = await service.state();
+
+        expect(status.availability).toBe(OnboardingAvailability.Ready);
+        expect(status.state).toEqual({
+            version: 1,
+            completedSteps: [OnboardingStep.Intro],
+            completedAt: null,
+            skippedAt: null,
+            skipReason: null,
+        });
+    });
+
     it('answers repeated reads from one request', async () => {
         const api = new FakeApi({ status: 200, data: EMPTY_STATE });
         const service = makeService(api);

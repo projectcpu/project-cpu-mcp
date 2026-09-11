@@ -169,7 +169,7 @@ export const ONBOARDING_STEP_BRIEFS: Record<OnboardingStep, OnboardingStepBrief>
     },
 };
 
-export const EMPTY_ONBOARDING_FACTS: OnboardingFacts = { walletAddress: null, cellCount: null };
+export const EMPTY_ONBOARDING_FACTS: OnboardingFacts = { walletAddress: null, cellCount: null, walletMode: null };
 
 export const ONBOARDING_STATUS_PREFIX = 'Onboarding:';
 export const ONBOARDING_STATUS_SEPARATOR = ' · ';
@@ -185,6 +185,7 @@ export const ONBOARDING_NEXT_TOOL_LABEL = 'Next tool:';
 export const ONBOARDING_FACTS_HEADING = 'Facts you already hold:';
 export const ONBOARDING_ADDRESS_LABEL = 'Agent wallet address';
 export const ONBOARDING_CELLS_LABEL = 'Cells on that address';
+export const ONBOARDING_WALLET_MODE_LABEL = 'Wallet mode';
 export const ONBOARDING_UNKNOWN_FACT = 'unknown';
 export const ONBOARDING_BULLET = '- ';
 export const ONBOARDING_LINE_SEPARATOR = '\n';

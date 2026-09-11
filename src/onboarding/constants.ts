@@ -48,3 +48,5 @@ export const ONBOARDING_NOTICE_PREFIX = 'Onboarding: step';
 export const ONBOARDING_NOTICE_CALL = `call \`${ONBOARDING_TOOL_NAME}\` for the brief`;
 export const ONBOARDING_FIRST_PHASE_PRIORITY = 'priority: get the player to their first reveal';
 export const ONBOARDING_NOTICE_SEPARATOR = ' — ';
+
+export const ONBOARDING_NULLABLE_STATE_KEYS: ReadonlyArray<string> = ['completedAt', 'skippedAt', 'skipReason'];

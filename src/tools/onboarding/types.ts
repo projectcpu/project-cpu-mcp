@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { OnboardingStep } from '../../onboarding/types.js';
+import type { WalletMode } from '../../types.js';
 
 export interface OnboardingStepBrief {
     explain: ReadonlyArray<string>;
@@ -11,6 +12,7 @@ export interface OnboardingStepBrief {
 export interface OnboardingFacts {
     walletAddress: string | null;
     cellCount: number | null;
+    walletMode: WalletMode | null;
 }
 
 export const completeOnboardingStepInputSchema = {

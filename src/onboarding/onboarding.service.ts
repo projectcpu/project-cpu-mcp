@@ -12,6 +12,7 @@ import {
     isOnboardingFinished,
     isOnboardingStarted,
     isSuccessStatus,
+    normalizeOnboardingStatePayload,
     onboardingPhase,
 } from './onboarding.utils.js';
 import {
@@ -139,7 +140,7 @@ export class OnboardingService implements IOnboardingService {
             return this.unavailable(`the game API answered HTTP ${response.status}`);
         }
 
-        const parsed = onboardingStateSchema.safeParse(response.data);
+        const parsed = onboardingStateSchema.safeParse(normalizeOnboardingStatePayload(response.data));
         if (!parsed.success) {
             return this.unavailable('the game API answered an unreadable onboarding state');
         }
@@ -154,7 +155,7 @@ export class OnboardingService implements IOnboardingService {
             throw new Error(`Could not ${label} (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
 
-        const parsed = onboardingStateSchema.safeParse(response.data);
+        const parsed = onboardingStateSchema.safeParse(normalizeOnboardingStatePayload(response.data));
         if (!parsed.success) {
             throw new Error(`Could not ${label}: the game API answered an unreadable onboarding state.`);
         }

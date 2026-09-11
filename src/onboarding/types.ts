@@ -37,22 +37,12 @@ export interface OnboardingStatus {
     state: OnboardingState | null;
 }
 
-const nullableNumber = z
-    .number()
-    .nullish()
-    .transform((value) => value ?? null);
-
-const nullableText = z
-    .string()
-    .nullish()
-    .transform((value) => value ?? null);
-
 export const onboardingStateSchema = z.object({
     version: z.number(),
     completedSteps: z.array(z.string()),
-    completedAt: nullableNumber,
-    skippedAt: nullableNumber,
-    skipReason: nullableText,
+    completedAt: z.number().nullable(),
+    skippedAt: z.number().nullable(),
+    skipReason: z.string().nullable(),
 });
 
 export interface IOnboardingService {

@@ -127,9 +127,9 @@ class FakeOnboardingService implements IOnboardingService {
 
 let open: Client | null = null;
 
-async function boot(onboarding: IOnboardingService): Promise<Client> {
+async function boot(onboarding: IOnboardingService, walletMode: WalletMode = WalletMode.EVM): Promise<Client> {
     const context = {
-        config: { WALLET_MODE: WalletMode.EVM, OPERATOR_PERSONA: false, OPERATOR_ONBOARDING: true },
+        config: { WALLET_MODE: walletMode, OPERATOR_PERSONA: false, OPERATOR_ONBOARDING: true },
         wallet: { isReady: () => true, get: () => ({ getAddress: () => AGENT_ADDRESS }) },
         auth: { getAccessToken: vi.fn(async () => 'jwt'), reauthenticate: vi.fn() },
         mapReader: { query: vi.fn(async () => ({ summary: { myCells: CELLS_ON_ADDRESS } })) },
@@ -191,6 +191,25 @@ describe('cpu_onboarding', () => {
 
         expect(text).toContain(AGENT_ADDRESS);
         expect(text).toContain(String(CELLS_ON_ADDRESS));
+    });
+
+    it('names the wallet mode the session runs in', async () => {
+        const client = await boot(new FakeOnboardingService(stateWith({ completedSteps: [OnboardingStep.Intro] })));
+
+        const text = textOf(await call(client, ONBOARDING_TOOL_NAME, {}));
+
+        expect(text).toContain(`Wallet mode: ${WalletMode.EVM}`);
+    });
+
+    it('names the paybox wallet mode when the session runs on it', async () => {
+        const client = await boot(
+            new FakeOnboardingService(stateWith({ completedSteps: [OnboardingStep.Intro] })),
+            WalletMode.PAYBOX,
+        );
+
+        const text = textOf(await call(client, ONBOARDING_TOOL_NAME, {}));
+
+        expect(text).toContain(`Wallet mode: ${WalletMode.PAYBOX}`);
     });
 
     it('opens on the intro and reminds the agent the player may stop', async () => {
