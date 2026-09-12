@@ -32,7 +32,6 @@ const HUB_PLACED: BuildResult = { ...PLACED, buildingType: BuildingType.Hub };
 
 interface Boot {
     onboarding: FakeOnboardingService;
-    onboardingEnabled: boolean;
     outcome: BuildResult;
 }
 
@@ -42,7 +41,6 @@ async function build(options: Boot): Promise<CallToolResult> {
     const harness = await bootTool({
         register: (registrar: ToolRegistrar, context: AppContext): void => registerBuildTool(registrar, context),
         onboarding: options.onboarding,
-        onboardingEnabled: options.onboardingEnabled,
         services: { build: { build: async (): Promise<BuildResult> => options.outcome } },
     });
     open = harness;
@@ -58,7 +56,7 @@ describe('the extractor step closed by the build tool', () => {
     it('closes on a build that was sent', async () => {
         const onboarding = readyOnboarding(STARTED_STATE);
 
-        const result = await build({ onboarding, onboardingEnabled: true, outcome: PLACED });
+        const result = await build({ onboarding, outcome: PLACED });
 
         expect(result.isError).toBeFalsy();
         expect(onboarding.closedSteps).toEqual([OnboardingStep.BuildExtractor]);
@@ -67,7 +65,7 @@ describe('the extractor step closed by the build tool', () => {
     it('closes on any building type, not only an extractor', async () => {
         const onboarding = readyOnboarding(STARTED_STATE);
 
-        await build({ onboarding, onboardingEnabled: true, outcome: HUB_PLACED });
+        await build({ onboarding, outcome: HUB_PLACED });
 
         expect(onboarding.closedSteps).toEqual([OnboardingStep.BuildExtractor]);
     });
@@ -75,7 +73,7 @@ describe('the extractor step closed by the build tool', () => {
     it('closes nothing when the cell already carried the building', async () => {
         const onboarding = readyOnboarding(STARTED_STATE);
 
-        await build({ onboarding, onboardingEnabled: true, outcome: ALREADY_STANDING });
+        await build({ onboarding, outcome: ALREADY_STANDING });
 
         expect(onboarding.closedSteps).toEqual([]);
     });
@@ -83,7 +81,7 @@ describe('the extractor step closed by the build tool', () => {
     it('finishes the onboarding when the build was the last open step', async () => {
         const onboarding = readyOnboarding(stateMissingOnly(OnboardingStep.BuildExtractor));
 
-        await build({ onboarding, onboardingEnabled: true, outcome: PLACED });
+        await build({ onboarding, outcome: PLACED });
 
         expect(onboarding.completeCalls).toBe(1);
     });
@@ -93,13 +91,12 @@ describe('a build whose onboarding write cannot be made', () => {
     it('answers exactly what a recorded build answers and warns instead', async () => {
         const recorded = await build({
             onboarding: readyOnboarding(STARTED_STATE),
-            onboardingEnabled: true,
             outcome: PLACED,
         });
         await open?.close();
 
         const onboarding = readyOnboarding(STARTED_STATE, new Error('onboarding write refused'));
-        const failed = await build({ onboarding, onboardingEnabled: true, outcome: PLACED });
+        const failed = await build({ onboarding, outcome: PLACED });
 
         expect(failed.isError).toBeFalsy();
         expect(failed.content).toEqual(recorded.content);
@@ -111,15 +108,7 @@ describe('a build that must not touch the onboarding at all', () => {
     it('writes nothing once the onboarding is finished', async () => {
         const onboarding = readyOnboarding(FINISHED_STATE);
 
-        await build({ onboarding, onboardingEnabled: true, outcome: PLACED });
-
-        expect(onboarding.closedSteps).toEqual([]);
-    });
-
-    it('writes nothing when onboarding is switched off', async () => {
-        const onboarding = readyOnboarding(STARTED_STATE);
-
-        await build({ onboarding, onboardingEnabled: false, outcome: PLACED });
+        await build({ onboarding, outcome: PLACED });
 
         expect(onboarding.closedSteps).toEqual([]);
     });

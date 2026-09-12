@@ -16,6 +16,5 @@ export const LAUNCH_CHAIN_ID = 42161;
 export const LAUNCH_NETWORK = Network.ARBITRUM;
 export const DEFAULT_WALLET_MODE = WalletMode.PAYBOX;
 export const OPERATOR_PERSONA_DEFAULT = true;
-export const OPERATOR_ONBOARDING_DEFAULT = true;
 export const BOOLEAN_ENV_TRUE = 'true';
 export const BOOLEAN_ENV_FALSE = 'false';

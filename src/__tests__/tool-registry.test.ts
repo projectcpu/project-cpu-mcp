@@ -162,22 +162,21 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
     StdioServerTransport: class StdioServerTransportStub {},
 }));
 
-async function bootServer(
-    personaEnabled = true,
-    onboardingEnabled = false,
-): Promise<Array<{ name: string; description: string }>> {
+async function bootServer(personaEnabled = true): Promise<Array<{ name: string; description: string }>> {
     sdk.tools.length = 0;
     await createServer({
-        config: { OPERATOR_PERSONA: personaEnabled, OPERATOR_ONBOARDING: onboardingEnabled },
+        config: { OPERATOR_PERSONA: personaEnabled },
     } as unknown as AppContext);
     return [...sdk.tools];
 }
 
 describe('the registered tool surface', () => {
-    it('is exactly the pinned public list plus the operating brief', async () => {
+    it('is exactly the pinned public list plus the operating brief and the walkthrough', async () => {
         const tools = await bootServer();
 
-        expect([...tools.map((tool) => tool.name)].sort()).toEqual([...PUBLIC_TOOLS, PERSONA_TOOL_NAME].sort());
+        expect([...tools.map((tool) => tool.name)].sort()).toEqual(
+            [...PUBLIC_TOOLS, PERSONA_TOOL_NAME, ...ONBOARDING_TOOLS].sort(),
+        );
     });
 
     it('registers each name once', async () => {
@@ -214,25 +213,19 @@ describe('the registered tool surface', () => {
     it('leaves only the operating brief unregistered when the persona is off', async () => {
         const names = (await bootServer(false)).map((tool) => tool.name);
 
-        expect(names.sort()).toEqual([...PUBLIC_TOOLS].sort());
+        expect(names.sort()).toEqual([...PUBLIC_TOOLS, ...ONBOARDING_TOOLS].sort());
     });
 });
 
 describe('the onboarding surface', () => {
-    it('adds exactly the four walkthrough tools when the walkthrough is on', async () => {
-        const names = (await bootServer(true, true)).map((tool) => tool.name);
+    it('is always exactly the four walkthrough tools', async () => {
+        const names = (await bootServer()).map((tool) => tool.name);
 
         expect(names.sort()).toEqual([...PUBLIC_TOOLS, PERSONA_TOOL_NAME, ...ONBOARDING_TOOLS].sort());
     });
 
-    it('registers none of them when the walkthrough is off', async () => {
-        const names = (await bootServer(true, false)).map((tool) => tool.name);
-
-        expect(names.filter((name) => ONBOARDING_TOOLS.includes(name))).toEqual([]);
-    });
-
-    it('names no unregistered tool in any description with the walkthrough on', async () => {
-        const tools = await bootServer(true, true);
+    it('names no unregistered tool in any walkthrough description', async () => {
+        const tools = await bootServer();
         const names = tools.map((tool) => tool.name);
         const promised = tools.flatMap((tool) => [...new Set(tool.description.match(/cpu_[a-z_]+/g) ?? [])]);
 

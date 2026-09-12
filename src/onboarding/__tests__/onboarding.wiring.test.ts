@@ -46,7 +46,6 @@ interface Harness {
 let open: Client | null = null;
 
 interface BootOptions {
-    onboardingEnabled: boolean;
     outcome: ApiOutcome;
     personaEnabled: boolean | null;
 }
@@ -57,7 +56,6 @@ async function boot(options: BootOptions): Promise<Harness> {
         config: {
             WALLET_MODE: WalletMode.EVM,
             OPERATOR_PERSONA: options.personaEnabled ?? false,
-            OPERATOR_ONBOARDING: options.onboardingEnabled,
         },
         wallet: { get: () => ({ getAddress: () => '0x1234' }) },
         auth: { getAccessToken: vi.fn(async () => 'jwt'), reauthenticate: vi.fn() },
@@ -105,7 +103,6 @@ afterEach(async () => {
 describe('the onboarding gate through real server registration', () => {
     it('refuses a registered game tool for a player who has not started', async () => {
         const harness = await boot({
-            onboardingEnabled: true,
             personaEnabled: null,
             outcome: { status: 200, data: EMPTY_STATE },
         });
@@ -119,7 +116,6 @@ describe('the onboarding gate through real server registration', () => {
 
     it('stands behind the operating brief gate', async () => {
         const harness = await boot({
-            onboardingEnabled: true,
             personaEnabled: true,
             outcome: { status: 200, data: EMPTY_STATE },
         });
@@ -132,7 +128,6 @@ describe('the onboarding gate through real server registration', () => {
 
     it('refuses again once the brief is served', async () => {
         const harness = await boot({
-            onboardingEnabled: true,
             personaEnabled: true,
             outcome: { status: 200, data: EMPTY_STATE },
         });
@@ -145,7 +140,6 @@ describe('the onboarding gate through real server registration', () => {
 
     it('re-reads the onboarding state after a successful authentication', async () => {
         const harness = await boot({
-            onboardingEnabled: true,
             personaEnabled: null,
             outcome: { status: 200, data: EMPTY_STATE },
         });
@@ -158,7 +152,6 @@ describe('the onboarding gate through real server registration', () => {
 
     it('carries the notice on a tool answer while the walkthrough runs', async () => {
         const harness = await boot({
-            onboardingEnabled: true,
             personaEnabled: null,
             outcome: stateOk({ completedSteps: [OnboardingStep.Intro] }),
         });
@@ -168,34 +161,5 @@ describe('the onboarding gate through real server registration', () => {
         expect(result.isError).toBeFalsy();
         expect(textOf(result)).toHaveLength(2);
         expect(textOf(result)[1]).toContain('Onboarding: step 2/6');
-    });
-});
-
-describe('onboarding switched off', () => {
-    it('refuses nothing, adds nothing and asks the game API nothing', async () => {
-        const harness = await boot({
-            onboardingEnabled: false,
-            personaEnabled: null,
-            outcome: { status: 200, data: EMPTY_STATE },
-        });
-
-        const result = await call(harness.client, PROBE_TOOL);
-
-        expect(result.isError).toBeFalsy();
-        expect(textOf(result)).toEqual([PROBE_TEXT]);
-        expect(stubs.probeCalls).toBe(1);
-        expect(harness.api.calls).toEqual([]);
-    });
-
-    it('asks the game API nothing after an authentication either', async () => {
-        const harness = await boot({
-            onboardingEnabled: false,
-            personaEnabled: null,
-            outcome: { status: 200, data: EMPTY_STATE },
-        });
-
-        await call(harness.client, AUTHENTICATE_TOOL);
-
-        expect(harness.api.calls).toEqual([]);
     });
 });

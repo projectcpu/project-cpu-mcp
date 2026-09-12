@@ -151,7 +151,6 @@ export function unavailableOnboarding(): FakeOnboardingService {
 export interface BootOptions {
     register: (registrar: ToolRegistrar, context: AppContext) => void;
     onboarding: FakeOnboardingService;
-    onboardingEnabled: boolean;
     services: Record<string, unknown>;
 }
 
@@ -164,7 +163,7 @@ export interface ToolHarness {
 export async function bootTool(options: BootOptions): Promise<ToolHarness> {
     const warnings: Array<unknown> = [];
     const context = {
-        config: { OPERATOR_PERSONA: false, OPERATOR_ONBOARDING: options.onboardingEnabled },
+        config: { OPERATOR_PERSONA: false },
         appConfig: { load: async () => makeConfig() },
         onboarding: options.onboarding,
         logger: {
@@ -180,8 +179,7 @@ export async function bootTool(options: BootOptions): Promise<ToolHarness> {
     } as unknown as AppContext;
 
     const server = new McpServer({ name: 'onboarding-autoclose-test', version: '0.0.0' });
-    const gates = options.onboardingEnabled ? [createOnboardingGate(options.onboarding)] : [];
-    options.register(createGuardedRegistrar(server, gates), context);
+    options.register(createGuardedRegistrar(server, [createOnboardingGate(options.onboarding)]), context);
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);

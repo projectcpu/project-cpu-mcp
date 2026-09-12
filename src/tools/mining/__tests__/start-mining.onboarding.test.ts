@@ -36,7 +36,6 @@ const STARTED: StartMiningResult = {
 
 interface Boot {
     onboarding: FakeOnboardingService;
-    onboardingEnabled: boolean;
 }
 
 let open: ToolHarness | null = null;
@@ -45,7 +44,6 @@ async function startMining(options: Boot): Promise<CallToolResult> {
     const harness = await bootTool({
         register: (registrar: ToolRegistrar, context: AppContext): void => registerStartMiningTool(registrar, context),
         onboarding: options.onboarding,
-        onboardingEnabled: options.onboardingEnabled,
         services: { mining: { startMining: async (): Promise<StartMiningResult> => STARTED } },
     });
     open = harness;
@@ -61,7 +59,7 @@ describe('the mining step closed by the start-mining tool', () => {
     it('closes on a started job', async () => {
         const onboarding = readyOnboarding(STARTED_STATE);
 
-        const result = await startMining({ onboarding, onboardingEnabled: true });
+        const result = await startMining({ onboarding });
 
         expect(result.isError).toBeFalsy();
         expect(onboarding.closedSteps).toEqual([OnboardingStep.StartMining]);
@@ -70,7 +68,7 @@ describe('the mining step closed by the start-mining tool', () => {
     it('finishes the onboarding when the start was the last open step', async () => {
         const onboarding = readyOnboarding(stateMissingOnly(OnboardingStep.StartMining));
 
-        await startMining({ onboarding, onboardingEnabled: true });
+        await startMining({ onboarding });
 
         expect(onboarding.completeCalls).toBe(1);
     });
@@ -78,11 +76,11 @@ describe('the mining step closed by the start-mining tool', () => {
 
 describe('a start whose onboarding write cannot be made', () => {
     it('answers exactly what a recorded start answers and warns instead', async () => {
-        const recorded = await startMining({ onboarding: readyOnboarding(STARTED_STATE), onboardingEnabled: true });
+        const recorded = await startMining({ onboarding: readyOnboarding(STARTED_STATE) });
         await open?.close();
 
         const onboarding = readyOnboarding(STARTED_STATE, new Error('onboarding write refused'));
-        const failed = await startMining({ onboarding, onboardingEnabled: true });
+        const failed = await startMining({ onboarding });
 
         expect(failed.isError).toBeFalsy();
         expect(failed.content).toEqual(recorded.content);
@@ -94,15 +92,7 @@ describe('a start that must not touch the onboarding at all', () => {
     it('writes nothing once the onboarding is finished', async () => {
         const onboarding = readyOnboarding(FINISHED_STATE);
 
-        await startMining({ onboarding, onboardingEnabled: true });
-
-        expect(onboarding.closedSteps).toEqual([]);
-    });
-
-    it('writes nothing when onboarding is switched off', async () => {
-        const onboarding = readyOnboarding(STARTED_STATE);
-
-        await startMining({ onboarding, onboardingEnabled: false });
+        await startMining({ onboarding });
 
         expect(onboarding.closedSteps).toEqual([]);
     });

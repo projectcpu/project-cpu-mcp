@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ONBOARDING_TOOL_NAME } from '../onboarding/constants.js';
-import { SENTENCE_BOUNDARY, SERVER_INSTRUCTIONS } from '../server.constants.js';
+import { SERVER_INSTRUCTIONS } from '../server.constants.js';
 import { createServer } from '../server.js';
 import { PERSONA_BRIEF_MARKER, PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
 import type { AppContext } from '../types.js';
@@ -47,11 +47,11 @@ interface BootedServer {
     tools: Array<RegisteredTool>;
 }
 
-async function bootServer(personaEnabled = true, onboardingEnabled = true): Promise<BootedServer> {
+async function bootServer(personaEnabled = true): Promise<BootedServer> {
     sdk.options.length = 0;
     sdk.tools.length = 0;
     await createServer({
-        config: { OPERATOR_PERSONA: personaEnabled, OPERATOR_ONBOARDING: onboardingEnabled },
+        config: { OPERATOR_PERSONA: personaEnabled },
     } as unknown as AppContext);
 
     const [options] = sdk.options;
@@ -81,7 +81,7 @@ describe('server instructions', () => {
 
 describe('instructions handed to the server', () => {
     it('are the ones this module exports', async () => {
-        const { delivered } = await bootServer(true, true);
+        const { delivered } = await bootServer();
 
         expect(delivered).toBe(SERVER_INSTRUCTIONS);
     });
@@ -153,36 +153,23 @@ describe('the operating brief switched off', () => {
     });
 });
 
-describe('the onboarding walkthrough on by default', () => {
+describe('the onboarding walkthrough always on', () => {
     it('sends the agent through it until it reports the player finished', async () => {
-        const { delivered } = await bootServer(true, true);
+        const { delivered } = await bootServer();
 
         expect(delivered).toContain(ONBOARDING_TOOL_NAME);
         expect(delivered.length).toBeLessThan(INSTRUCTIONS_CHAR_BUDGET);
     });
 
     it('places the pointer after authentication', async () => {
-        const { delivered } = await bootServer(true, true);
+        const { delivered } = await bootServer();
 
         expect(delivered.indexOf(ONBOARDING_TOOL_NAME)).toBeGreaterThan(delivered.indexOf(AUTHENTICATE_TOOL));
     });
-});
 
-describe('the onboarding walkthrough switched off', () => {
-    it('removes its pointer from the instructions and keeps the rest of them', async () => {
-        const { delivered } = await bootServer(true, false);
+    it('keeps the pointer when the operating brief is off', async () => {
+        const { delivered } = await bootServer(false);
 
-        expect(delivered).not.toContain(ONBOARDING_TOOL_NAME);
-        expect(delivered).toContain(AUTHENTICATE_TOOL);
-        expect(delivered).toContain(PERSONA_TOOL_NAME);
-        expect(delivered).toContain('cpu_get_game_config');
-    });
-
-    it('cuts that one sentence and nothing else', async () => {
-        const on = (await bootServer(true, true)).delivered.split(SENTENCE_BOUNDARY);
-        const off = (await bootServer(true, false)).delivered.split(SENTENCE_BOUNDARY);
-
-        expect(on.filter((sentence) => !off.includes(sentence))).toHaveLength(1);
-        expect(off.filter((sentence) => !on.includes(sentence))).toEqual([]);
+        expect(delivered).toContain(ONBOARDING_TOOL_NAME);
     });
 });

@@ -9,7 +9,7 @@ import { AuthenticationNextTool } from '../../api/types.js';
 import { PERSONA_TOOL_NAME } from '../../tools/persona/constants.js';
 import { createGuardedRegistrar } from '../../version/tool-guard.js';
 import {
-    ONBOARDING_EXEMPT_TOOLS,
+    ONBOARDING_GATE_ALLOWLIST,
     ONBOARDING_GATE_REFUSAL,
     ONBOARDING_TOOL_NAME,
     ONBOARDING_UNAVAILABLE_NOTICE,
@@ -49,7 +49,7 @@ async function boot(outcome: ApiOutcome, authenticated = true): Promise<Harness>
         probeCalls += 1;
         return { content: [{ type: 'text' as const, text: PROBE_TEXT }] };
     });
-    for (const name of ONBOARDING_EXEMPT_TOOLS) {
+    for (const name of ONBOARDING_GATE_ALLOWLIST) {
         registrar.registerTool(name, { description: name, inputSchema: {} }, () => ({
             content: [{ type: 'text' as const, text: name }],
         }));
@@ -79,7 +79,7 @@ afterEach(async () => {
 
 describe('the onboarding allow-list', () => {
     it('names exactly the six tools that must answer a new player', () => {
-        expect([...ONBOARDING_EXEMPT_TOOLS]).toEqual([
+        expect([...ONBOARDING_GATE_ALLOWLIST]).toEqual([
             PERSONA_TOOL_NAME,
             AuthenticationNextTool.Authenticate,
             ONBOARDING_TOOL_NAME,
@@ -109,7 +109,7 @@ describe('the onboarding gate before the first step', () => {
         expect(textOf(result).join('')).toContain(`\`${ONBOARDING_TOOL_NAME}\``);
     });
 
-    it.each([...ONBOARDING_EXEMPT_TOOLS])('lets %s through', async (name) => {
+    it.each([...ONBOARDING_GATE_ALLOWLIST])('lets %s through', async (name) => {
         const harness = await boot({ status: 200, data: EMPTY_STATE });
 
         const result = await call(harness.client, name);

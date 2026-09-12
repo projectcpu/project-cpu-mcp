@@ -28,7 +28,7 @@ export const COMPLETE_ONBOARDING_STEP_TOOL_NAME = 'cpu_complete_onboarding_step'
 export const SKIP_ONBOARDING_TOOL_NAME = 'cpu_skip_onboarding';
 export const RESTART_ONBOARDING_TOOL_NAME = 'cpu_restart_onboarding';
 
-export const ONBOARDING_EXEMPT_TOOLS: ReadonlyArray<string> = [
+export const ONBOARDING_GATE_ALLOWLIST: ReadonlyArray<string> = [
     'cpu_persona',
     'cpu_authenticate',
     ONBOARDING_TOOL_NAME,

@@ -3,12 +3,21 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { OnboardingAvailability } from '../onboarding/types.js';
 import { createServer } from '../server.js';
 import { PERSONA_GATE_REFUSAL, PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
 import type { ToolRegistrar } from '../tools/types.js';
 import type { AppContext } from '../types.js';
 import { formatBlockedError, formatUpdateNotice } from '../version/package-version.utils.js';
 import { PackageVersionSignal } from '../version/types.js';
+
+const ONBOARDING_STUB = {
+    refresh: async (): Promise<void> => undefined,
+    state: async (): Promise<{ availability: OnboardingAvailability; state: null }> => ({
+        availability: OnboardingAvailability.Unauthenticated,
+        state: null,
+    }),
+};
 
 const AUTHENTICATE_TOOL = 'cpu_authenticate';
 
@@ -41,6 +50,7 @@ vi.mock('../tools/config/get-game-config/get-game-config.js', () => ({
 function contextFor(personaEnabled: boolean, blocked = false): AppContext {
     return {
         config: { OPERATOR_PERSONA: personaEnabled },
+        onboarding: ONBOARDING_STUB,
         packageVersion: {
             currentVersion: '1.0.0',
             check: async () => ({

@@ -40,7 +40,6 @@ const PENDING: RevealResult = { ...FULFILLED, fulfillTxHash: null, deposits: nul
 
 interface Boot {
     onboarding: FakeOnboardingService;
-    onboardingEnabled: boolean;
     outcome: RevealResult;
 }
 
@@ -50,7 +49,6 @@ async function reveal(options: Boot): Promise<CallToolResult> {
     const harness = await bootTool({
         register: (registrar: ToolRegistrar, context: AppContext): void => registerRevealTool(registrar, context),
         onboarding: options.onboarding,
-        onboardingEnabled: options.onboardingEnabled,
         services: { reveal: { reveal: async (): Promise<RevealResult> => options.outcome } },
     });
     open = harness;
@@ -66,7 +64,7 @@ describe('the reveal step closed by the reveal tool', () => {
     it('closes on a reveal whose deposits were drawn', async () => {
         const onboarding = readyOnboarding(STARTED_STATE);
 
-        const result = await reveal({ onboarding, onboardingEnabled: true, outcome: FULFILLED });
+        const result = await reveal({ onboarding, outcome: FULFILLED });
 
         expect(result.isError).toBeFalsy();
         expect(onboarding.closedSteps).toEqual([OnboardingStep.Reveal]);
@@ -75,7 +73,7 @@ describe('the reveal step closed by the reveal tool', () => {
     it('closes nothing on a request whose draw has not landed', async () => {
         const onboarding = readyOnboarding(STARTED_STATE);
 
-        const result = await reveal({ onboarding, onboardingEnabled: true, outcome: PENDING });
+        const result = await reveal({ onboarding, outcome: PENDING });
 
         expect(result.isError).toBeFalsy();
         expect(onboarding.closedSteps).toEqual([]);
@@ -84,7 +82,7 @@ describe('the reveal step closed by the reveal tool', () => {
     it('finishes the onboarding when the reveal was the last open step', async () => {
         const onboarding = readyOnboarding(stateMissingOnly(OnboardingStep.Reveal));
 
-        await reveal({ onboarding, onboardingEnabled: true, outcome: FULFILLED });
+        await reveal({ onboarding, outcome: FULFILLED });
 
         expect(onboarding.closedSteps).toEqual([OnboardingStep.Reveal]);
         expect(onboarding.completeCalls).toBe(1);
@@ -93,7 +91,7 @@ describe('the reveal step closed by the reveal tool', () => {
     it('leaves the onboarding unfinished while other steps are open', async () => {
         const onboarding = readyOnboarding(STARTED_STATE);
 
-        await reveal({ onboarding, onboardingEnabled: true, outcome: FULFILLED });
+        await reveal({ onboarding, outcome: FULFILLED });
 
         expect(onboarding.completeCalls).toBe(0);
     });
@@ -103,13 +101,12 @@ describe('a reveal whose onboarding write cannot be made', () => {
     it('answers exactly what a recorded reveal answers and warns instead', async () => {
         const recorded = await reveal({
             onboarding: readyOnboarding(STARTED_STATE),
-            onboardingEnabled: true,
             outcome: FULFILLED,
         });
         await open?.close();
 
         const onboarding = readyOnboarding(STARTED_STATE, new Error('onboarding write refused'));
-        const failed = await reveal({ onboarding, onboardingEnabled: true, outcome: FULFILLED });
+        const failed = await reveal({ onboarding, outcome: FULFILLED });
 
         expect(failed.isError).toBeFalsy();
         expect(failed.content).toEqual(recorded.content);
@@ -121,7 +118,7 @@ describe('a reveal that must not touch the onboarding at all', () => {
     it('writes nothing once the onboarding is finished', async () => {
         const onboarding = readyOnboarding(FINISHED_STATE);
 
-        await reveal({ onboarding, onboardingEnabled: true, outcome: FULFILLED });
+        await reveal({ onboarding, outcome: FULFILLED });
 
         expect(onboarding.closedSteps).toEqual([]);
         expect(onboarding.completeCalls).toBe(0);
@@ -130,15 +127,7 @@ describe('a reveal that must not touch the onboarding at all', () => {
     it('writes nothing while the onboarding state is unavailable', async () => {
         const onboarding = unavailableOnboarding();
 
-        await reveal({ onboarding, onboardingEnabled: true, outcome: FULFILLED });
-
-        expect(onboarding.closedSteps).toEqual([]);
-    });
-
-    it('writes nothing when onboarding is switched off', async () => {
-        const onboarding = readyOnboarding(STARTED_STATE);
-
-        await reveal({ onboarding, onboardingEnabled: false, outcome: FULFILLED });
+        await reveal({ onboarding, outcome: FULFILLED });
 
         expect(onboarding.closedSteps).toEqual([]);
     });

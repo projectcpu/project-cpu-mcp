@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import pkg from '../package.json' with { type: 'json' };
-import { ONBOARDING_TOOL_NAME } from './onboarding/constants.js';
 import { createOnboardingGate } from './onboarding/onboarding.gate.js';
 import { SENTENCE_BOUNDARY, SERVER_INSTRUCTIONS } from './server.constants.js';
 import { registerGetBalanceTool } from './tools/account/get-balance/get-balance.js';
@@ -88,15 +87,12 @@ import { createPackageVersionGate } from './version/package-version.js';
 import { createGuardedRegistrar } from './version/tool-guard.js';
 import type { ToolGate } from './version/types.js';
 
-function instructionsFor(personaEnabled: boolean, onboardingEnabled: boolean): string {
-    const hidden = [personaEnabled ? null : PERSONA_TOOL_NAME, onboardingEnabled ? null : ONBOARDING_TOOL_NAME].filter(
-        (name): name is string => name !== null,
-    );
-    if (hidden.length === 0) {
+function instructionsFor(personaEnabled: boolean): string {
+    if (personaEnabled) {
         return SERVER_INSTRUCTIONS;
     }
     return SERVER_INSTRUCTIONS.split(SENTENCE_BOUNDARY)
-        .filter((sentence) => !hidden.some((name) => sentence.includes(name)))
+        .filter((sentence) => !sentence.includes(PERSONA_TOOL_NAME))
         .join(' ');
 }
 
@@ -107,12 +103,10 @@ function registerTools(registrar: ToolRegistrar, context: AppContext, persona: P
     if (context.config.OPERATOR_PERSONA) {
         registerPersonaTool(registrar, persona);
     }
-    if (context.config.OPERATOR_ONBOARDING) {
-        registerOnboardingTool(registrar, context);
-        registerCompleteOnboardingStepTool(registrar, context);
-        registerSkipOnboardingTool(registrar, context);
-        registerRestartOnboardingTool(registrar, context);
-    }
+    registerOnboardingTool(registrar, context);
+    registerCompleteOnboardingStepTool(registrar, context);
+    registerSkipOnboardingTool(registrar, context);
+    registerRestartOnboardingTool(registrar, context);
     registerGetGameConfigTool(registrar, context);
     registerGetBuildingTool(registrar, context);
     registerFindBuildingsTool(registrar, context);
@@ -183,7 +177,7 @@ function registerTools(registrar: ToolRegistrar, context: AppContext, persona: P
 export async function createServer(context: AppContext): Promise<void> {
     const server = new McpServer(
         { name: pkg.name, version: pkg.version },
-        { instructions: instructionsFor(context.config.OPERATOR_PERSONA, context.config.OPERATOR_ONBOARDING) },
+        { instructions: instructionsFor(context.config.OPERATOR_PERSONA) },
     );
 
     const persona = createPersonaDelivery();
@@ -194,9 +188,7 @@ export async function createServer(context: AppContext): Promise<void> {
     if (context.config.OPERATOR_PERSONA) {
         gates.push(createPersonaGate(persona));
     }
-    if (context.config.OPERATOR_ONBOARDING) {
-        gates.push(createOnboardingGate(context.onboarding));
-    }
+    gates.push(createOnboardingGate(context.onboarding));
     registerTools(createGuardedRegistrar(server, gates), context, persona);
 
     const stdio = new StdioServerTransport();

@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { BuildingType } from '../../../api/types.js';
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { OnboardingAvailability } from '../../../onboarding/types.js';
 import { makeConfig } from '../../../services/__tests__/service-fakes.js';
 import type { BuildResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerBuildTool } from '../build.js';
 
-const ONBOARDING_OFF = { OPERATOR_ONBOARDING: false };
+const ONBOARDING_IDLE = {
+    state: async (): Promise<{ availability: OnboardingAvailability; state: null }> => ({
+        availability: OnboardingAvailability.Unavailable,
+        state: null,
+    }),
+};
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -27,7 +33,12 @@ function harness(outcome: BuildResult | Error): Handler {
         },
     };
     const appConfig = { load: async () => makeConfig() };
-    const context = { build, appConfig, config: ONBOARDING_OFF, logger: new NoopLogger() } as unknown as AppContext;
+    const context = {
+        build,
+        appConfig,
+        onboarding: ONBOARDING_IDLE,
+        logger: new NoopLogger(),
+    } as unknown as AppContext;
 
     let captured: Handler | null = null;
     const server = {
