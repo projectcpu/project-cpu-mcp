@@ -4,7 +4,6 @@ import { ONBOARDING_STEP_ORDER } from '../../../onboarding/constants.js';
 import { OnboardingStep } from '../../../onboarding/types.js';
 import {
     COMPLETE_ONBOARDING_STEP_TOOL_DESCRIPTION,
-    ONBOARDING_BRIEF_RULES,
     ONBOARDING_STEP_BRIEFS,
     ONBOARDING_TOOL_DESCRIPTION,
     RESTART_ONBOARDING_TOOL_DESCRIPTION,
