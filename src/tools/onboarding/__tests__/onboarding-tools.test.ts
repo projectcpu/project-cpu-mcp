@@ -129,7 +129,7 @@ let open: Client | null = null;
 
 async function boot(onboarding: IOnboardingService, walletMode: WalletMode = WalletMode.EVM): Promise<Client> {
     const context = {
-        config: { WALLET_MODE: walletMode, OPERATOR_PERSONA: false, OPERATOR_ONBOARDING: true },
+        config: { WALLET_MODE: walletMode, OPERATOR_PERSONA: false },
         wallet: { isReady: () => true, get: () => ({ getAddress: () => AGENT_ADDRESS }) },
         auth: { getAccessToken: vi.fn(async () => 'jwt'), reauthenticate: vi.fn() },
         mapReader: { query: vi.fn(async () => ({ summary: { myCells: CELLS_ON_ADDRESS } })) },

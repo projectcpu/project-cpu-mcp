@@ -198,7 +198,6 @@ Keep `PRIVATE_KEY` secret. Use it only in the MCP server environment. Do not put
 | `NETWORK` | `arbitrum` | Normally never; Arbitrum One is the only accepted launch network. |
 | `RPC_URL` | Arbitrum public RPC | A custom RPC endpoint for sending on-chain transactions (e.g. `cpu_reveal`). |
 | `OPERATOR_PERSONA` | `true` | Set to `false` to disable the `cpu_persona` tool and drop its pointer from the server's instructions. |
-| `OPERATOR_ONBOARDING` | `true` | Set to `false` to turn off the new-player onboarding: tools stop refusing before it starts, and its pointer leaves the server's instructions. |
 | `DEBUG` | `false` | Set to `true` for debug-level logging on stderr. |
 
 Session state is persisted to `~/.project-cpu/`.

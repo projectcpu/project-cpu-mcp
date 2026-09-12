@@ -40,9 +40,3 @@ describe('the install commands the README hands an agent', () => {
         );
     });
 });
-
-describe('the environment table', () => {
-    it('carries the onboarding switch with its default', () => {
-        expect(README).toMatch(/\|\s*`OPERATOR_ONBOARDING`\s*\|\s*`true`\s*\|/u);
-    });
-});

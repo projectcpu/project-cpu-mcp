@@ -25,6 +25,8 @@ import { WalletMode, type AppContext } from '../../types.js';
 import { registerAuthenticateTool } from '../authenticate.js';
 import type { ToolRegistrar } from '../types.js';
 
+const ONBOARDING_STUB = { refresh: async (): Promise<void> => undefined };
+
 describe('cpu_authenticate', () => {
     let client: Client | null = null;
 
@@ -42,6 +44,7 @@ describe('cpu_authenticate', () => {
         const server = new McpServer({ name: 'authenticate-test', version: '0.0.0' });
         registerAuthenticateTool(server, {
             config: { WALLET_MODE: WalletMode.EVM, OPERATOR_PERSONA: false },
+            onboarding: ONBOARDING_STUB,
             wallet: { get: () => ({ getAddress: () => '0x1234' }) },
             auth: {
                 getAccessToken,
@@ -101,6 +104,7 @@ describe('cpu_authenticate', () => {
         });
         const handler = captureAuthenticateHandler({
             config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
+            onboarding: ONBOARDING_STUB,
             wallet,
         } as unknown as AppContext);
 
@@ -393,6 +397,7 @@ describe('cpu_authenticate', () => {
         const server = new McpServer({ name: 'unsupported-loopback-test', version: '0.0.0' });
         registerAuthenticateTool(server, {
             config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
+            onboarding: ONBOARDING_STUB,
             wallet,
         } as unknown as AppContext);
         const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -570,6 +575,7 @@ async function createPayboxPublicHarness(
     auth = new AuthService({ session, api, wallet, logger: new NoopLogger() });
     const context = {
         config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
+        onboarding: ONBOARDING_STUB,
         wallet,
         auth,
         session,

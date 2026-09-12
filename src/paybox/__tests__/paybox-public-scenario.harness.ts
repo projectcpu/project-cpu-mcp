@@ -302,6 +302,7 @@ export class PayboxPublicScenario {
         });
         const context = {
             config: { WALLET_MODE: WalletMode.PAYBOX, OPERATOR_PERSONA: false },
+            onboarding: { refresh: async (): Promise<void> => undefined },
             wallet,
             auth,
             session,

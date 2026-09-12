@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { OnboardingAvailability } from '../../../onboarding/types.js';
 import {
     type MiningClaimResult,
     type MiningStatusResult,
@@ -15,7 +16,12 @@ import { registerClaimMiningTool } from '../claim/claim-mining.js';
 import { registerGetMiningStatusTool } from '../get-status/get-mining-status.js';
 import { registerStartMiningTool } from '../start/start-mining.js';
 
-const ONBOARDING_OFF = { OPERATOR_ONBOARDING: false };
+const ONBOARDING_IDLE = {
+    state: async (): Promise<{ availability: OnboardingAvailability; state: null }> => ({
+        availability: OnboardingAvailability.Unavailable,
+        state: null,
+    }),
+};
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -53,7 +59,7 @@ function statusHarness(outcome: MiningStatusResult | Error): Handler {
     const context = {
         mining,
         appConfig: appConfigStub,
-        config: ONBOARDING_OFF,
+        onboarding: ONBOARDING_IDLE,
         logger: new NoopLogger(),
     } as unknown as AppContext;
     return capture(registerGetMiningStatusTool, context);
@@ -84,7 +90,7 @@ function startHarness(outcome: StartMiningResult): StartHandler {
     const context = {
         mining,
         appConfig: appConfigStub,
-        config: ONBOARDING_OFF,
+        onboarding: ONBOARDING_IDLE,
         logger: new NoopLogger(),
     } as unknown as AppContext;
     return capture(registerStartMiningTool, context) as unknown as StartHandler;
@@ -102,7 +108,7 @@ function claimHarness(outcome: MiningClaimResult | Error): Handler {
     const context = {
         mining,
         appConfig: appConfigStub,
-        config: ONBOARDING_OFF,
+        onboarding: ONBOARDING_IDLE,
         logger: new NoopLogger(),
     } as unknown as AppContext;
     return capture(registerClaimMiningTool, context);

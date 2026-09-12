@@ -5,10 +5,6 @@ import type { AppContext } from '../types.js';
 import { errorMessage } from '../utils/error.utils.js';
 
 export async function closeOnboardingStep(context: AppContext, step: OnboardingStep): Promise<void> {
-    if (!context.config.OPERATOR_ONBOARDING) {
-        return;
-    }
-
     try {
         const known = await context.onboarding.state();
         if (known.availability !== OnboardingAvailability.Ready || known.state === null) {

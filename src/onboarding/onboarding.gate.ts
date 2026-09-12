@@ -1,4 +1,4 @@
-import { ONBOARDING_EXEMPT_TOOLS, ONBOARDING_GATE_REFUSAL, ONBOARDING_UNAVAILABLE_NOTICE } from './constants.js';
+import { ONBOARDING_GATE_ALLOWLIST, ONBOARDING_GATE_REFUSAL, ONBOARDING_UNAVAILABLE_NOTICE } from './constants.js';
 import {
     currentOnboardingStep,
     formatOnboardingNotice,
@@ -13,7 +13,7 @@ import type { ToolGate } from '../version/types.js';
 export function createOnboardingGate(onboarding: IOnboardingService): ToolGate {
     return {
         check: async (toolName: string): Promise<Array<string>> => {
-            if (ONBOARDING_EXEMPT_TOOLS.includes(toolName)) {
+            if (ONBOARDING_GATE_ALLOWLIST.includes(toolName)) {
                 return [];
             }
 
@@ -38,10 +38,6 @@ export function createOnboardingGate(onboarding: IOnboardingService): ToolGate {
 }
 
 export async function refreshOnboarding(context: AppContext): Promise<void> {
-    if (!context.config.OPERATOR_ONBOARDING) {
-        return;
-    }
-
     try {
         await context.onboarding.refresh();
     } catch (error) {
