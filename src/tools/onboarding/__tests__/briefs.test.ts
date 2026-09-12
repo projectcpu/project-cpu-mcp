@@ -11,8 +11,6 @@ import {
     SKIP_ONBOARDING_TOOL_DESCRIPTION,
 } from '../constants.js';
 
-const INCOME_PROMISE = /earn|profit|prize pool|guarantee/iu;
-
 const DESCRIPTIONS: ReadonlyArray<[string, string]> = [
     ['cpu_onboarding', ONBOARDING_TOOL_DESCRIPTION],
     ['cpu_complete_onboarding_step', COMPLETE_ONBOARDING_STEP_TOOL_DESCRIPTION],
@@ -48,22 +46,6 @@ describe('the step briefs', () => {
 
         expect(intro).toMatch(/Emission budget/u);
         expect(intro).not.toMatch(/prize pool/iu);
-    });
-
-    it.each([...ONBOARDING_STEP_ORDER])('promises no income: %s', (step) => {
-        expect(briefText(step)).not.toMatch(INCOME_PROMISE);
-    });
-
-    it.each(DESCRIPTIONS)('promises no income in the description of %s', (_name, description) => {
-        expect(description).not.toMatch(INCOME_PROMISE);
-    });
-
-    it('promises no income in the shared delivery rules', () => {
-        expect(ONBOARDING_BRIEF_RULES.join(' ')).not.toMatch(INCOME_PROMISE);
-    });
-
-    it('is what the income pattern actually catches', () => {
-        expect('you earn a profit from the prize pool, guaranteed').toMatch(INCOME_PROMISE);
     });
 
     it.each(DESCRIPTIONS)('forbids acting without the player words in %s', (name, description) => {

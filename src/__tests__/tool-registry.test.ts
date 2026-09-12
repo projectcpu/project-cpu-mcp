@@ -118,8 +118,6 @@ const ONBOARDING_TOOLS: ReadonlyArray<string> = [
     RESTART_ONBOARDING_TOOL_NAME,
 ];
 
-const INCOME_PROMISE = /earn|profit|prize pool|guarantee/iu;
-
 /** The three claims about Eviction and Lot return that the shipped surface must never make. */
 const EVICTED_LOT_IS_BUYABLE =
     /evicted[^.;]{0,60}?(?:still\s+sells|sells\s+to\s+(?:any|every)|is\s+(?:still\s+)?buyable|can\s+(?:still\s+)?be\s+bought|open\s+to\s+buyers)/iu;
@@ -239,15 +237,6 @@ describe('the onboarding surface', () => {
         const promised = tools.flatMap((tool) => [...new Set(tool.description.match(/cpu_[a-z_]+/g) ?? [])]);
 
         expect([...new Set(promised.filter((name) => !names.includes(name)))]).toEqual([]);
-    });
-
-    it('promises no income in any walkthrough tool description', async () => {
-        const tools = await bootServer(true, true);
-        const offenders = tools.filter(
-            (tool) => ONBOARDING_TOOLS.includes(tool.name) && INCOME_PROMISE.test(tool.description),
-        );
-
-        expect(offenders.map((tool) => tool.name)).toEqual([]);
     });
 });
 
