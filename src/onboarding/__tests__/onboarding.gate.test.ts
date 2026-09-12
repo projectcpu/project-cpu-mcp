@@ -15,7 +15,7 @@ import {
     ONBOARDING_UNAVAILABLE_NOTICE,
 } from '../constants.js';
 import { createOnboardingGate } from '../onboarding.gate.js';
-import { OnboardingStep } from '../types.js';
+import { OnboardingAvailability, type IOnboardingService, type OnboardingStatus, OnboardingStep } from '../types.js';
 
 const PROBE_TOOL = 'cpu_get_map';
 const PROBE_TEXT = 'probe ran';
@@ -30,6 +30,23 @@ const BROKEN_OUTCOMES: Array<[string, ApiOutcome]> = [
     ['500 — the game API failed', { status: 500, data: { message: 'Internal Server Error' } }],
     ['a network throw', { throws: new Error('fetch failed') }],
 ];
+
+const OUTAGE: OnboardingStatus = { availability: OnboardingAvailability.Unavailable, state: null };
+const THROUGH: OnboardingStatus = { availability: OnboardingAvailability.Ready, state: FINISHED_STATE };
+
+function scriptedOnboarding(answers: Array<OnboardingStatus>): IOnboardingService {
+    const queue = [...answers];
+    const answer = async (): Promise<OnboardingStatus> => queue.shift() ?? OUTAGE;
+
+    return {
+        state: answer,
+        refresh: answer,
+        completeStep: answer,
+        complete: answer,
+        skip: answer,
+        restart: answer,
+    };
+}
 
 interface Harness {
     client: Client;
@@ -194,5 +211,25 @@ describe('the onboarding gate without a usable answer', () => {
         expect(result.isError).toBeFalsy();
         expect(textOf(result)).toEqual([PROBE_TEXT]);
         expect(harness.api.calls).toEqual([]);
+    });
+});
+
+describe('the onboarding gate notice about an outage', () => {
+    it('announces every outage once and speaks again after a recovery', async () => {
+        const gate = createOnboardingGate(scriptedOnboarding([OUTAGE, OUTAGE, THROUGH, OUTAGE]));
+
+        expect(await gate.check(PROBE_TOOL)).toEqual([ONBOARDING_UNAVAILABLE_NOTICE]);
+        expect(await gate.check(PROBE_TOOL)).toEqual([]);
+        expect(await gate.check(PROBE_TOOL)).toEqual([]);
+        expect(await gate.check(PROBE_TOOL)).toEqual([ONBOARDING_UNAVAILABLE_NOTICE]);
+    });
+
+    it('keeps the notice to the gate it belongs to', async () => {
+        const first = createOnboardingGate(scriptedOnboarding([OUTAGE]));
+        const second = createOnboardingGate(scriptedOnboarding([OUTAGE]));
+
+        await first.check(PROBE_TOOL);
+
+        expect(await second.check(PROBE_TOOL)).toEqual([ONBOARDING_UNAVAILABLE_NOTICE]);
     });
 });

@@ -16,11 +16,9 @@ import {
     SKIP_ONBOARDING_TOOL_NAME,
 } from '../../../onboarding/constants.js';
 import { completeStepAndFinish } from '../../../onboarding/onboarding.completion.js';
-import { currentOnboardingStep, isOnboardingFinished } from '../../../onboarding/onboarding.utils.js';
 import {
     type IOnboardingService,
     OnboardingAvailability,
-    type OnboardingPhase,
     type OnboardingState,
     type OnboardingStatus,
     OnboardingStep,
@@ -102,26 +100,6 @@ class FakeOnboardingService implements IOnboardingService {
         this.restartReasons.push(reason);
         this.status = readyStatus(EMPTY_STATE);
         return this.status;
-    }
-
-    async currentStep(): Promise<OnboardingStep | null> {
-        return this.status.state === null ? null : currentOnboardingStep(this.status.state);
-    }
-
-    async phase(): Promise<OnboardingPhase | null> {
-        return null;
-    }
-
-    async isFinished(): Promise<boolean> {
-        return this.status.state !== null && isOnboardingFinished(this.status.state);
-    }
-
-    async isStarted(): Promise<boolean> {
-        return this.status.state !== null && this.status.state.completedSteps.length > 0;
-    }
-
-    takeUnavailableNotice(): boolean {
-        return false;
     }
 }
 

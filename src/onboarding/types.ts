@@ -52,24 +52,15 @@ export interface IOnboardingService {
     complete(): Promise<OnboardingStatus>;
     skip(reason: string): Promise<OnboardingStatus>;
     restart(reason: string): Promise<OnboardingStatus>;
-    currentStep(): Promise<OnboardingStep | null>;
-    phase(): Promise<OnboardingPhase | null>;
-    isFinished(): Promise<boolean>;
-    isStarted(): Promise<boolean>;
-    takeUnavailableNotice(): boolean;
 }
 
 export interface OnboardingApi {
     authenticatedRequest<T>(path: string, options: RequestOptions | null): Promise<ApiResponse<T>>;
 }
 
-export interface OnboardingAccount {
-    address: string;
-}
-
 export interface OnboardingSession {
     isAuthenticated(): boolean;
-    getSession(): OnboardingAccount;
+    address(): string | null;
 }
 
 export interface OnboardingServiceOptions {
