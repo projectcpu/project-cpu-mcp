@@ -119,7 +119,8 @@ export class OnboardingService implements IOnboardingService {
 
     private unavailable(reason: string): OnboardingStatus {
         this.logger.warn('onboarding state unavailable — continuing without it', { reason });
-        return this.remember({ availability: OnboardingAvailability.Unavailable, state: null });
+        this.cache = null;
+        return { availability: OnboardingAvailability.Unavailable, state: null };
     }
 
     private remember(status: OnboardingStatus): OnboardingStatus {

@@ -203,6 +203,20 @@ describe('the onboarding gate without a usable answer', () => {
         expect(harness.probeCalls()).toBe(2);
     });
 
+    it('arms the walkthrough again once the game API comes back online', async () => {
+        const harness = await boot({ throws: new Error('fetch failed') });
+
+        const duringOutage = await call(harness.client, PROBE_TOOL);
+        harness.api.setOutcome({ status: 200, data: EMPTY_STATE });
+        const afterRecovery = await call(harness.client, PROBE_TOOL);
+
+        expect(duringOutage.isError).toBeFalsy();
+        expect(textOf(duringOutage)).toEqual([PROBE_TEXT, ONBOARDING_UNAVAILABLE_NOTICE]);
+        expect(afterRecovery.isError).toBe(true);
+        expect(textOf(afterRecovery)).toEqual([ONBOARDING_GATE_REFUSAL]);
+        expect(harness.probeCalls()).toBe(1);
+    });
+
     it('stays silent without an authenticated session and asks the game API nothing', async () => {
         const harness = await boot({ status: 200, data: EMPTY_STATE }, false);
 
