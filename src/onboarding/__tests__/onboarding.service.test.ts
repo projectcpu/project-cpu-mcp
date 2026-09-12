@@ -116,14 +116,31 @@ describe('onboarding state reads', () => {
         expect(status.state).toBeNull();
     });
 
-    it('stops asking the game API once an answer is unavailable', async () => {
+    it('asks the game API again after an unavailable answer', async () => {
         const api = new FakeApi({ status: 500, data: { message: 'Internal Server Error' } });
         const service = makeService(api);
 
         await service.state();
         await service.state();
 
-        expect(api.calls).toHaveLength(1);
+        expect(api.calls).toHaveLength(2);
+    });
+
+    it('serves the state once the game API recovers', async () => {
+        const api = new FakeApi({ throws: new Error('fetch failed') });
+        const service = makeService(api);
+
+        const duringOutage = await service.state();
+        api.setOutcome(stateOk({ completedSteps: [OnboardingStep.Intro] }));
+        const recovered = await service.state();
+        const cached = await service.state();
+
+        expect(duringOutage.availability).toBe(OnboardingAvailability.Unavailable);
+        expect(duringOutage.state).toBeNull();
+        expect(recovered.availability).toBe(OnboardingAvailability.Ready);
+        expect(recovered.state?.completedSteps).toEqual([OnboardingStep.Intro]);
+        expect(cached.state?.completedSteps).toEqual([OnboardingStep.Intro]);
+        expect(api.calls).toHaveLength(2);
     });
 
     it('tries the game API again on the next refresh', async () => {
