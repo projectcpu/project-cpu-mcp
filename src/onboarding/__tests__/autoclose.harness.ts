@@ -12,15 +12,8 @@ import { createGuardedRegistrar } from '../../version/tool-guard.js';
 import { ONBOARDING_STEP_ORDER } from '../constants.js';
 import { createOnboardingGate } from '../onboarding.gate.js';
 import {
-    currentOnboardingStep,
-    isOnboardingFinished,
-    isOnboardingStarted,
-    onboardingPhaseOf,
-} from '../onboarding.utils.js';
-import {
     type IOnboardingService,
     OnboardingAvailability,
-    type OnboardingPhase,
     type OnboardingState,
     type OnboardingStatus,
     OnboardingStep,
@@ -55,13 +48,11 @@ export class FakeOnboardingService implements IOnboardingService {
     private current: OnboardingState | null;
     private readonly availability: OnboardingAvailability;
     private readonly writeError: Error | null;
-    private unavailableNoticePending: boolean;
 
     constructor(options: FakeOnboardingOptions) {
         this.current = options.state;
         this.availability = options.availability;
         this.writeError = options.writeError;
-        this.unavailableNoticePending = options.availability === OnboardingAvailability.Unavailable;
     }
 
     async state(): Promise<OnboardingStatus> {
@@ -100,29 +91,6 @@ export class FakeOnboardingService implements IOnboardingService {
         this.restartReasons.push(reason);
         this.failWhenAsked();
         return this.status();
-    }
-
-    async currentStep(): Promise<OnboardingStep | null> {
-        return this.current === null ? null : currentOnboardingStep(this.current);
-    }
-
-    async phase(): Promise<OnboardingPhase | null> {
-        const step = await this.currentStep();
-        return step === null ? null : onboardingPhaseOf(step);
-    }
-
-    async isFinished(): Promise<boolean> {
-        return this.current !== null && isOnboardingFinished(this.current);
-    }
-
-    async isStarted(): Promise<boolean> {
-        return this.current !== null && isOnboardingStarted(this.current);
-    }
-
-    takeUnavailableNotice(): boolean {
-        const pending = this.unavailableNoticePending;
-        this.unavailableNoticePending = false;
-        return pending;
     }
 
     private status(): OnboardingStatus {

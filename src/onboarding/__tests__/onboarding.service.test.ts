@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    EMPTY_STATE,
-    FakeApi,
-    FakeSession,
-    FINISHED_STATE,
-    makeService,
-    SECOND_ADDRESS,
-    stateOk,
-    stateWith,
-} from './fixtures.js';
+import { EMPTY_STATE, FakeApi, FakeSession, FINISHED_STATE, makeService, SECOND_ADDRESS, stateOk } from './fixtures.js';
 import { AuthenticationRequiredError } from '../../api/authentication-required.error.js';
 import {
     ONBOARDING_COMPLETE_PATH,
@@ -20,7 +11,7 @@ import {
     ONBOARDING_STEP_PATH,
     ONBOARDING_VERSION,
 } from '../constants.js';
-import { OnboardingAvailability, OnboardingPhase, OnboardingStep } from '../types.js';
+import { OnboardingAvailability, OnboardingStep } from '../types.js';
 
 const BROKEN_OUTCOMES: Array<[string, { status: number; data: unknown } | { throws: Error }]> = [
     ['404 — the route is not served yet', { status: 404, data: { message: 'Not Found' } }],
@@ -75,7 +66,7 @@ describe('onboarding state reads', () => {
 
         await service.state();
         await service.state();
-        session.address = SECOND_ADDRESS;
+        session.walletAddress = SECOND_ADDRESS;
         api.setOutcome(stateOk({ completedSteps: [OnboardingStep.Intro] }));
         const afterSwitch = await service.state();
 
@@ -106,14 +97,13 @@ describe('onboarding state reads', () => {
         expect(api.calls).toEqual([]);
     });
 
-    it('reports a rejected token as unauthenticated without a notice', async () => {
+    it('reports a rejected token as unauthenticated', async () => {
         const api = new FakeApi({ throws: new AuthenticationRequiredError() });
         const service = makeService(api);
 
         const status = await service.state();
 
         expect(status.availability).toBe(OnboardingAvailability.Unauthenticated);
-        expect(service.takeUnavailableNotice()).toBe(false);
     });
 
     it.each(BROKEN_OUTCOMES)('falls open on %s', async (_label, outcome) => {
@@ -126,15 +116,13 @@ describe('onboarding state reads', () => {
         expect(status.state).toBeNull();
     });
 
-    it('offers the unavailable notice once and stops asking the game API', async () => {
+    it('stops asking the game API once an answer is unavailable', async () => {
         const api = new FakeApi({ status: 500, data: { message: 'Internal Server Error' } });
         const service = makeService(api);
 
         await service.state();
         await service.state();
 
-        expect(service.takeUnavailableNotice()).toBe(true);
-        expect(service.takeUnavailableNotice()).toBe(false);
         expect(api.calls).toHaveLength(1);
     });
 
@@ -148,69 +136,6 @@ describe('onboarding state reads', () => {
 
         expect(recovered.availability).toBe(OnboardingAvailability.Ready);
         expect(api.calls).toHaveLength(2);
-    });
-});
-
-describe('onboarding derived state', () => {
-    it('treats the empty state as not started, not finished, standing on the first step', async () => {
-        const service = makeService(new FakeApi({ status: 200, data: EMPTY_STATE }));
-
-        expect(await service.isStarted()).toBe(false);
-        expect(await service.isFinished()).toBe(false);
-        expect(await service.currentStep()).toBe(OnboardingStep.Intro);
-        expect(await service.phase()).toBe(OnboardingPhase.FirstReveal);
-    });
-
-    it('is started once the first step is closed', async () => {
-        const service = makeService(new FakeApi(stateOk({ completedSteps: [OnboardingStep.Intro] })));
-
-        expect(await service.isStarted()).toBe(true);
-        expect(await service.currentStep()).toBe(OnboardingStep.WalletAndCell);
-    });
-
-    it('takes the first unclosed step in order, not the first gap', async () => {
-        const service = makeService(
-            new FakeApi(stateOk({ completedSteps: [OnboardingStep.Reveal, OnboardingStep.Intro] })),
-        );
-
-        expect(await service.currentStep()).toBe(OnboardingStep.WalletAndCell);
-    });
-
-    it('turns to the second phase after the reveal step', async () => {
-        const service = makeService(
-            new FakeApi(
-                stateOk({
-                    completedSteps: [OnboardingStep.Intro, OnboardingStep.WalletAndCell, OnboardingStep.Reveal],
-                }),
-            ),
-        );
-
-        expect(await service.currentStep()).toBe(OnboardingStep.BuildExtractor);
-        expect(await service.phase()).toBe(OnboardingPhase.Expansion);
-    });
-
-    it('is finished and started once the game API stamps a completion', async () => {
-        const service = makeService(new FakeApi({ status: 200, data: FINISHED_STATE }));
-
-        expect(await service.isFinished()).toBe(true);
-        expect(await service.isStarted()).toBe(true);
-        expect(await service.currentStep()).toBeNull();
-        expect(await service.phase()).toBeNull();
-    });
-
-    it('counts a skipped player as finished', async () => {
-        const skipped = stateWith({ completedAt: 1_700_000_000, skippedAt: 1_700_000_000, skipReason: 'no thanks' });
-        const service = makeService(new FakeApi({ status: 200, data: skipped }));
-
-        expect(await service.isFinished()).toBe(true);
-    });
-
-    it('reports nothing derived while the game API is unavailable', async () => {
-        const service = makeService(new FakeApi({ status: 500, data: null }));
-
-        expect(await service.isStarted()).toBe(false);
-        expect(await service.isFinished()).toBe(false);
-        expect(await service.currentStep()).toBeNull();
     });
 });
 
@@ -275,7 +200,6 @@ describe('onboarding writes', () => {
             { path: ONBOARDING_RESTART_PATH, options: { method: 'POST', body: { version: ONBOARDING_VERSION } } },
         ]);
         expect(written.state?.completedSteps).toEqual([]);
-        expect(await service.isStarted()).toBe(false);
     });
 
     it('accepts a created answer to a write', async () => {

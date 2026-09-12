@@ -172,7 +172,14 @@ async function main(): Promise<void> {
     const mint = new MintService({ wallet, appConfig, logger: logger.child('mint') });
     const balance = new BalanceService({ wallet, appConfig, logger: logger.child('balance') });
 
-    const onboarding = new OnboardingService({ api, session, logger: logger.child('onboarding') });
+    const onboarding = new OnboardingService({
+        api,
+        session: {
+            isAuthenticated: () => session.isAuthenticated(),
+            address: () => (session.isAuthenticated() ? session.getSession().address.toLowerCase() : null),
+        },
+        logger: logger.child('onboarding'),
+    });
 
     const packageVersion = new PackageVersion({
         currentVersion: pkg.version,

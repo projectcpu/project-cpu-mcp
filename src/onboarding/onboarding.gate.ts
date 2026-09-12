@@ -11,6 +11,8 @@ import { errorMessage } from '../utils/error.utils.js';
 import type { ToolGate } from '../version/types.js';
 
 export function createOnboardingGate(onboarding: IOnboardingService): ToolGate {
+    let notified = false;
+
     return {
         check: async (toolName: string): Promise<Array<string>> => {
             if (ONBOARDING_GATE_ALLOWLIST.includes(toolName)) {
@@ -22,8 +24,14 @@ export function createOnboardingGate(onboarding: IOnboardingService): ToolGate {
                 return [];
             }
             if (availability === OnboardingAvailability.Unavailable || state === null) {
-                return onboarding.takeUnavailableNotice() ? [ONBOARDING_UNAVAILABLE_NOTICE] : [];
+                if (notified) {
+                    return [];
+                }
+                notified = true;
+                return [ONBOARDING_UNAVAILABLE_NOTICE];
             }
+
+            notified = false;
             if (isOnboardingFinished(state)) {
                 return [];
             }

@@ -7,21 +7,14 @@ import {
     ONBOARDING_STEP_PATH,
     ONBOARDING_VERSION,
 } from './constants.js';
-import {
-    currentOnboardingStep,
-    isOnboardingFinished,
-    isOnboardingStarted,
-    isSuccessStatus,
-    normalizeOnboardingStatePayload,
-    onboardingPhase,
-} from './onboarding.utils.js';
+import { isSuccessStatus, normalizeOnboardingStatePayload } from './onboarding.utils.js';
 import {
     OnboardingAvailability,
     type IOnboardingService,
     type OnboardingApi,
-    type OnboardingPhase,
     type OnboardingServiceOptions,
     type OnboardingSession,
+    type OnboardingState,
     onboardingStateSchema,
     type OnboardingStatus,
     type OnboardingStep,
@@ -33,15 +26,14 @@ import type { ILogger } from '../logger/types.js';
 import { errorMessage } from '../utils/error.utils.js';
 
 const UNAUTHENTICATED: OnboardingStatus = { availability: OnboardingAvailability.Unauthenticated, state: null };
+const READ_LABEL = 'read the onboarding state';
 
 export class OnboardingService implements IOnboardingService {
     private readonly api: OnboardingApi;
     private readonly session: OnboardingSession;
     private readonly logger: ILogger;
-    private cached: OnboardingStatus | null = null;
-    private cachedAddress: string | null = null;
+    private cache: { address: string | null; status: OnboardingStatus } | null = null;
     private inFlight: Promise<OnboardingStatus> | null = null;
-    private unavailableNotice = false;
 
     constructor(options: OnboardingServiceOptions) {
         this.api = options.api;
@@ -50,12 +42,22 @@ export class OnboardingService implements IOnboardingService {
     }
 
     async state(): Promise<OnboardingStatus> {
-        return this.cachedForCurrentAddress() ?? this.load();
+        if (this.cache !== null && this.cache.address === this.session.address()) {
+            return this.cache.status;
+        }
+        if (!this.session.isAuthenticated()) {
+            return UNAUTHENTICATED;
+        }
+
+        this.inFlight ??= this.fetchState().finally(() => {
+            this.inFlight = null;
+        });
+        return this.inFlight;
     }
 
     async refresh(): Promise<OnboardingStatus> {
-        this.cached = null;
-        return this.load();
+        this.cache = null;
+        return this.state();
     }
 
     async completeStep(step: OnboardingStep): Promise<OnboardingStatus> {
@@ -78,95 +80,31 @@ export class OnboardingService implements IOnboardingService {
         );
     }
 
-    async restart(reason: string): Promise<OnboardingStatus> {
-        this.logger.info('restarting the onboarding at the player request', { reason });
+    async restart(_reason: string): Promise<OnboardingStatus> {
         return this.write(ONBOARDING_RESTART_PATH, { version: ONBOARDING_VERSION }, 'restart the onboarding');
     }
 
-    async currentStep(): Promise<OnboardingStep | null> {
-        const { state } = await this.state();
-        return state === null ? null : currentOnboardingStep(state);
-    }
-
-    async phase(): Promise<OnboardingPhase | null> {
-        const { state } = await this.state();
-        return state === null ? null : onboardingPhase(state);
-    }
-
-    async isFinished(): Promise<boolean> {
-        const { state } = await this.state();
-        return state !== null && isOnboardingFinished(state);
-    }
-
-    async isStarted(): Promise<boolean> {
-        const { state } = await this.state();
-        return state !== null && isOnboardingStarted(state);
-    }
-
-    takeUnavailableNotice(): boolean {
-        const pending = this.unavailableNotice;
-        this.unavailableNotice = false;
-        return pending;
-    }
-
-    private currentAddress(): string | null {
-        try {
-            return this.session.getSession().address.toLowerCase();
-        } catch {
-            return null;
-        }
-    }
-
-    private cachedForCurrentAddress(): OnboardingStatus | null {
-        if (this.cached === null || this.cachedAddress !== this.currentAddress()) {
-            return null;
-        }
-        return this.cached;
-    }
-
-    private async load(): Promise<OnboardingStatus> {
-        if (!this.session.isAuthenticated()) {
-            return UNAUTHENTICATED;
-        }
-        if (this.inFlight !== null) {
-            return this.inFlight;
-        }
-
-        const flight = this.fetchState();
-        this.inFlight = flight;
-        try {
-            return await flight;
-        } finally {
-            this.inFlight = null;
-        }
-    }
-
     private async fetchState(): Promise<OnboardingStatus> {
-        let response: ApiResponse<unknown>;
         try {
-            response = await this.api.authenticatedRequest<unknown>(ONBOARDING_STATE_PATH, null);
+            const response = await this.api.authenticatedRequest<unknown>(ONBOARDING_STATE_PATH, null);
+            return this.remember({
+                availability: OnboardingAvailability.Ready,
+                state: this.parseState(response, READ_LABEL),
+            });
         } catch (error) {
             if (error instanceof AuthenticationRequiredError) {
                 return UNAUTHENTICATED;
             }
             return this.unavailable(errorMessage(error));
         }
-
-        if (!isSuccessStatus(response.status)) {
-            return this.unavailable(`the game API answered HTTP ${response.status}`);
-        }
-
-        const parsed = onboardingStateSchema.safeParse(normalizeOnboardingStatePayload(response.data));
-        if (!parsed.success) {
-            return this.unavailable('the game API answered an unreadable onboarding state');
-        }
-
-        return this.remember({ availability: OnboardingAvailability.Ready, state: parsed.data });
     }
 
     private async write(path: string, body: unknown, label: string): Promise<OnboardingStatus> {
         const response = await this.api.authenticatedRequest<unknown>(path, { method: 'POST', body });
+        return this.remember({ availability: OnboardingAvailability.Ready, state: this.parseState(response, label) });
+    }
 
+    private parseState(response: ApiResponse<unknown>, label: string): OnboardingState {
         if (!isSuccessStatus(response.status)) {
             throw new Error(`Could not ${label} (HTTP ${response.status}): ${describeApiError(response.data)}`);
         }
@@ -176,18 +114,16 @@ export class OnboardingService implements IOnboardingService {
             throw new Error(`Could not ${label}: the game API answered an unreadable onboarding state.`);
         }
 
-        return this.remember({ availability: OnboardingAvailability.Ready, state: parsed.data });
+        return parsed.data;
     }
 
     private unavailable(reason: string): OnboardingStatus {
         this.logger.warn('onboarding state unavailable — continuing without it', { reason });
-        this.unavailableNotice = true;
         return this.remember({ availability: OnboardingAvailability.Unavailable, state: null });
     }
 
     private remember(status: OnboardingStatus): OnboardingStatus {
-        this.cached = status;
-        this.cachedAddress = this.currentAddress();
+        this.cache = { address: this.session.address(), status };
         return status;
     }
 }
