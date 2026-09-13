@@ -13,6 +13,7 @@ import { MapReader } from './map/reader.js';
 import { createMapSocket } from './map/socket.js';
 import { MapStore } from './map/store.js';
 import { MapSync } from './map/sync.js';
+import { OnboardingService } from './onboarding/onboarding.service.js';
 import { SystemBrowserOpener } from './paybox/auth/browser-opener.js';
 import { createPayboxCoordinator } from './paybox/auth/coordinator.factory.js';
 import { DeviceAuthFlow } from './paybox/auth/device-flow.js';
@@ -171,6 +172,15 @@ async function main(): Promise<void> {
     const mint = new MintService({ wallet, appConfig, logger: logger.child('mint') });
     const balance = new BalanceService({ wallet, appConfig, logger: logger.child('balance') });
 
+    const onboarding = new OnboardingService({
+        api,
+        session: {
+            isAuthenticated: () => session.isAuthenticated(),
+            address: () => (session.isAuthenticated() ? session.getSession().address.toLowerCase() : null),
+        },
+        logger: logger.child('onboarding'),
+    });
+
     const packageVersion = new PackageVersion({
         currentVersion: pkg.version,
         fetchLatest: fetchLatestFromRegistry,
@@ -308,6 +318,7 @@ async function main(): Promise<void> {
         withdraw,
         mapSync,
         mapReader,
+        onboarding,
         backendVersion,
         packageVersion,
         logger,

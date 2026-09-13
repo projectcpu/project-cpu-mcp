@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { OnboardingAvailability } from '../../../onboarding/types.js';
 import {
     type MiningClaimResult,
     type MiningStatusResult,
@@ -14,6 +15,13 @@ import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { registerClaimMiningTool } from '../claim/claim-mining.js';
 import { registerGetMiningStatusTool } from '../get-status/get-mining-status.js';
 import { registerStartMiningTool } from '../start/start-mining.js';
+
+const ONBOARDING_IDLE = {
+    state: async (): Promise<{ availability: OnboardingAvailability; state: null }> => ({
+        availability: OnboardingAvailability.Unavailable,
+        state: null,
+    }),
+};
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -48,7 +56,12 @@ function statusHarness(outcome: MiningStatusResult | Error): Handler {
             return outcome;
         },
     };
-    const context = { mining, appConfig: appConfigStub, logger: new NoopLogger() } as unknown as AppContext;
+    const context = {
+        mining,
+        appConfig: appConfigStub,
+        onboarding: ONBOARDING_IDLE,
+        logger: new NoopLogger(),
+    } as unknown as AppContext;
     return capture(registerGetMiningStatusTool, context);
 }
 
@@ -74,7 +87,12 @@ const startResult: StartMiningResult = {
 
 function startHarness(outcome: StartMiningResult): StartHandler {
     const mining = { startMining: async (): Promise<StartMiningResult> => outcome };
-    const context = { mining, appConfig: appConfigStub, logger: new NoopLogger() } as unknown as AppContext;
+    const context = {
+        mining,
+        appConfig: appConfigStub,
+        onboarding: ONBOARDING_IDLE,
+        logger: new NoopLogger(),
+    } as unknown as AppContext;
     return capture(registerStartMiningTool, context) as unknown as StartHandler;
 }
 
@@ -87,7 +105,12 @@ function claimHarness(outcome: MiningClaimResult | Error): Handler {
             return outcome;
         },
     };
-    const context = { mining, appConfig: appConfigStub, logger: new NoopLogger() } as unknown as AppContext;
+    const context = {
+        mining,
+        appConfig: appConfigStub,
+        onboarding: ONBOARDING_IDLE,
+        logger: new NoopLogger(),
+    } as unknown as AppContext;
     return capture(registerClaimMiningTool, context);
 }
 

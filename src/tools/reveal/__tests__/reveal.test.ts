@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
 import { NoopLogger } from '../../../logger/noop.logger.js';
+import { OnboardingAvailability } from '../../../onboarding/types.js';
 import type { RevealResult } from '../../../services/types.js';
 import type { AppContext } from '../../../types.js';
 import { TxStatus } from '../../../wallet/types.js';
 import { ToolEventType, type ToolRegistrar } from '../../types.js';
 import { REVEAL_DESCRIPTION } from '../constants.js';
 import { registerRevealTool } from '../reveal.js';
+
+const ONBOARDING_IDLE = {
+    state: async (): Promise<{ availability: OnboardingAvailability; state: null }> => ({
+        availability: OnboardingAvailability.Unavailable,
+        state: null,
+    }),
+};
 
 interface ToolResult {
     content: Array<{ type: string; text: string }>;
@@ -23,7 +31,7 @@ function harness(outcome: RevealResult | Error): Handler {
             return outcome;
         },
     };
-    const context = { reveal, logger: new NoopLogger() } as unknown as AppContext;
+    const context = { reveal, onboarding: ONBOARDING_IDLE, logger: new NoopLogger() } as unknown as AppContext;
 
     let captured: Handler | null = null;
     const server = {

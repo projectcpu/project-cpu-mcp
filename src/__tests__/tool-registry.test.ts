@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+    COMPLETE_ONBOARDING_STEP_TOOL_NAME,
+    ONBOARDING_TOOL_NAME,
+    RESTART_ONBOARDING_TOOL_NAME,
+    SKIP_ONBOARDING_TOOL_NAME,
+} from '../onboarding/constants.js';
 import { SERVER_INSTRUCTIONS } from '../server.constants.js';
 import { createServer } from '../server.js';
 import { LOT_RETURN_REVERT_REASONS } from '../services/lot-return.constants.js';
@@ -104,6 +110,14 @@ const NFT_MARKETPLACE_TOOL = /NFT marketplace/iu;
 
 const RETIRED_TOOLS: ReadonlyArray<string> = ['cpu_cancel_lot'];
 
+/** The walkthrough surface: registered together with the gate, absent together with it. */
+const ONBOARDING_TOOLS: ReadonlyArray<string> = [
+    ONBOARDING_TOOL_NAME,
+    COMPLETE_ONBOARDING_STEP_TOOL_NAME,
+    SKIP_ONBOARDING_TOOL_NAME,
+    RESTART_ONBOARDING_TOOL_NAME,
+];
+
 /** The three claims about Eviction and Lot return that the shipped surface must never make. */
 const EVICTED_LOT_IS_BUYABLE =
     /evicted[^.;]{0,60}?(?:still\s+sells|sells\s+to\s+(?:any|every)|is\s+(?:still\s+)?buyable|can\s+(?:still\s+)?be\s+bought|open\s+to\s+buyers)/iu;
@@ -150,15 +164,19 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
 
 async function bootServer(personaEnabled = true): Promise<Array<{ name: string; description: string }>> {
     sdk.tools.length = 0;
-    await createServer({ config: { OPERATOR_PERSONA: personaEnabled } } as unknown as AppContext);
+    await createServer({
+        config: { OPERATOR_PERSONA: personaEnabled },
+    } as unknown as AppContext);
     return [...sdk.tools];
 }
 
 describe('the registered tool surface', () => {
-    it('is exactly the pinned public list plus the operating brief', async () => {
+    it('is exactly the pinned public list plus the operating brief and the walkthrough', async () => {
         const tools = await bootServer();
 
-        expect([...tools.map((tool) => tool.name)].sort()).toEqual([...PUBLIC_TOOLS, PERSONA_TOOL_NAME].sort());
+        expect([...tools.map((tool) => tool.name)].sort()).toEqual(
+            [...PUBLIC_TOOLS, PERSONA_TOOL_NAME, ...ONBOARDING_TOOLS].sort(),
+        );
     });
 
     it('registers each name once', async () => {
@@ -195,7 +213,23 @@ describe('the registered tool surface', () => {
     it('leaves only the operating brief unregistered when the persona is off', async () => {
         const names = (await bootServer(false)).map((tool) => tool.name);
 
-        expect(names.sort()).toEqual([...PUBLIC_TOOLS].sort());
+        expect(names.sort()).toEqual([...PUBLIC_TOOLS, ...ONBOARDING_TOOLS].sort());
+    });
+});
+
+describe('the onboarding surface', () => {
+    it('is always exactly the four walkthrough tools', async () => {
+        const names = (await bootServer()).map((tool) => tool.name);
+
+        expect(names.sort()).toEqual([...PUBLIC_TOOLS, PERSONA_TOOL_NAME, ...ONBOARDING_TOOLS].sort());
+    });
+
+    it('names no unregistered tool in any walkthrough description', async () => {
+        const tools = await bootServer();
+        const names = tools.map((tool) => tool.name);
+        const promised = tools.flatMap((tool) => [...new Set(tool.description.match(/cpu_[a-z_]+/g) ?? [])]);
+
+        expect([...new Set(promised.filter((name) => !names.includes(name)))]).toEqual([]);
     });
 });
 

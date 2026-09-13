@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ONBOARDING_TOOL_NAME } from '../onboarding/constants.js';
 import { SERVER_INSTRUCTIONS } from '../server.constants.js';
 import { createServer } from '../server.js';
 import { PERSONA_BRIEF_MARKER, PERSONA_TOOL_NAME } from '../tools/persona/constants.js';
@@ -49,7 +50,9 @@ interface BootedServer {
 async function bootServer(personaEnabled = true): Promise<BootedServer> {
     sdk.options.length = 0;
     sdk.tools.length = 0;
-    await createServer({ config: { OPERATOR_PERSONA: personaEnabled } } as unknown as AppContext);
+    await createServer({
+        config: { OPERATOR_PERSONA: personaEnabled },
+    } as unknown as AppContext);
 
     const [options] = sdk.options;
     const delivered = (options as { instructions: unknown } | undefined)?.instructions;
@@ -147,5 +150,26 @@ describe('the operating brief switched off', () => {
         const { tools } = await bootServer(false);
 
         expect(tools.filter((tool) => tool.description.includes(PERSONA_TOOL_NAME))).toEqual([]);
+    });
+});
+
+describe('the onboarding walkthrough always on', () => {
+    it('sends the agent through it until it reports the player finished', async () => {
+        const { delivered } = await bootServer();
+
+        expect(delivered).toContain(ONBOARDING_TOOL_NAME);
+        expect(delivered.length).toBeLessThan(INSTRUCTIONS_CHAR_BUDGET);
+    });
+
+    it('places the pointer after authentication', async () => {
+        const { delivered } = await bootServer();
+
+        expect(delivered.indexOf(ONBOARDING_TOOL_NAME)).toBeGreaterThan(delivered.indexOf(AUTHENTICATE_TOOL));
+    });
+
+    it('keeps the pointer when the operating brief is off', async () => {
+        const { delivered } = await bootServer(false);
+
+        expect(delivered).toContain(ONBOARDING_TOOL_NAME);
     });
 });

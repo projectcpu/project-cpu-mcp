@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import pkg from '../package.json' with { type: 'json' };
+import { createOnboardingGate } from './onboarding/onboarding.gate.js';
 import { SENTENCE_BOUNDARY, SERVER_INSTRUCTIONS } from './server.constants.js';
 import { registerGetBalanceTool } from './tools/account/get-balance/get-balance.js';
 import { registerAuthenticateTool } from './tools/authenticate.js';
@@ -36,6 +37,10 @@ import { registerGetMiningStatusTool } from './tools/mining/get-status/get-minin
 import { registerStartMiningTool } from './tools/mining/start/start-mining.js';
 import { registerMintCellTool } from './tools/mint/mint-cell.js';
 import { registerQuoteMintTool } from './tools/mint/quote/quote-mint.js';
+import { registerCompleteOnboardingStepTool } from './tools/onboarding/complete-onboarding-step.js';
+import { registerOnboardingTool } from './tools/onboarding/onboarding.js';
+import { registerRestartOnboardingTool } from './tools/onboarding/restart-onboarding.js';
+import { registerSkipOnboardingTool } from './tools/onboarding/skip-onboarding.js';
 import { PERSONA_TOOL_NAME } from './tools/persona/constants.js';
 import { createPersonaDelivery, createPersonaGate } from './tools/persona/persona.gate.js';
 import { registerPersonaTool } from './tools/persona/persona.js';
@@ -98,6 +103,10 @@ function registerTools(registrar: ToolRegistrar, context: AppContext, persona: P
     if (context.config.OPERATOR_PERSONA) {
         registerPersonaTool(registrar, persona);
     }
+    registerOnboardingTool(registrar, context);
+    registerCompleteOnboardingStepTool(registrar, context);
+    registerSkipOnboardingTool(registrar, context);
+    registerRestartOnboardingTool(registrar, context);
     registerGetGameConfigTool(registrar, context);
     registerGetBuildingTool(registrar, context);
     registerFindBuildingsTool(registrar, context);
@@ -179,6 +188,7 @@ export async function createServer(context: AppContext): Promise<void> {
     if (context.config.OPERATOR_PERSONA) {
         gates.push(createPersonaGate(persona));
     }
+    gates.push(createOnboardingGate(context.onboarding));
     registerTools(createGuardedRegistrar(server, gates), context, persona);
 
     const stdio = new StdioServerTransport();

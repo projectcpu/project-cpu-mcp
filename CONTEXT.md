@@ -10,6 +10,18 @@ the trade/map endpoints), and the MCP tools — never against any backend intern
   named **owner** wherever a tool or the game API reports the holder of a cell. One person, two names:
   the persona's form of address, and the domain name of the cell holder in data.
 
+## Onboarding
+
+- **Onboarding** — a one-time, six-step introduction of a wallet to the game. It ends when the last step
+  is completed or on a Skip, is held per player by the game API, and is read through `cpu_onboarding`.
+  *Avoid*: tutorial; intro (that names the first step, not the whole introduction).
+- **Onboarding step** — one of six typed steps. The list and the order belong to this server; the game API
+  keeps the identifiers as opaque strings. The current step is the first one still open, and the three
+  actionable ones close themselves when the action lands: a completed reveal, a placed building, a started
+  mining job.
+- **Skip** — the player's explicit refusal of the onboarding, in their own words, recorded together with
+  that quote. Never inferred from silence, from impatience, or from the agent's own judgement.
+
 ## Readiness
 
 A building takes time to go up, and until it finishes it stands on the cell without yet acting like
@@ -312,6 +324,9 @@ Converts a cell's wCPU balance to on-chain $CPU, 1:1.
   emission budget cannot cover the full amount: only `min(requested, budget remaining)` mints, the rest
   stays in the cell rather than the transaction reverting. The result reports the requested and executed
   amounts separately whenever they differ.
+- **Emission budget** — the finite in-game $CPU reserve that pays for WCPU withdrawal. It is what a Partial
+  tranche runs out of, and it is shared by every player rather than held per cell.
+  *Avoid*: prize pool.
 
 ## Randomness & reveal
 
