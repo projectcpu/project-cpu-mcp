@@ -12,7 +12,9 @@ export const ONBOARDING_TOOL_DESCRIPTION = [
     'brief for the current step: the theses to cover, what closes the step and which tool closes it. Call it',
     'right after `cpu_authenticate` for a player you have not walked through yet, and again whenever you are',
     'unsure what they already know. The brief is a set of notes for you — put it in your own words, in the',
-    'language of the player, and never read it out.',
+    'language of the player, and never read it out. The steps that are pure explanation — `intro`,',
+    '`wallet_and_cell` and `tour` — are closed in the same turn they are delivered, with no confirmation',
+    'asked of the player.',
 ].join(' ');
 
 export const COMPLETE_ONBOARDING_STEP_TOOL_DESCRIPTION = [
@@ -20,7 +22,8 @@ export const COMPLETE_ONBOARDING_STEP_TOOL_DESCRIPTION = [
     '`wallet_and_cell` and `tour` — once the player has actually had them, and for a step the player had',
     'already done before the introduction began: a cell already revealed, a building already standing, a job',
     'already running. Do not close a step whose action has not happened — `cpu_reveal`, `cpu_build` and',
-    '`cpu_start_mining` close their own steps when the action succeeds. Closing the sixth step ends the',
+    '`cpu_start_mining` close their own steps when the action succeeds. Close an explanation step in the same',
+    'turn you delivered it, without asking the player for permission to go on. Closing the sixth step ends the',
     'introduction. Answers with the new state and the next brief.',
 ].join(' ');
 
@@ -39,10 +42,17 @@ export const RESTART_ONBOARDING_TOOL_DESCRIPTION = [
     'justifies it.',
 ].join(' ');
 
+const PACING_RULE = [
+    'Never ask the player for permission to go on and never end on "say next": a step that is pure',
+    `explanation you close at once with \`${COMPLETE_ONBOARDING_STEP_TOOL_NAME}\` and deliver the next brief in`,
+    'the same reply. Hand the turn back only where the step needs something from the player — money to spend,',
+    'a choice to make, a cell to move — and then name exactly that one thing at the end.',
+].join(' ');
+
 export const ONBOARDING_BRIEF_RULES: ReadonlyArray<string> = [
-    'Four or five sentences at most.',
+    'Four or five sentences at most per step, counted per step even when two steps share one reply.',
     'Only the terms this step needs; another mechanic only when the player asks about it.',
-    'Exactly one thing for the player to do, at the end.',
+    PACING_RULE,
     'Your own words, in the language the player writes in — the theses are notes, never a text to read out.',
     'A step that spends real money runs only after the player has said yes to it.',
 ];
@@ -111,8 +121,12 @@ export const ONBOARDING_STEP_BRIEFS: Record<OnboardingStep, OnboardingStepBrief>
             GAME_LOOP_THESIS,
             EMISSION_BUDGET_THESIS,
             'this walkthrough can be skipped: one word from the player and it stops',
+            'the wallet check comes right now, in this same reply, and not after a confirmation from the player',
         ],
-        closes: 'a manual mark once the player has had it; nothing happens onchain',
+        closes: [
+            'at once — mark it and move straight into the wallet check in the same reply; nothing happens',
+            'onchain and nothing is waited for',
+        ].join(' '),
         nextTool: COMPLETE_ONBOARDING_STEP_TOOL_NAME,
     },
     [OnboardingStep.WalletAndCell]: {
@@ -123,7 +137,11 @@ export const ONBOARDING_STEP_BRIEFS: Record<OnboardingStep, OnboardingStepBrief>
             CELL_SOURCES_THESIS,
             REVEAL_FUNDING_THESIS,
         ],
-        closes: 'a manual mark once a cell sits on the agent address',
+        closes: [
+            'at once when a cell already sits on the agent address — the facts below count them: mark it and move',
+            'on to the reveal in the same reply; otherwise the one thing for the player is to get a cell onto the',
+            'agent address, and the turn ends there',
+        ].join(' '),
         nextTool: COMPLETE_ONBOARDING_STEP_TOOL_NAME,
     },
     [OnboardingStep.Reveal]: {
@@ -164,7 +182,7 @@ export const ONBOARDING_STEP_BRIEFS: Record<OnboardingStep, OnboardingStepBrief>
             SYNDICATE_THESIS,
             'end with an open door: any mechanic, in any depth, whenever the player asks',
         ],
-        closes: 'a manual mark, and that mark ends the whole walkthrough',
+        closes: 'at once — pure explanation: mark it in the same reply, and that mark ends the whole walkthrough',
         nextTool: COMPLETE_ONBOARDING_STEP_TOOL_NAME,
     },
 };
