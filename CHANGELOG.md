@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.14.0...v0.15.0) (2026-09-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* a fresh player's game tools refuse until the onboarding is started, and gated tool outputs carry an onboarding notice until it is finished. There is no env var to turn this off; the way out is cpu_skip_onboarding on the player's explicit request.
+
+### Features
+
+* walk new players through onboarding before the game tools ([#46](https://github.com/projectcpu/project-cpu-mcp/issues/46)) ([1ef50a9](https://github.com/projectcpu/project-cpu-mcp/commit/1ef50a9c8ca46f6df11b3db361867ed5e5f433a8))
+
 ## [0.14.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.13.0...v0.14.0) (2026-09-10)
 
 
