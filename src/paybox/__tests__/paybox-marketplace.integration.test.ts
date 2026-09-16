@@ -134,7 +134,7 @@ describe('Paybox Cell marketplace flow', () => {
             profile: new MarketProfileClient({ client, chainId: LAUNCH_CHAIN_ID, logger }),
             appConfig: new FakeAppConfig(),
             wallet: provider,
-            network: 'arbitrum',
+            network: 'robinhood',
             singleFlight: new MarketSingleFlight(),
             recovery: new MarketRecoveryStore(),
             logger,

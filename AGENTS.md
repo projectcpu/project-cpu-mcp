@@ -1,10 +1,10 @@
 # Project CPU MCP Server
 
-MCP server for a blockchain game on EVM (Abstract). Distributed via npm, runs locally via `npx`.
+MCP server for a blockchain game on EVM. Distributed via npm, runs locally via `npx`.
 
 Two wallet modes via `WALLET_MODE` (defaults to `paybox`): `paybox` (browser OAuth and remote signing) or `evm` (private key in env, SIWE auth — requires `PRIVATE_KEY`). Session state persists to `~/.project-cpu/session.json`.
 
-The launch chain is Arbitrum One (chainId 42161). `NETWORK` is optional, defaults to `arbitrum`, and rejects every other value at startup. Contract addresses are loaded from the game API `GET /api/v1/config?network=arbitrum`. Set `RPC_URL` to override Arbitrum's public RPC when sending transactions (e.g. `reveal`).
+The launch chain is Robinhood Chain (chainId 4663). `NETWORK` is optional, defaults to `robinhood`, and rejects every other value at startup. The default game API is `https://api.projectcpu.cc`; contract addresses are loaded from `GET /api/v1/config?network=robinhood`. Set `RPC_URL` to override the chain's public RPC when sending transactions (e.g. `reveal`).
 
 ## Worktrees
 
@@ -157,7 +157,9 @@ The bump is derived from the commits, mapped to the **public surface** (the MCP 
 - `feat:` → **minor** — backwards-compatible new capability: a new tool, a new **optional** input, a new env var with a default, an additive output field.
 - `feat!:` / `BREAKING CHANGE:` → **major** — breaking change: removing/renaming a tool, making an input required or changing its type, changing an output shape consumers depend on, dropping a network/env var.
 
-Pre-1.0: `release-please-config.json` sets `bump-minor-pre-major` + `bump-patch-for-minor-pre-major`, so while on `0.x` a breaking change bumps the **minor** and a feature bumps the **patch** (`0.x` is treated as unstable). Call the break out explicitly in the commit body.
+Stable releases follow the patch/minor/major mapping above. `release-please-config.json` uses standard
+versioning without pre-1.0 bump overrides. The first production release is requested with a
+`Release-As: 1.0.0` commit footer; preserve that footer in the squash commit when merging its PR.
 
 To force a release the commits wouldn't trigger on their own (e.g. a docs-only change), add a `Release-As: x.y.z` footer to a commit on `main` (land it via a small PR) — release-please then opens a Release PR for that exact version. Never create the tag by hand: a stray tag desyncs release-please's manifest/release bookkeeping.
 

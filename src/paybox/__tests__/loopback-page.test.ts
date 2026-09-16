@@ -7,7 +7,7 @@ describe('key receipt page', () => {
     it('links to the live grid without credentials and without claiming login has finished', () => {
         const html = connectionCompletePage();
 
-        expect(FRONTEND_URL).toBe('https://dev.projectcpu.cc');
+        expect(FRONTEND_URL).toBe('https://projectcpu.cc');
         expect(html).toContain(`href="${FRONTEND_URL}" target="_blank" rel="noopener noreferrer"`);
         expect(html).toContain('OPERATOR VIEW // LIVE GRID');
         expect(html).toContain('The UI observes. The agent acts.');

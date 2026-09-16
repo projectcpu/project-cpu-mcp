@@ -466,7 +466,7 @@ export function makeOfferHarness(
         profile: new MarketProfileClient({ client, chainId: LAUNCH_CHAIN_ID, logger }),
         appConfig,
         wallet,
-        network: 'arbitrum',
+        network: 'robinhood',
         singleFlight: new MarketSingleFlight(),
         recovery,
         logger,

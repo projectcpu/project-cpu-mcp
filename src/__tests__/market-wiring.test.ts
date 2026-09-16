@@ -25,7 +25,7 @@ import {
 import { createCancelOrderTool } from '../tools/market/cancel-order/cancel-order.js';
 import type { WalletProvider } from '../wallet/types.js';
 
-const NETWORK = Network.ARBITRUM;
+const NETWORK = Network.ROBINHOOD;
 
 interface Wired {
     services: MarketServices;

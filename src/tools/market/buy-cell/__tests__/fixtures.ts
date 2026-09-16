@@ -459,7 +459,7 @@ export function buyCellHarness(
         proof: new MarketFulfilmentProof({ transactions: reader, logger }),
         appConfig: over.appConfig ?? new FakeAppConfig(),
         wallet,
-        network: 'arbitrum',
+        network: 'robinhood',
         singleFlight: over.singleFlight ?? new MarketSingleFlight(),
         recovery,
         logger,

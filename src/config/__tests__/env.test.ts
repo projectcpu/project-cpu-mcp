@@ -26,14 +26,14 @@ describe('loadEnvConfig NETWORK', () => {
         expect(() => loadEnvConfig({ WALLET_MODE: WalletMode.PAYBOX, NETWORK: Network.BASE })).toThrow(/NETWORK/);
     });
     it('defaults to the Robinhood launch network', () => {
-        expect(loadEnvConfig({}).NETWORK).toBe(Network.ARBITRUM);
+        expect(loadEnvConfig({}).NETWORK).toBe(Network.ROBINHOOD);
     });
 
     it('accepts Robinhood explicitly', () => {
-        expect(loadEnvConfig({ ...EVM_ENV, NETWORK: Network.ARBITRUM }).NETWORK).toBe(Network.ARBITRUM);
+        expect(loadEnvConfig({ ...EVM_ENV, NETWORK: Network.ROBINHOOD }).NETWORK).toBe(Network.ROBINHOOD);
     });
 
-    it.each([Network.ETHEREUM, Network.ETHEREUM_SEPOLIA, Network.BASE, Network.BASE_SEPOLIA])(
+    it.each([Network.ARBITRUM, Network.ETHEREUM, Network.ETHEREUM_SEPOLIA, Network.BASE, Network.BASE_SEPOLIA])(
         'rejects unsupported launch network %s',
         (network) => {
             expect(() => loadEnvConfig({ ...EVM_ENV, NETWORK: network })).toThrow(/NETWORK/);
