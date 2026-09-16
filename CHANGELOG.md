@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.15.0...v1.0.0) (2026-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* target the production API and Robinhood 4663; Arbitrum is no longer a launch network.
+
+### Features
+
+* prepare production launch ([#43](https://github.com/projectcpu/project-cpu-mcp/issues/43)) ([7cd9247](https://github.com/projectcpu/project-cpu-mcp/commit/7cd9247b75797bd3511026b73e60be40aec6740d))
+
 ## [0.15.0](https://github.com/projectcpu/project-cpu-mcp/compare/v0.14.0...v0.15.0) (2026-09-13)
 
 
