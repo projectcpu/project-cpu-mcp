@@ -261,7 +261,7 @@ describe('a hub that cannot route right now', () => {
 });
 
 /**
- * CONTEXT.md: a hub is never frozen. A LOT is, and only over the Sale fee. The rule below is about how the
+ * GLOSSARY.md: a hub is never frozen. A LOT is, and only over the Sale fee. The rule below is about how the
  * word may be attached, not a pin on one sentence — a paraphrase that still calls a hub frozen has to fail,
  * and the two runtime revert maps are scanned because a decoder string reaches the agent exactly like a
  * tool description does.
