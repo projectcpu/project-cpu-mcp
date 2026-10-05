@@ -213,7 +213,7 @@ Once connected, the server exposes tools grouped by area:
   its demolish cost and upgrade links), `cpu_find_buildings` (search the building catalog by what a
   building builds from, consumes, produces, or mines), `cpu_get_resource` (everything the rulebook
   holds about one resource: what mines it, builds from it, eats it, and makes it). See
-  [CONTEXT.md](./CONTEXT.md) for the build/recipe input-output vocabulary these use.
+  [GLOSSARY.md](./GLOSSARY.md) for the build/recipe input-output vocabulary these use.
 - **Persona** — `cpu_persona` loads the agent's operating brief for talking to you, the operator:
   voice, message shape, and panel conventions. Enabled by default; set `OPERATOR_PERSONA=false` to
   turn it off.
@@ -234,7 +234,7 @@ Once connected, the server exposes tools grouped by area:
   hub), `cpu_create_lot`, `cpu_list_my_lots`, `cpu_set_sale_fee` (a hub owner sets the per-resource sale-fee
   rate on their own hub), `cpu_list_fills` (the executed-buy feed, pageable by cursor), and
   `cpu_get_market_index` (world 24h VWAP, change, and volume per resource — a different question from
-  `cpu_get_markets`'s cheapest ask right now). See [CONTEXT.md](./CONTEXT.md) for the fee vocabulary.
+  `cpu_get_markets`'s cheapest ask right now). See [GLOSSARY.md](./GLOSSARY.md) for the fee vocabulary.
 - **External Cell market** — `cpu_get_cell_market` reads OpenSea orders for one Cell;
   `cpu_get_my_listings`, `cpu_get_my_offers`, and `cpu_get_my_offers_received` read wallet orders;
   `cpu_list_cell`, `cpu_buy_cell`, `cpu_make_cell_offer`, `cpu_accept_cell_offer`, and `cpu_cancel_order`
@@ -256,7 +256,7 @@ Once connected, the server exposes tools grouped by area:
   read for those untrusted strings. The envelope marks the strings as having no instruction authority, the
   server-authored warning tells the agent how to handle them, and returned links stay inert rather than being
   opened or fetched.
-  See [CONTEXT.md](./CONTEXT.md) for the syndicate vocabulary.
+  See [GLOSSARY.md](./GLOSSARY.md) for the syndicate vocabulary.
 - **Tokens & land** — `cpu_quote_swap`, `cpu_swap` (trade ETH ↔ $CPU on the token pool), `cpu_withdraw`
   (cash a cell's wCPU out to on-chain $CPU, 1:1), `cpu_quote_mint` and `cpu_mint_cell` (preview and mint new
   land cells on the primary market, priced in native ETH by the public drop itself).

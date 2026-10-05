@@ -79,7 +79,7 @@ export const rawCellSchema = z.object({
     // rebuild cooldown; `building` is null meanwhile, so this is the only signal the cell was just demolished.
     demolishFinishAt: z.number().nullable().default(null),
     // Observed, not authoritative: both are legitimately absent on a valid active cooldown, so absence reads as
-    // "unknown", never as "no demolition" (see Demolition in CONTEXT.md).
+    // "unknown", never as "no demolition" (see Demolition in GLOSSARY.md).
     demolishStartAt: z.number().nullable().default(null),
     // A string, not an enum over the building catalog: an unknown type must not drop the whole cell.
     demolishingType: z.string().nullable().default(null),
